@@ -35,12 +35,38 @@ if (!function_exists('clearSelectCache')) {
     }
 }
 
+if (!function_exists('faoxima_bust_bot_selectcache')) {
+    function faoxima_bust_bot_selectcache($table)
+    {
+        $host = (string) ($GLOBALS['redis_host'] ?? '');
+        if ($host === '' || !class_exists('Redis')) return;
+        try {
+            $client = new Redis();
+            if (!$client->connect($host, (int) ($GLOBALS['redis_port'] ?? 6379), 1.0)) return;
+            $password = (string) ($GLOBALS['redis_password'] ?? '');
+            if ($password !== '') $client->auth($password);
+            $client->select((int) ($GLOBALS['redis_database'] ?? 0));
+            $indexKey = 'faoxima:selectcache:tableindex:' . $table;
+            $members = $client->sMembers($indexKey);
+            if (is_array($members) && !empty($members)) {
+                $client->del($members);
+            }
+            $client->del($indexKey);
+            $client->close();
+        } catch (\Throwable $e) {
+        }
+    }
+}
+
 if (!function_exists('getDatabaseConnection')) {
     function getDatabaseConnection()
     {
         global $pdo, $servername, $username, $password, $dbname;
         if (isset($pdo) && $pdo instanceof PDO) {
             return $pdo;
+        }
+        if (!isset($servername)) {
+            $servername = $GLOBALS['dbhost'] ?? null;
         }
         if (!isset($servername, $username, $password, $dbname)) {
             return null;
@@ -216,7 +242,19 @@ if (!function_exists('select')) {
 if (!function_exists('step')) {
     function step($step, $from_id)
     {
+        $rxNavOldStep = null;
+        if (class_exists('logNavigation')) {
+            $rxNavPrev = select('user', 'step', 'id', $from_id, 'select', ['cache' => false]);
+            if (is_array($rxNavPrev)) {
+                $rxNavOldStep = isset($rxNavPrev['step']) ? $rxNavPrev['step'] : null;
+            } elseif (is_scalar($rxNavPrev)) {
+                $rxNavOldStep = $rxNavPrev;
+            }
+        }
         update('user', 'step', $step, 'id', $from_id);
+        if (class_exists('logNavigation')) {
+            logNavigation::transition($from_id, $rxNavOldStep, $step);
+        }
     }
 }
 
@@ -333,26 +371,36 @@ if (!function_exists('getCronJobDefinitions')) {
     function getCronJobDefinitions(): array
     {
         return [
-            'statusday' => ['script' => 'statusday.php', 'admin_label' => 'کرون وضعیت روزانه', 'instruction' => '🕚 بررسی وضعیت روزانه — %s', 'default' => ['unit' => 'day', 'value' => 1]],
-            'croncard' => ['script' => 'croncard.php', 'admin_label' => 'کرون کارت‌به‌کارت', 'instruction' => '💳 بررسی کارت‌به‌کارت — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
-            'notifications' => ['script' => 'NoticationsService.php', 'admin_label' => 'کرون اعلان‌ها', 'instruction' => '🔔 ارسال اعلان‌ها — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
-            'payment_expire' => ['script' => 'payment_expire.php', 'admin_label' => 'کرون انقضای پرداخت', 'instruction' => '⏳ بررسی انقضای پرداخت‌ها — %s', 'default' => ['unit' => 'minute', 'value' => 5]],
-            'sendmessage' => ['script' => 'sendmessage.php', 'admin_label' => 'کرون ارسال پیام', 'instruction' => '📨 ارسال پیام زمان‌بندی‌شده — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
-            'plisio' => ['script' => 'plisio.php', 'admin_label' => 'کرون Plisio', 'instruction' => '💰 بررسی پرداخت Plisio — %s', 'default' => ['unit' => 'minute', 'value' => 3]],
-            'activeconfig' => ['script' => 'activeconfig.php', 'admin_label' => 'کرون فعال‌سازی تنظیمات', 'instruction' => '✅ فعال‌سازی تنظیمات — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
-            'disableconfig' => ['script' => 'disableconfig.php', 'admin_label' => 'کرون غیرفعال‌سازی تنظیمات', 'instruction' => '⛔ غیرفعال‌سازی تنظیمات — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
-            'iranpay1' => ['script' => 'iranpay1.php', 'admin_label' => 'کرون ایران‌پی', 'instruction' => '🇮🇷 بررسی پرداخت ایران‌پی — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
-            'backupbot' => ['script' => 'backupbot.php', 'admin_label' => 'کرون بکاپ', 'instruction' => '📦 بکاپ‌گیری — %s', 'default' => ['unit' => 'hour', 'value' => 5]],
-            'gift' => ['script' => 'gift.php', 'admin_label' => 'کرون هدایا', 'instruction' => '🎁 ارسال هدایا — %s', 'default' => ['unit' => 'minute', 'value' => 2]],
-            'discount_expire' => ['script' => 'discount_expire.php', 'admin_label' => 'کرون انقضای تخفیف', 'instruction' => '🏷 بررسی انقضای تخفیف‌ها — %s', 'default' => ['unit' => 'minute', 'value' => 30]],
+            'statusday' => ['script' => 'statusday.php', 'admin_label' => 'وضعیت روزانه', 'instruction' => '🕚 بررسی وضعیت روزانه — %s', 'default' => ['unit' => 'day', 'value' => 1]],
+            'croncard' => ['script' => 'croncard.php', 'admin_label' => 'کارت‌به‌کارت', 'instruction' => '💳 بررسی کارت‌به‌کارت — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'notifications' => ['script' => 'NoticationsService.php', 'admin_label' => 'اعلان‌ها', 'instruction' => '🔔 ارسال اعلان‌ها — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'payment_expire' => ['script' => 'payment_expire.php', 'admin_label' => 'انقضای پرداخت', 'instruction' => '⏳ بررسی انقضای پرداخت‌ها — %s', 'default' => ['unit' => 'minute', 'value' => 5]],
+            'sendmessage' => ['script' => 'sendmessage.php', 'admin_label' => 'ارسال پیام', 'instruction' => '📨 ارسال پیام زمان‌بندی‌شده — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'plisio' => ['script' => 'plisio.php', 'admin_label' => 'Plisio', 'instruction' => '💰 بررسی پرداخت Plisio — %s', 'default' => ['unit' => 'minute', 'value' => 3]],
+            'activeconfig' => ['script' => 'activeconfig.php', 'admin_label' => 'فعال کانفیگ', 'instruction' => '✅ فعال‌سازی تنظیمات — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'disableconfig' => ['script' => 'disableconfig.php', 'admin_label' => 'غیرفعال‌کانفیگ', 'instruction' => '⛔ غیرفعال‌سازی تنظیمات — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'iranpay1' => ['script' => 'iranpay1.php', 'admin_label' => 'ایران‌پی', 'instruction' => '🇮🇷 بررسی پرداخت ایران‌پی — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'backupbot' => ['script' => 'backupbot.php', 'admin_label' => 'بکاپ', 'instruction' => '📦 بکاپ‌گیری — %s', 'default' => ['unit' => 'hour', 'value' => 5]],
+            'gift' => ['script' => 'gift.php', 'admin_label' => 'هدایا', 'instruction' => '🎁 ارسال هدایا — %s', 'default' => ['unit' => 'minute', 'value' => 2]],
+            'discount_expire' => ['script' => 'discount_expire.php', 'admin_label' => 'انقضای تخفیف', 'instruction' => '🏷 بررسی انقضای تخفیف‌ها — %s', 'default' => ['unit' => 'minute', 'value' => 30]],
             'lottery' => ['script' => 'lottery.php', 'admin_label' => 'قرعه‌کشی شبانه', 'instruction' => '🎁 قرعه‌کشی شبانه — %s', 'default' => ['unit' => 'day', 'value' => 1]],
-            'expireagent' => ['script' => 'expireagent.php', 'admin_label' => 'کرون انقضای نمایندگان', 'instruction' => '👥 بررسی انقضای نمایندگان — %s', 'default' => ['unit' => 'minute', 'value' => 30]],
-            'on_hold' => ['script' => 'on_hold.php', 'admin_label' => 'کرون سرویس‌های معلق', 'instruction' => '⏸ بررسی سفارش‌های معلق — %s', 'default' => ['unit' => 'minute', 'value' => 15]],
-            'configtest' => ['script' => 'configtest.php', 'admin_label' => 'کرون تست تنظیمات', 'instruction' => '🧪 تست تنظیمات سیستم — %s', 'default' => ['unit' => 'minute', 'value' => 2]],
-            'uptime_node' => ['script' => 'uptime_node.php', 'admin_label' => 'کرون Uptime نود', 'instruction' => '🌐 بررسی Uptime نودها — %s', 'default' => ['unit' => 'minute', 'value' => 15]],
-            'uptime_panel' => ['script' => 'uptime_panel.php', 'admin_label' => 'کرون Uptime پنل', 'instruction' => '🖥 بررسی Uptime پنل‌ها — %s', 'default' => ['unit' => 'minute', 'value' => 15]],
-            'cryptocheck' => ['script' => 'cryptocheck.php', 'admin_label' => 'کرون چک هش کریپتو', 'instruction' => '🪙 بررسی پرداخت‌های کریپتو — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
-            'nowpaymentcheck' => ['script' => 'nowpaymentcheck.php', 'admin_label' => 'کرون پولر NowPayments', 'instruction' => '💎 بررسی پرداخت‌های NowPayments — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'expireagent' => ['script' => 'expireagent.php', 'admin_label' => 'انقضای‌نماینده', 'instruction' => '👥 بررسی انقضای نمایندگان — %s', 'default' => ['unit' => 'minute', 'value' => 30]],
+            'on_hold' => ['script' => 'on_hold.php', 'admin_label' => 'سرویس‌های معلق', 'instruction' => '⏸ بررسی سفارش‌های معلق — %s', 'default' => ['unit' => 'minute', 'value' => 15]],
+            'configtest' => ['script' => 'configtest.php', 'admin_label' => 'تست تنظیمات', 'instruction' => '🧪 تست تنظیمات سیستم — %s', 'default' => ['unit' => 'minute', 'value' => 2]],
+            'uptime_node' => ['script' => 'uptime_node.php', 'admin_label' => 'Uptime نود', 'instruction' => '🌐 بررسی Uptime نودها — %s', 'default' => ['unit' => 'minute', 'value' => 15]],
+            'uptime_panel' => ['script' => 'uptime_panel.php', 'admin_label' => 'Uptime پنل', 'instruction' => '🖥 بررسی Uptime پنل‌ها — %s', 'default' => ['unit' => 'minute', 'value' => 15]],
+            'cryptocheck' => ['script' => 'cryptocheck.php', 'admin_label' => 'چک هش کریپتو', 'instruction' => '🪙 بررسی پرداخت‌های کریپتو — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'nowpaymentcheck' => ['script' => 'nowpaymentcheck.php', 'admin_label' => 'پولر NowPayments', 'instruction' => '💎 بررسی پرداخت‌های NowPayments — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'blupalcheck' => ['script' => 'blupalcheck.php', 'admin_label' => 'پولر بلوپال', 'instruction' => '💙 بررسی پرداخت‌های بلوپال — %s', 'default' => ['unit' => 'minute', 'value' => 2]],
+            'atlaspaycheck' => ['script' => 'atlaspaycheck.php', 'admin_label' => 'پولر اطلس‌پی', 'instruction' => '🌐 بررسی پرداخت‌های اطلس‌پی — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'tetrapaycheck' => ['script' => 'tetrapaycheck.php', 'admin_label' => 'پولر تتراپی', 'instruction' => '🔷 بررسی پرداخت‌های تتراپی — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'remnawave_usage' => ['script' => 'remnawave_usage.php', 'admin_label' => 'مصرف رمن‌ویو', 'instruction' => '📊 بررسی مصرف کاربران رمن‌ویو — %s', 'default' => ['unit' => 'minute', 'value' => 15]],
+            'logs_cleanup' => ['script' => 'logs_cleanup.php', 'admin_label' => 'پاکسازی لاگ API', 'instruction' => '🧹 پاکسازی لاگ‌های قدیمی API — %s', 'default' => ['unit' => 'day', 'value' => 7]],
+            'pin_expire' => ['script' => 'pin_expire.php', 'admin_label' => 'انقضای پین پیام', 'instruction' => '📌 لغو خودکار پیام‌های پین‌شده منقضی — %s', 'default' => ['unit' => 'minute', 'value' => 5]],
+            'notification_expire' => ['script' => 'notification_expire.php', 'admin_label' => 'انقضای اعلان مینی‌اپ', 'instruction' => '🔔 حذف خودکار اعلان منقضی مینی‌اپ — %s', 'default' => ['unit' => 'minute', 'value' => 5]],
+            'ip_block_notify' => ['script' => 'ip_block_notify.php', 'admin_label' => 'اطلاع مسدودشدن IP', 'instruction' => '📶 اطلاع‌رسانی مسدودشدن IP قبلی — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'public_log_drain' => ['script' => 'public_log_drain.php', 'admin_label' => 'گزارش عمومی', 'instruction' => '📣 تخلیه صف گزارش عمومی خرید — %s', 'default' => ['unit' => 'minute', 'value' => 1]],
+            'queued_renewal' => ['script' => 'QueuedRenewalProcessor.php', 'admin_label' => 'رزرو اشتراک', 'instruction' => '🔋 بررسی و فعال‌سازی رزروهای اشتراک — %s', 'default' => ['unit' => 'minute', 'value' => 5]],
         ];
     }
 }
@@ -599,7 +647,7 @@ if (!function_exists('buildCronJobsKeyboard')) {
                 ['text' => $definition['admin_label'], 'callback_data' => 'cronjob_display'],
             ];
         }
-        $rows[] = [['text' => '🔙 بازگشت به تنظیمات کرون', 'callback_data' => 'cronjobs_back_settings']];
+        $rows[] = [['text' => '🔙 بازگشت به تنظیمات کرون', 'callback_data' => 'featcat_crons']];
         return json_encode(['inline_keyboard' => $rows], JSON_UNESCAPED_UNICODE);
     }
 }

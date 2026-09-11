@@ -30,7 +30,13 @@
         var rows = Array.prototype.slice.call(tbody.querySelectorAll('tr'));
         if (rows.length === 0) return null;
 
-        var pageSize = parseInt(table.dataset.pageSize || opts.pageSize || '25', 10);
+        var explicitSize = table.dataset.pageSize || opts.pageSize;
+        var mqMobile = window.matchMedia('(max-width: 768px), (max-width: 992px) and (pointer: coarse)');
+        function computePageSize() {
+            if (explicitSize) return parseInt(explicitSize, 10);
+            return mqMobile.matches ? 3 : 5;
+        }
+        var pageSize = computePageSize();
         var currentPage = 0;
         var filter = '';
         var sortCol = null, sortDir = 1;
@@ -50,20 +56,28 @@
                 '.mdt-search__icon{position:absolute;inset-inline-start:12px;display:flex;color:var(--text-dim,#8a8a9a);pointer-events:none;}' +
                 '.mdt-search input{width:100%;padding-block:9px;padding-inline-start:38px;padding-inline-end:14px;border-radius:10px;background:var(--surface-3,#1a1a22);border:1px solid var(--border-mid,#33333f);color:var(--text-main,#eee);font-size:13px;outline:none;transition:border-color .15s,box-shadow .15s;}' +
                 '.mdt-search input:focus{border-color:var(--accent,#8b5cf6);box-shadow:0 0 0 3px color-mix(in srgb,var(--accent,#8b5cf6) 22%,transparent);}' +
-                '.mdt-filters{display:flex;gap:8px;flex-wrap:wrap;align-items:center;}' +
-                '.mdt-filter{padding:9px 12px;border-radius:10px;background:var(--surface-3,#1a1a22);border:1px solid var(--border-mid,#33333f);color:var(--text-main,#eee);font-size:12.5px;cursor:pointer;}' +
-                '.mdt-filter:focus{outline:none;border-color:var(--accent,#8b5cf6);}';
+                '.mdt-filters{display:flex;gap:16px;flex-wrap:wrap;align-items:center;flex-basis:100%;margin-top:4px;}' +
+                '.mdt-filters--collapsed{display:none;}' +
+                '.mdt-filter-toggle{display:inline-flex;align-items:center;gap:7px;padding:8px 14px;border-radius:10px;background:var(--surface-2,#1a1a22);border:1px solid var(--border-soft,#33333f);color:var(--text-main,#eee);font-size:13px;font-weight:600;cursor:pointer;font-family:inherit;transition:all .15s;}' +
+                '.mdt-filter-toggle:hover,.mdt-filter-toggle.active{border-color:var(--accent,#8b5cf6);color:var(--accent,#8b5cf6);}' +
+                '.mdt-pillgroup{display:inline-flex;gap:7px;flex-wrap:wrap;align-items:center;}' +
+                '.mdt-pillgroup__label{font-size:12px;color:var(--text-dim,#8a8a9a);margin-inline-end:2px;}' +
+                '.mdt-pill{display:inline-flex;align-items:center;gap:6px;padding:7px 13px;border-radius:9999px;background:var(--surface-2,#1a1a22);border:1px solid var(--border-soft,#33333f);color:var(--text-muted,#aaa);font-size:12.5px;font-weight:600;cursor:pointer;transition:all .15s;}' +
+                '.mdt-pill:hover{border-color:var(--accent,#8b5cf6);color:var(--text-main,#eee);}' +
+                '.mdt-pill.active{background:var(--accent,#8b5cf6);border-color:var(--accent,#8b5cf6);color:#fff;}' +
+                '.mdt-pill__count{font-size:11px;padding:1px 7px;border-radius:9999px;background:color-mix(in srgb,var(--text-main,#888) 14%,transparent);}' +
+                '.mdt-pill.active .mdt-pill__count{background:rgba(255,255,255,0.22);color:#fff;}';
             document.head.appendChild(st);
         }
 
         var ctrls = document.createElement('div');
         ctrls.className = 'mdt-controls';
         ctrls.innerHTML =
-            '<label class="mdt-search">' +
-                '<span class="mdt-search__icon"><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m21 21-4.3-4.3"></path></svg></span>' +
-                '<input type="search" placeholder="' + L.search.replace(/:$/, '') + ' ...' + '" aria-label="' + L.search + '">' +
-            '</label>' +
-            '<div class="mdt-filters"></div>';
+            '<button type="button" class="mdt-filter-toggle" hidden>' +
+                '<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"></polygon></svg>' +
+                'فیلتر' +
+            '</button>' +
+            '<div class="mdt-filters mdt-filters--collapsed"></div>';
         wrap.appendChild(ctrls);
         wrap.appendChild(table);
 
@@ -76,6 +90,13 @@
 
         var searchInput = ctrls.querySelector('.mdt-search input');
         var filtersWrap = ctrls.querySelector('.mdt-filters');
+        var filterToggle = ctrls.querySelector('.mdt-filter-toggle');
+        if (filterToggle) {
+            filterToggle.addEventListener('click', function () {
+                filtersWrap.classList.toggle('mdt-filters--collapsed');
+                filterToggle.classList.toggle('active');
+            });
+        }
         var info = foot.querySelector('.mdt-info');
         var pager = foot.querySelector('.mdt-pager');
 
@@ -104,14 +125,16 @@
 
 
         var searchTimer = null;
-        searchInput.addEventListener('input', function () {
-            if (searchTimer) clearTimeout(searchTimer);
-            searchTimer = setTimeout(function () {
-                filter = searchInput.value.toLowerCase().trim();
-                currentPage = 0;
-                render();
-            }, 150);
-        });
+        if (searchInput) {
+            searchInput.addEventListener('input', function () {
+                if (searchTimer) clearTimeout(searchTimer);
+                searchTimer = setTimeout(function () {
+                    filter = searchInput.value.toLowerCase().trim();
+                    currentPage = 0;
+                    render();
+                }, 150);
+            });
+        }
 
 
         rows.forEach(function (r) {
@@ -122,6 +145,7 @@
         // Enable by adding data-mdt-filter="<colIndex>" (comma-separated for many)
         // to the <table>. A per-column <select> of distinct values is built.
         var colFilters = {};
+        function mdtToFa(n) { return String(n).replace(/[0-9]/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'[+d]; }); }
         (function buildColumnFilters() {
             var spec = (table.dataset.mdtFilter || '').trim();
             if (!spec) return;
@@ -130,37 +154,52 @@
                 if (part === '') return;
                 var colIdx = parseInt(part, 10);
                 if (isNaN(colIdx)) return;
-                var seen = {}, values = [];
+                var seen = {}, values = [], counts = {};
                 rows.forEach(function (r) {
                     var cell = r.children[colIdx];
                     if (!cell) return;
                     var v = (cell.dataset.filterValue || cell.textContent || '').trim();
-                    if (v !== '' && !seen[v]) { seen[v] = 1; values.push(v); }
+                    if (v === '') return;
+                    if (!seen[v]) { seen[v] = 1; values.push(v); counts[v] = 0; }
+                    counts[v]++;
                 });
                 if (values.length === 0) return;
                 values.sort(function (a, b) { return a.localeCompare(b, 'fa'); });
                 var th = headers[colIdx];
                 var label = th ? (th.dataset.filterLabel || th.textContent.trim()) : '';
-                var sel = document.createElement('select');
-                sel.className = 'mdt-filter';
-                var optAll = document.createElement('option');
-                optAll.value = '';
-                optAll.textContent = label ? (label + ': همه') : 'همه';
-                sel.appendChild(optAll);
-                values.forEach(function (v) {
-                    var o = document.createElement('option');
-                    o.value = v; o.textContent = v;
-                    sel.appendChild(o);
-                });
+                var group = document.createElement('div');
+                group.className = 'mdt-pillgroup';
+                if (label) {
+                    var lab = document.createElement('span');
+                    lab.className = 'mdt-pillgroup__label';
+                    lab.textContent = label;
+                    group.appendChild(lab);
+                }
                 colFilters[colIdx] = '';
-                sel.addEventListener('change', function () {
-                    colFilters[colIdx] = sel.value;
-                    currentPage = 0;
-                    render();
-                });
-                filtersWrap.appendChild(sel);
+                function mkPill(val, text, count) {
+                    var b = document.createElement('button');
+                    b.type = 'button';
+                    b.className = 'mdt-pill' + (val === '' ? ' active' : '');
+                    b.innerHTML = text + ' <span class="mdt-pill__count">' + mdtToFa(count) + '</span>';
+                    b.addEventListener('click', function () {
+                        colFilters[colIdx] = val;
+                        Array.prototype.forEach.call(group.querySelectorAll('.mdt-pill'), function (pl) { pl.classList.remove('active'); });
+                        b.classList.add('active');
+                        currentPage = 0;
+                        render();
+                    });
+                    return b;
+                }
+                group.appendChild(mkPill('', 'همه', rows.length));
+                values.forEach(function (v) { group.appendChild(mkPill(v, v, counts[v])); });
+                filtersWrap.appendChild(group);
             });
         })();
+
+        if (filterToggle) {
+            if (filtersWrap.children.length > 0) { filterToggle.hidden = false; }
+            else { ctrls.style.display = 'none'; }
+        }
 
         function getCellValue(row, col) {
             var cell = row.children[col];
@@ -265,11 +304,136 @@
             btn(L.next, page + 1, page === count - 1, false);
         }
 
+        function applyResponsivePageSize() {
+            var ns = computePageSize();
+            if (ns !== pageSize) { pageSize = ns; currentPage = 0; render(); }
+        }
+        if (mqMobile.addEventListener) mqMobile.addEventListener('change', applyResponsivePageSize);
+        else if (mqMobile.addListener) mqMobile.addListener(applyResponsivePageSize);
+
         render();
 
         return { render: render };
     }
 
+
+    function initList(containerSelector, opts) {
+        opts = opts || {};
+        var container = typeof containerSelector === 'string' ? document.querySelector(containerSelector) : containerSelector;
+        if (!container) return null;
+
+        var itemSelector = opts.itemSelector || '.config-row, .ms-row';
+        var getItems = function () {
+            return Array.prototype.slice.call(container.querySelectorAll(itemSelector));
+        };
+        var items = getItems();
+        if (items.length === 0) return null;
+
+        var explicitSize = container.dataset.pageSize || opts.pageSize;
+        var mqMobile = window.matchMedia('(max-width: 768px), (max-width: 992px) and (pointer: coarse)');
+        function computePageSize() {
+            if (explicitSize) return parseInt(explicitSize, 10);
+            return mqMobile.matches ? 3 : 5;
+        }
+
+        var pageSize = computePageSize();
+        var currentPage = 0;
+
+        var pagerHolder = opts.pagerHolder
+            ? (typeof opts.pagerHolder === 'string' ? document.querySelector(opts.pagerHolder) : opts.pagerHolder)
+            : null;
+
+        if (!pagerHolder) {
+            pagerHolder = container.parentNode.querySelector('.cfg-pagination-js');
+            if (!pagerHolder) {
+                pagerHolder = document.createElement('div');
+                pagerHolder.className = 'cfg-pagination cfg-pagination-js';
+                container.parentNode.insertBefore(pagerHolder, container.nextSibling);
+            }
+        }
+
+        function render() {
+            items = getItems();
+            var total = items.length;
+            var pageCount = Math.max(1, Math.ceil(total / pageSize));
+            if (currentPage >= pageCount) currentPage = pageCount - 1;
+            if (currentPage < 0) currentPage = 0;
+
+            items.forEach(function (item, idx) {
+                var itemPage = Math.floor(idx / pageSize);
+                item.style.display = (itemPage === currentPage) ? '' : 'none';
+            });
+
+            if (total <= pageSize) {
+                pagerHolder.style.display = 'none';
+                return;
+            }
+
+            pagerHolder.style.display = 'flex';
+            pagerHolder.innerHTML = '';
+
+            // Previous Button
+            var prevBtn = document.createElement('button');
+            prevBtn.type = 'button';
+            prevBtn.className = 'btn btn-sm btn-outline' + (currentPage === 0 ? ' is-disabled' : '');
+            prevBtn.textContent = '‹ قبلی';
+            if (currentPage > 0) {
+                prevBtn.addEventListener('click', function () {
+                    currentPage--;
+                    render();
+                });
+            }
+            pagerHolder.appendChild(prevBtn);
+
+            // Pagination info label
+            var info = document.createElement('span');
+            info.className = 'cfg-pagination__info';
+            var startNum = (currentPage * pageSize) + 1;
+            var endNum = Math.min((currentPage + 1) * pageSize, total);
+            var fa = function (n) { return String(n).replace(/\d/g, function (d) { return '۰۱۲۳۴۵۶۷۸۹'[d]; }); };
+            info.innerHTML = 'صفحه <strong>' + fa(currentPage + 1) + '</strong> از <strong>' + fa(pageCount) + '</strong> — ' + fa(total) + ' مورد';
+            pagerHolder.appendChild(info);
+
+            // Next Button
+            var nextBtn = document.createElement('button');
+            nextBtn.type = 'button';
+            nextBtn.className = 'btn btn-sm btn-outline' + (currentPage >= pageCount - 1 ? ' is-disabled' : '');
+            nextBtn.textContent = 'بعدی ›';
+            if (currentPage < pageCount - 1) {
+                nextBtn.addEventListener('click', function () {
+                    currentPage++;
+                    render();
+                });
+            }
+            pagerHolder.appendChild(nextBtn);
+
+            if (typeof opts.onPageChange === 'function') {
+                opts.onPageChange(currentPage, pageCount);
+            }
+            try {
+                container.dispatchEvent(new CustomEvent('faoxima:pagechange', { bubbles: true, detail: { page: currentPage, pageCount: pageCount } }));
+            } catch (e) {}
+        }
+
+        function applyResponsivePageSize() {
+            var ns = computePageSize();
+            if (ns !== pageSize) {
+                pageSize = ns;
+                currentPage = 0;
+                render();
+            }
+        }
+
+        if (mqMobile.addEventListener) mqMobile.addEventListener('change', applyResponsivePageSize);
+        else if (mqMobile.addListener) mqMobile.addListener(applyResponsivePageSize);
+
+        render();
+
+        return {
+            render: render,
+            setPage: function (p) { currentPage = p; render(); }
+        };
+    }
 
     document.addEventListener('DOMContentLoaded', function () {
         var tables = document.querySelectorAll('table[data-dt="1"]');
@@ -277,5 +441,6 @@
     });
 
     global.FaoximaDT = { init: init };
+    global.FaoximaListDT = { init: initList };
 })(window);
 

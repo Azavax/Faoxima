@@ -1,4 +1,10 @@
 <?php
+
+if (!defined('REFACTORED_LEGACY_ROOT')) {
+    define('REFACTORED_LEGACY_ROOT', __DIR__);
+}
+@chdir(__DIR__);
+
 require_once 'config.php';
 require_once 'function.php';
 require_once 'request.php';
@@ -15,6 +21,12 @@ function guardGetBaseUrl($panelUrl = null)
         return GUARD_CORE_BASE_URL;
     }
     return rtrim($normalizedUrl, '/');
+}
+
+function guardVersionOf(array $panelConfig)
+{
+    $version = strtolower(trim((string) ($panelConfig['panel']['guard_version'] ?? 'v1')));
+    return $version === 'v2' ? 'v2' : 'v1';
 }
 
 function getGuardPanelConfig($namePanel)
@@ -67,16 +79,23 @@ function guardApiRequest(array $panelConfig, string $method, string $endpoint, $
 
     switch (strtoupper($method)) {
         case 'POST':
-            return $request->post($payload);
+            $response = $request->post($payload);
+            break;
         case 'PUT':
-            return $request->put($payload);
+            $response = $request->put($payload);
+            break;
         case 'PATCH':
-            return $request->PATCH($payload);
+            $response = $request->PATCH($payload);
+            break;
         case 'DELETE':
-            return $request->delete($payload);
+            $response = $request->delete($payload);
+            break;
         default:
-            return $request->get();
+            $response = $request->get();
+            break;
     }
+
+    return $response;
 }
 
 function guardDecodeResponse(array $response)
@@ -131,7 +150,7 @@ function guardNormalizeSubscriptionEntry(array $panelConfig, array $subscription
     }
 
     $existingUrl = '';
-    foreach (['subscription_url', 'subscription', 'link'] as $key) {
+    foreach (['subscription_url', 'subscription_link', 'subscription', 'link'] as $key) {
         if (!empty($subscription[$key])) {
             $existingUrl = trim((string) $subscription[$key]);
             break;
@@ -167,7 +186,7 @@ function guardNormalizeSubscriptionItems(array $panelConfig, $data)
         return $data;
     }
 
-    $isSubscription = isset($data['subscription']) || isset($data['subscription_url']) || isset($data['tag']) || isset($data['access_key']) || isset($data['link']);
+    $isSubscription = isset($data['subscription']) || isset($data['subscription_url']) || isset($data['subscription_link']) || isset($data['tag']) || isset($data['access_key']) || isset($data['link']);
     if ($isSubscription) {
         return guardNormalizeSubscriptionEntry($panelConfig, $data);
     }
@@ -203,10 +222,11 @@ function guardExtractAdminName($adminData)
     return '';
 }
 
-function guardTestConnection($baseUrl, $apiKey)
+function guardTestConnection($baseUrl, $apiKey, $guardVersion = 'v1')
 {
     $apiKey = trim((string) $apiKey);
     $normalizedBaseUrl = guardGetBaseUrl($baseUrl);
+    $guardVersion = strtolower(trim((string) $guardVersion)) === 'v2' ? 'v2' : 'v1';
 
     if ($apiKey === '') {
         return [
@@ -222,6 +242,7 @@ function guardTestConnection($baseUrl, $apiKey)
             'url_panel' => $normalizedBaseUrl,
             'api_key' => $apiKey,
             'password_panel' => null,
+            'guard_version' => $guardVersion,
         ],
         'api_key' => $apiKey,
     ];
@@ -266,7 +287,11 @@ function guardGetServices($namePanelOrConfig)
         return $decoded;
     }
     $services = $decoded['data'];
-    if (isset($services['services']) && is_array($services['services'])) {
+    if (guardVersionOf($config) === 'v2') {
+        if (isset($services['items']) && is_array($services['items'])) {
+            $services = $services['items'];
+        }
+    } elseif (isset($services['services']) && is_array($services['services'])) {
         $services = $services['services'];
     }
     if (!is_array($services)) {
@@ -278,6 +303,48 @@ function guardGetServices($namePanelOrConfig)
     return [
         'status' => true,
         'services' => $services
+    ];
+}
+
+function guardGetAdminsStats($namePanelOrConfig)
+{
+    if (is_array($namePanelOrConfig)) {
+        $config = $namePanelOrConfig;
+    } else {
+        $config = getGuardPanelConfig($namePanelOrConfig);
+    }
+    if ($config['status'] === false) {
+        return $config;
+    }
+    $response = guardApiRequest($config, 'GET', '/api/admins/stats');
+    $decoded = guardDecodeResponse($response);
+    if ($decoded['status'] === false) {
+        return $decoded;
+    }
+    return [
+        'status' => true,
+        'stats' => is_array($decoded['data']) ? $decoded['data'] : []
+    ];
+}
+
+function guardGetSubscriptionsStats($namePanelOrConfig)
+{
+    if (is_array($namePanelOrConfig)) {
+        $config = $namePanelOrConfig;
+    } else {
+        $config = getGuardPanelConfig($namePanelOrConfig);
+    }
+    if ($config['status'] === false) {
+        return $config;
+    }
+    $response = guardApiRequest($config, 'GET', '/api/subscriptions/stats');
+    $decoded = guardDecodeResponse($response);
+    if ($decoded['status'] === false) {
+        return $decoded;
+    }
+    return [
+        'status' => true,
+        'stats' => is_array($decoded['data']) ? $decoded['data'] : []
     ];
 }
 
@@ -357,6 +424,12 @@ function guardExtractServiceIdsFromList(array $services)
 
 function guardResolveServiceIds($namePanel, $serviceValue = null)
 {
+    if ($serviceValue === null || $serviceValue === '') {
+        return [
+            'status' => false,
+            'msg' => 'سرویس‌های قابل ساخت روی این پنل Guard هنوز تنظیم نشده‌اند. از منوی «مدیریت پنل‌ها ← ⚙️ تنظیم سرویس‌ها» ابتدا سرویس‌ها را مشخص کنید.'
+        ];
+    }
     $parsedServices = guardParseServiceIds($serviceValue);
     $needsAll = empty($parsedServices) || in_array('all', $parsedServices, true) || in_array(0, $parsedServices, true);
     if ($needsAll) {
@@ -397,104 +470,17 @@ function guardResolveServiceIds($namePanel, $serviceValue = null)
     ];
 }
 
-function guardDecodeAutoRenewalsConfig($value)
+function guardAdaptSubscriptionPayloadForVersion(array $subscription, string $version)
 {
-    if (is_string($value)) {
-        $decoded = json_decode($value, true);
-        if (json_last_error() === JSON_ERROR_NONE) {
-            $value = $decoded;
-        }
+    if ($version !== 'v2') {
+        return $subscription;
     }
-    if (!is_array($value)) {
-        return [];
+    if (array_key_exists('service_ids', $subscription)) {
+        $subscription['services'] = $subscription['service_ids'];
+        unset($subscription['service_ids']);
     }
-    $isList = array_keys($value) === range(0, count($value) - 1);
-    if (!$isList) {
-        $value = [$value];
-    }
-    $normalized = [];
-    foreach ($value as $entry) {
-        if (!is_array($entry)) {
-            continue;
-        }
-        $normalized[] = [
-            'expire_days' => isset($entry['expire_days']) ? intval($entry['expire_days']) : 0,
-            'usage_gb' => isset($entry['usage_gb']) ? floatval($entry['usage_gb']) : 0,
-            'reset_usage' => !empty($entry['reset_usage']) || (!empty($entry['reset']) && $entry['reset'] === true),
-        ];
-    }
-    return $normalized;
-}
-
-function guardBuildAutoRenewalsPayload(array $entries)
-{
-    $payload = [];
-    foreach ($entries as $entry) {
-        if (!is_array($entry)) {
-            continue;
-        }
-        $expireDays = max(0, intval($entry['expire_days'] ?? 0));
-        $usageGb = isset($entry['usage_gb']) ? floatval($entry['usage_gb']) : 0;
-        $resetUsage = !empty($entry['reset_usage']);
-
-        $limitExpire = 0;
-        if ($expireDays > 0) {
-            $limitExpire = guardNormalizeExpire(time() + ($expireDays * 86400));
-        }
-        $limitUsage = $usageGb > 0 ? intval(round($usageGb * 1024 * 1024 * 1024)) : 0;
-
-        $payload[] = [
-            "limit_expire" => $limitExpire,
-            "limit_usage" => $limitUsage,
-            "reset_usage" => $resetUsage
-        ];
-    }
-    return $payload;
-}
-
-function guardParseAutoRenewalsInput($input)
-{
-    $input = trim((string) $input);
-    if ($input === '' || $input === '-' || $input === '0') {
-        return [
-            'status' => true,
-            'entries' => []
-        ];
-    }
-
-    $lines = preg_split('/[\n;]+/', $input);
-    $entries = [];
-    foreach ($lines as $line) {
-        $line = trim($line);
-        if ($line === '') {
-            continue;
-        }
-        $parts = array_map('trim', explode(',', $line));
-        if (count($parts) !== 3) {
-            return [
-                'status' => false,
-                'msg' => 'Invalid auto renewal format'
-            ];
-        }
-        [$expireDays, $usageGb, $resetFlag] = $parts;
-        if ($expireDays === '' || !is_numeric($expireDays) || $usageGb === '' || !is_numeric($usageGb)) {
-            return [
-                'status' => false,
-                'msg' => 'Invalid numbers in auto renewal'
-            ];
-        }
-        $resetUsage = in_array(strtolower($resetFlag), ['1', 'true', 'yes'], true);
-        $entries[] = [
-            'expire_days' => intval($expireDays),
-            'usage_gb' => floatval($usageGb),
-            'reset_usage' => $resetUsage,
-        ];
-    }
-
-    return [
-        'status' => true,
-        'entries' => $entries,
-    ];
+    unset($subscription['discord_webhook_url'], $subscription['auto_delete_days'], $subscription['auto_renewals']);
+    return $subscription;
 }
 
 function guardCreateSubscription($namePanel, array $payload)
@@ -517,7 +503,11 @@ function guardCreateSubscription($namePanel, array $payload)
                     $limitExpire = time() + ($limitExpire * 86400);
                 }
             }
-            $subscription['limit_expire'] = guardNormalizeExpire($limitExpire);
+            if (intval($limitExpire) < 0) {
+                $subscription['limit_expire'] = intval($limitExpire);
+            } else {
+                $subscription['limit_expire'] = guardNormalizeExpire($limitExpire);
+            }
         }
 
         $parsedServices = guardParseServiceIds($subscription['service_ids'] ?? null);
@@ -530,6 +520,8 @@ function guardCreateSubscription($namePanel, array $payload)
         } else {
             $subscription['service_ids'] = array_values(array_unique(array_map('intval', $parsedServices)));
         }
+
+        $subscription = guardAdaptSubscriptionPayloadForVersion($subscription, guardVersionOf($config));
     }
     unset($subscription);
 
@@ -552,6 +544,21 @@ function guardUpdateSubscription($namePanel, string $username, array $payload)
     if ($config['status'] === false) {
         return $config;
     }
+    if (guardVersionOf($config) === 'v2') {
+        $bulkPayload = guardAdaptSubscriptionPayloadForVersion($payload, 'v2');
+        $bulkPayload['usernames'] = [$username];
+        $response = guardApiRequest($config, 'PUT', '/api/subscriptions', $bulkPayload);
+        $decoded = guardDecodeResponse($response);
+        if ($decoded['status'] === false) {
+            return $decoded;
+        }
+        $first = is_array($decoded['data']) && isset($decoded['data'][0]) ? $decoded['data'][0] : $decoded['data'];
+        return [
+            'status' => true,
+            'data' => $first,
+            'raw' => $response,
+        ];
+    }
     $encodedUsername = urlencode($username);
     $response = guardApiRequest($config, 'PUT', "/api/subscriptions/{$encodedUsername}", $payload);
     return guardDecodeResponse($response);
@@ -573,6 +580,27 @@ function guardGetSubscription($namePanel, string $username)
     if ($config['status'] === false) {
         return $config;
     }
+
+    if (guardVersionOf($config) === 'v2') {
+        $query = http_build_query(['usernames' => $username, 'limit' => 1]);
+        $response = guardApiRequest($config, 'GET', "/api/subscriptions?{$query}");
+        $decoded = guardDecodeResponse($response);
+        if ($decoded['status'] === false) {
+            return $decoded;
+        }
+        $items = is_array($decoded['data']) && isset($decoded['data']['items']) && is_array($decoded['data']['items'])
+            ? $decoded['data']['items']
+            : [];
+        if (empty($items)) {
+            return [
+                'status' => false,
+                'msg' => 'User not found'
+            ];
+        }
+        $decoded['data'] = guardNormalizeSubscriptionItems($config, $items[0]);
+        return $decoded;
+    }
+
     $encodedUsername = urlencode($username);
     $response = guardApiRequest($config, 'GET', "/api/subscriptions/{$encodedUsername}");
     $decoded = guardDecodeResponse($response);
@@ -591,7 +619,28 @@ function guardGetSubscriptionUsages($namePanel, string $username)
         return $config;
     }
     $encodedUsername = urlencode($username);
+    if (guardVersionOf($config) === 'v2') {
+        $response = guardApiRequest($config, 'GET', "/api/subscriptions/{$encodedUsername}/hourly-usage");
+        return guardDecodeResponse($response);
+    }
     $response = guardApiRequest($config, 'GET', "/api/subscriptions/{$encodedUsername}/usages");
+    return guardDecodeResponse($response);
+}
+
+function guardGetSubscriptionLinks($namePanel, string $username)
+{
+    $config = getGuardPanelConfig($namePanel);
+    if ($config['status'] === false) {
+        return $config;
+    }
+    if (guardVersionOf($config) !== 'v2') {
+        return [
+            'status' => false,
+            'msg' => 'Per-config links are only available on Guard v2'
+        ];
+    }
+    $encodedUsername = urlencode($username);
+    $response = guardApiRequest($config, 'GET', "/api/subscriptions/{$encodedUsername}/links");
     return guardDecodeResponse($response);
 }
 

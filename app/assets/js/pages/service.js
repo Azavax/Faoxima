@@ -46,6 +46,8 @@ export async function service(view, encodedUsername) {
     const used = Number(info.used_traffic_gb) || 0;
     const total = Number(info.total_traffic_gb) || 0;
     const remaining = Number(info.remaining_traffic_gb) || 0;
+    const isUnlimited = total === 0;
+    const fmtUsageGb = (n) => `${n.toFixed(2)} GB`;
     const percent = trafficPercent(used, total);
     let pctClass = '';
     if (percent >= 85) pctClass = 'is-danger';
@@ -74,10 +76,10 @@ export async function service(view, encodedUsername) {
         <div class="card-section">
             <div class="row-spread">
                 <span class="kv-label"><span class="glyph">~</span> مصرف ترافیک</span>
-                <span class="mono gold">${escapeHtml(fmtGb(used))} / ${escapeHtml(fmtGb(total))}</span>
+                <span class="mono gold">${escapeHtml(fmtUsageGb(used))} / ${escapeHtml(fmtGb(total))}</span>
             </div>
             <div class="progress"><span class="progress-fill ${pctClass}" style="width:${percent.toFixed(1)}%"></span></div>
-            <div class="muted mono" style="font-size:12px">باقی‌مانده: ${escapeHtml(fmtGb(remaining))}</div>
+            <div class="muted mono" style="font-size:12px">باقی‌مانده: ${escapeHtml(isUnlimited ? 'نامحدود' : fmtUsageGb(remaining))}</div>
         </div>
 
         <div class="card-section">
@@ -129,9 +131,12 @@ function renderOutput(o, i) {
         const items = Array.isArray(o.value) ? o.value : String(o.value || '').split('\n');
         return `
             <p class="section-title">کانفیگ‌ها</p>
-            ${items.map((c) => `
-                <div class="codeblock" style="margin-bottom:8px">${escapeHtml(c)}<button class="copy-btn" data-copy="${escapeHtml(c)}">کپی</button></div>
-            `).join('')}
+            ${items.map((c) => {
+                const payload = /^https?:\/\//i.test(String(c || '')) ? String(c).split('#')[0] : c;
+                return `
+                <div class="codeblock" style="margin-bottom:8px">${escapeHtml(payload)}<button class="copy-btn" data-copy="${escapeHtml(payload)}">کپی</button></div>
+            `;
+            }).join('')}
         `;
     }
     if (type === 'file') {

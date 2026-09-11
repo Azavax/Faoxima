@@ -37,6 +37,22 @@ function getInfoCardStatus(): bool
     return ((string) ($row['value'] ?? '0')) === '1';
 }
 
+function isQrDisabled(): bool
+{
+    if (!function_exists('select')) {
+        return false;
+    }
+    try {
+        $row = select("shopSetting", "*", "Namevalue", "qr_disabled", "select");
+    } catch (\Throwable $e) {
+        return false;
+    }
+    if (!is_array($row)) {
+        return false;
+    }
+    return ((string) ($row['value'] ?? '0')) === '1';
+}
+
 
 function getInfoCardColor(): string
 {
@@ -60,10 +76,10 @@ function getInfoCardColor(): string
 function infocard_resolve_font(string $weight = 'regular'): ?string
 {
     $weightMap = [
-        'regular' => 'JetBrainsMono-Regular.ttf',
-        'medium'  => 'JetBrainsMono-Medium.ttf',
-        'bold'    => 'JetBrainsMono-Bold.ttf',
-        'persian' => 'Arad-MediumDots2.ttf',
+        'regular' => 'Vazirmatn-Regular.ttf',
+        'medium'  => 'Vazirmatn-Medium.ttf',
+        'bold'    => 'Vazirmatn-Bold.ttf',
+        'persian' => 'Vazirmatn-Medium.ttf',
     ];
     $filename = $weightMap[$weight] ?? $weightMap['regular'];
     $bundled = INFOCARD_FONT_DIR . DIRECTORY_SEPARATOR . $filename;
@@ -72,21 +88,7 @@ function infocard_resolve_font(string $weight = 'regular'): ?string
     }
 
 
-    if ($weight === 'persian') {
-        $candidates = [
-            (defined('REFACTORED_LEGACY_ROOT') ? REFACTORED_LEGACY_ROOT : __DIR__)
-                . DIRECTORY_SEPARATOR . 'installer' . DIRECTORY_SEPARATOR . 'fonts'
-                . DIRECTORY_SEPARATOR . 'Arad-MediumDots2.ttf',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
-        ];
-        foreach ($candidates as $c) {
-            if (is_file($c) && is_readable($c)) return $c;
-        }
-        return null;
-    }
-
-
-    foreach (['JetBrainsMono-Regular.ttf', 'JetBrainsMono-Medium.ttf', 'JetBrainsMono-Bold.ttf'] as $alt) {
+    foreach (['Vazirmatn-Regular.ttf', 'Vazirmatn-Medium.ttf', 'Vazirmatn-Bold.ttf'] as $alt) {
         $altPath = INFOCARD_FONT_DIR . DIRECTORY_SEPARATOR . $alt;
         if (is_file($altPath) && is_readable($altPath)) {
             return $altPath;
@@ -96,37 +98,25 @@ function infocard_resolve_font(string $weight = 'regular'): ?string
 
     $systemSets = [
         'bold' => [
-            '/usr/share/fonts/truetype/cascadia-code/CascadiaMono.ttf',
-            '/usr/share/fonts/truetype/firacode/FiraCode-Bold.ttf',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf',
-            '/usr/share/fonts/truetype/liberation/LiberationMono-Bold.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf',
         ],
         'medium' => [
-            '/usr/share/fonts/truetype/firacode/FiraCode-Medium.ttf',
-            '/usr/share/fonts/truetype/cascadia-code/CascadiaMono.ttf',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSansMono-Bold.ttf',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
         ],
         'regular' => [
-            '/usr/share/fonts/truetype/cascadia-code/CascadiaMono.ttf',
-            '/usr/share/fonts/truetype/firacode/FiraCode-Regular.ttf',
-            '/usr/share/fonts/truetype/dejavu/DejaVuSansMono.ttf',
-            '/usr/share/fonts/truetype/liberation/LiberationMono-Regular.ttf',
+            '/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf',
+            '/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf',
         ],
     ];
+    $systemSets['persian'] = $systemSets['medium'];
     foreach ($systemSets[$weight] ?? $systemSets['regular'] as $candidate) {
         if (is_file($candidate) && is_readable($candidate)) {
             return $candidate;
         }
     }
 
-
-    $arad = (defined('REFACTORED_LEGACY_ROOT') ? REFACTORED_LEGACY_ROOT : __DIR__)
-        . DIRECTORY_SEPARATOR . 'installer' . DIRECTORY_SEPARATOR . 'fonts'
-        . DIRECTORY_SEPARATOR . 'Arad-MediumDots2.ttf';
-    if (is_file($arad) && is_readable($arad)) {
-        return $arad;
-    }
     return null;
 }
 

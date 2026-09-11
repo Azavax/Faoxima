@@ -11,15 +11,14 @@ final class CategoriesHandler extends BaseHandler
     {
         $this->requireMethod('GET');
 
-        if (($this->setting['statuscategorygenral'] ?? '') === 'offcategorys') {
-            FaoximaResponse::ok([]);
-        }
-
         $codePanel = $this->resolveCountryId();
         if ($codePanel === '') {
             FaoximaResponse::badRequest('country_id is required');
         }
         $panel = $this->loadPanelByCode($codePanel);
+        if (!panel_feature_enabled($panel, 'categorygeneral')) {
+            FaoximaResponse::ok([]);
+        }
 
         $allCategories = FaoximaDb::fetchAll('SELECT * FROM category');
 
@@ -28,8 +27,8 @@ final class CategoriesHandler extends BaseHandler
         foreach ($allCategories as $cat) {
             $count = (int) FaoximaDb::fetchScalar(
                 "SELECT COUNT(*) FROM product
-                  WHERE (Location = :location OR Location = '/all')
-                    AND category = :category
+                  WHERE (FIND_IN_SET(:location, Location) > 0 OR Location = '/all')
+                    AND FIND_IN_SET(:category, category) > 0
                     AND (agent = :agent OR agent = 'all')",
                 [
                     ':location' => $panel['name_panel'],

@@ -6,7 +6,9 @@ ignore_user_abort(true);
 @ini_set('memory_limit', '128M');
 
 date_default_timezone_set('Asia/Tehran');
-@putenv('TZ=Asia/Tehran');
+if (function_exists('putenv') && !preg_match('/(^|,)\s*putenv\s*(,|$)/', strtolower((string) ini_get('disable_functions')))) {
+    @putenv('TZ=Asia/Tehran');
+}
 
 
 $lockFile = __DIR__ . '/cron.lock';
@@ -51,6 +53,13 @@ if (is_readable($functionBootstrap)) {
     }
 }
 
+if (!$bootstrapLoaded) {
+    @unlink($lockFile);
+    echo "SKIP (bootstrap unavailable)\n";
+    exit;
+}
+
+
 
 if (isset($conn) && $conn instanceof mysqli) {
     try { $conn->close(); } catch (Throwable $e) {}
@@ -87,8 +96,28 @@ $basePath = rtrim($parts['path'] ?? '', '/');
 
 $buildCronUrl = static function (string $script) use ($scheme, $hostOnly, $basePath): string {
     $script = ltrim($script, '/');
-    $path   = $basePath === '' ? '' : $basePath . '/';
-    return $scheme . '://' . $hostOnly . $path . 'cronbot/' . $script;
+    return $scheme . '://' . $hostOnly . $basePath . '/cronbot/' . $script;
+};
+
+$rxDetectLoopback = static function (): ?array {
+    $cacheFile = __DIR__ . '/loopback_port.cache';
+    if (is_file($cacheFile) && (time() - (int) @filemtime($cacheFile)) < 300) {
+        $cached = @json_decode((string) @file_get_contents($cacheFile), true);
+        if (is_array($cached) || $cached === null) {
+            return is_array($cached) ? $cached : null;
+        }
+    }
+    foreach ([80 => 'http', 443 => 'https', 8080 => 'http'] as $port => $proto) {
+        $fp = @fsockopen('127.0.0.1', $port, $errno, $errstr, 0.3);
+        if ($fp !== false) {
+            fclose($fp);
+            $result = ['port' => $port, 'scheme' => $proto];
+            @file_put_contents($cacheFile, json_encode($result));
+            return $result;
+        }
+    }
+    @file_put_contents($cacheFile, json_encode(null));
+    return null;
 };
 
 if (!defined('APP_ROOT_PATH')) {
@@ -108,9 +137,28 @@ if (function_exists('ensureCronRuntimeStateTable')) {
 $runtimeState = function_exists('loadCronRuntimeState') ? loadCronRuntimeState($pdo) : [];
 
 
+$rxCronbotDir = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'cronbot';
+if (is_dir($rxCronbotDir)) {
+    foreach ((array) @glob($rxCronbotDir . '/*.lock') as $rxStale) {
+        if ((time() - (int) @filemtime($rxStale)) > 120) { @unlink($rxStale); }
+    }
+    foreach (['_db_unavailable.flag', '_db_unavailable.log', '_missing_files.log', 'host_profile.json'] as $rxLegacy) {
+        $rxLegacyPath = $rxCronbotDir . DIRECTORY_SEPARATOR . $rxLegacy;
+        if (is_file($rxLegacyPath) && (time() - (int) @filemtime($rxLegacyPath)) > 120) { @unlink($rxLegacyPath); }
+    }
+    if (is_dir($rxCronbotDir . DIRECTORY_SEPARATOR . '.dbslots')) {
+        foreach ((array) @glob($rxCronbotDir . '/.dbslots/*') as $rxSlot) { @unlink($rxSlot); }
+        @rmdir($rxCronbotDir . DIRECTORY_SEPARATOR . '.dbslots');
+    }
+}
+
 $jobHours = [];
-$rxBroadcastWorkers = 3;
-$rxPaymentWorkers   = 2;
+$rxHostProfile = [];
+if (function_exists('rx_host_profile')) {
+    try { $rxHostProfile = rx_host_profile(); } catch (Throwable $e) { $rxHostProfile = []; }
+}
+$rxBroadcastWorkers = max(1, (int) ($rxHostProfile['broadcast_workers'] ?? 3));
+$rxPaymentWorkers   = max(1, (int) ($rxHostProfile['payment_workers'] ?? 2));
 $jobWorkerCounts = [];
 try {
     $rxSettingRow = function_exists('select') ? select('setting', '*') : null;
@@ -129,7 +177,6 @@ $jobWorkerCounts = [
     'sendmessage'   => $rxBroadcastWorkers,
     'notifications' => $rxBroadcastWorkers,
     'plisio'        => $rxPaymentWorkers,
-    'iranpay1'      => $rxPaymentWorkers,
     'croncard'      => $rxPaymentWorkers,
 ];
 
@@ -152,7 +199,7 @@ $shouldRun = static function (string $jobKey, array $schedule, int $minute, int 
     } elseif ($unit === 'hour') {
         $aligned = ($minute === 0 && $hour % $value === 0);
     } elseif ($unit === 'day') {
-        // جابِ روزانه رأس ساعتِ تنظیم‌شده شلیک می‌شود (پیش‌فرض ۰ = نیمه‌شب).
+        
         $aligned = ($minute === 0 && $hour === $targetHour && $dayOfYear % $value === 0);
     }
     if (!$aligned) {
@@ -226,8 +273,9 @@ $dispatchAsync = static function (array $urls, bool $useLoopback): array {
     foreach ($handles as $ch) {
         $code = (int) curl_getinfo($ch, CURLINFO_HTTP_CODE);
         $err  = curl_error($ch);
-        if ($err !== '' || $code < 200 || $code >= 400) {
-            $url = $handleUrls[(int) $ch] ?? null;
+        $url = $handleUrls[(int) $ch] ?? null;
+        $isFail = ($err !== '' || $code < 200 || $code >= 400);
+        if ($isFail) {
             if ($url !== null) {
                 $failed[] = $url;
             }
@@ -238,6 +286,30 @@ $dispatchAsync = static function (array $urls, bool $useLoopback): array {
     curl_multi_close($multi);
     return $failed;
 };
+
+$rxDispatchCli = static function (string $script, int $worker, int $workers): void {
+    $file = realpath(__DIR__ . '/../cronbot/' . ltrim($script, '/'));
+    if ($file === false || !is_file($file)) {
+        return;
+    }
+    $phpBin = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+    if (DIRECTORY_SEPARATOR === '\\') {
+        $cmd = 'set "BROADCAST_WORKER_ID=' . $worker . '" && set "BROADCAST_WORKERS=' . $workers . '" && '
+             . escapeshellarg($phpBin) . ' ' . escapeshellarg($file);
+        @pclose(@popen('start /B cmd /C "' . $cmd . '"', 'r'));
+    } else {
+        @exec('BROADCAST_WORKER_ID=' . $worker . ' BROADCAST_WORKERS=' . $workers . ' '
+            . escapeshellarg($phpBin) . ' ' . escapeshellarg($file) . ' > /dev/null 2>&1 &');
+    }
+};
+
+$rxIsCli = (php_sapi_name() === 'cli');
+$rxCliDispatched = 0;
+
+$rxLegacyLoopbackFlag = __DIR__ . '/use_loopback.flag';
+if (is_file($rxLegacyLoopbackFlag)) {
+    @unlink($rxLegacyLoopbackFlag);
+}
 
 
 $dueUrls = [];
@@ -258,7 +330,17 @@ if ($bootstrapLoaded && function_exists('getCronJobDefinitions')) {
         }
 
         $rxN = (int) ($jobWorkerCounts[$key] ?? 1);
-        if ($rxN > 1) {
+        if ($rxIsCli) {
+            if ($rxN > 1) {
+                for ($rxI = 0; $rxI < $rxN; $rxI++) {
+                    $rxDispatchCli($definition['script'], $rxI, $rxN);
+                    $rxCliDispatched++;
+                }
+            } else {
+                $rxDispatchCli($definition['script'], 0, 1);
+                $rxCliDispatched++;
+            }
+        } elseif ($rxN > 1) {
             $rxBase = $buildCronUrl($definition['script']);
             $rxSep  = (strpos($rxBase, '?') === false) ? '?' : '&';
             for ($rxI = 0; $rxI < $rxN; $rxI++) {
@@ -285,24 +367,34 @@ if ($bootstrapLoaded && function_exists('getCronJobDefinitions')) {
     }
     foreach ($extraScripts as $extraScript) {
         if (!in_array($extraScript, $definedScripts, true)) {
-            $dueUrls[] = $buildCronUrl($extraScript);
+            if ($rxIsCli) {
+                $rxDispatchCli($extraScript, 0, 1);
+                $rxCliDispatched++;
+            } else {
+                $dueUrls[] = $buildCronUrl($extraScript);
+            }
         }
     }
 }
 
-if (!empty($dueUrls)) {
-    // راه ۱: DNS عمومی. هر جابی که شکست خورد، خودکار با راه ۲ (loopback) دوباره فرستاده می‌شود.
-    $loopbackFlag  = __DIR__ . '/use_loopback.flag';
-    $forceLoopback = is_file($loopbackFlag);
-    $failed = $dispatchAsync($dueUrls, $forceLoopback);
-    if (!$forceLoopback && !empty($failed)) {
-        $stillFailed = $dispatchAsync($failed, true);
-        if (count($stillFailed) < count($failed)) {
-            @touch($loopbackFlag);
+if (!$rxIsCli && !empty($dueUrls)) {
+    $failed = $dispatchAsync($dueUrls, false);
+    if (!empty($failed)) {
+        $rxLoopback = $rxDetectLoopback();
+        if (is_array($rxLoopback)) {
+            $rxRebuilt = [];
+            foreach ($failed as $rxFailedUrl) {
+                $rxParts = parse_url($rxFailedUrl);
+                $rxPath  = $rxParts['path'] ?? '/';
+                $rxQuery = isset($rxParts['query']) ? '?' . $rxParts['query'] : '';
+                $rxRebuilt[] = $rxLoopback['scheme'] . '://127.0.0.1:' . $rxLoopback['port'] . $rxPath . $rxQuery;
+            }
+            $dispatchAsync($rxRebuilt, true);
         }
     }
 }
 
 @unlink($lockFile);
-echo "OK " . date('Y-m-d H:i:s') . " (Asia/Tehran) | dispatched=" . count($dueUrls) . "\n";
+$rxDispatchedTotal = $rxIsCli ? $rxCliDispatched : count($dueUrls);
+echo "OK " . date('Y-m-d H:i:s') . " (Asia/Tehran) | dispatched=" . $rxDispatchedTotal . "\n";
 

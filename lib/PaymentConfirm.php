@@ -1,25 +1,6 @@
 <?php
 
 
-if (!function_exists('rx_payment_miniapp_button_kb')) {
-    function rx_payment_miniapp_button_kb(): ?string {
-        global $usernamebot, $domainhosts;
-        $bot = isset($usernamebot) ? ltrim(trim((string)$usernamebot), '@') : '';
-
-        $host = isset($domainhosts) ? trim((string)$domainhosts) : '';
-        $host = rtrim(preg_replace('#^https?://#', '', $host), '/');
-        if ($host === '') return null;
-        $webAppUrl = 'https://' . $host . '/app/';
-
-        return json_encode([
-            'inline_keyboard' => [
-                [['text' => '🚀 بازکردن مینی‌اپ', 'web_app' => ['url' => $webAppUrl]]],
-            ],
-        ], JSON_UNESCAPED_UNICODE);
-    }
-}
-
-
 if (!function_exists('rx_payment_retry_kb')) {
     function rx_payment_retry_kb(): ?string {
         global $usernamebot, $domainhosts;
@@ -79,6 +60,9 @@ if (!function_exists('payment_confirm_paid')) {
         if (!is_array($report)) {
             return ['ok' => false, 'reason' => 'report missing after update'];
         }
+        if (function_exists('rx_redis_del') && isset($report['id_user'])) {
+            rx_redis_del('faoxima:paystatus:' . $orderId . ':' . (string)$report['id_user']);
+        }
 
         if (function_exists('crypto_record_verified_hash')) {
             $methodLower = strtolower((string)($report['Payment_Method'] ?? ''));
@@ -116,8 +100,11 @@ if (!function_exists('payment_confirm_paid')) {
             }
         }
 
+        $cashbackEligible = !function_exists('rx_cashbackEligibleForKey')
+            || rx_cashbackEligibleForKey($cashbackKey, $balanceUser['register'] ?? null, $report['id_invoice'] ?? null, $balanceUser['id'] ?? null, $report['id_order'] ?? null);
+
         $cashbackAmount = 0;
-        if ($cashbackPercent !== '' && $cashbackPercent !== '0') {
+        if ($cashbackEligible && $cashbackPercent !== '' && $cashbackPercent !== '0') {
             $cashbackAmount = (int) floor(((int)($report['price'] ?? 0) * (int)$cashbackPercent) / 100);
             $newBalance = (int)($balanceUser['Balance'] ?? 0) + $cashbackAmount;
             update('user', 'Balance', $newBalance, 'id', $balanceUser['id']);
@@ -132,40 +119,27 @@ if (!function_exists('payment_confirm_paid')) {
         }
 
 
-        if (function_exists('telegram')) {
-            $balanceNow = (int)select('user', 'Balance', 'id', $userId, 'select')['Balance'];
-            $priceFmt   = number_format((int)($report['price'] ?? 0));
-            $balanceFmt = number_format($balanceNow);
-            $userText = "✅ <b>پرداخت شما با موفقیت تایید شد</b>\n\n"
-                      . "🛒 کد فاکتور: <code>" . htmlspecialchars($report['id_order']) . "</code>\n"
-                      . "💰 مبلغ: <b>{$priceFmt}</b> تومان\n"
-                      . "💎 موجودی جدید: <b>{$balanceFmt}</b> تومان";
-            $kb = rx_payment_miniapp_button_kb();
-            telegram('sendmessage', array_filter([
-                'chat_id'      => $userId,
-                'text'         => $userText,
-                'parse_mode'   => 'HTML',
-                'reply_markup' => $kb,
-            ]));
-        }
 
 
         $method = (string)($reportData['method'] ?? ($report['Payment_Method'] ?? 'gateway'));
         $extraLines = $reportData['extra_lines'] ?? [];
         $linkLabel  = (string)($reportData['link_label'] ?? '');
         $linkUrl    = (string)($reportData['link_url']   ?? '');
+        $rlm = "\xE2\x80\x8F";
+        $usernameEsc = htmlspecialchars((string)($balanceUser['username'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
+        $userIdEsc = htmlspecialchars((string)($balanceUser['id'] ?? ''), ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8');
 
         $textReport = "💵 پرداخت جدید\n" .
-            "- 👤 نام کاربری کاربر : @{$balanceUser['username']}\n" .
-            "- ‏🆔آیدی عددی کاربر : {$balanceUser['id']}\n" .
-            "- 💸 مبلغ تراکنش {$report['price']}\n";
+            "<blockquote>- 👤 نام کاربری کاربر : @{$usernameEsc}</blockquote>\n" .
+            "<blockquote>- 👤 آیدی عددی کاربر : {$rlm}<code>{$userIdEsc}</code></blockquote>\n" .
+            "<blockquote>- 💸 مبلغ تراکنش {$report['price']}</blockquote>\n";
         if ($linkLabel !== '' && $linkUrl !== '') {
-            $textReport .= "- 🔗 <a href=\"{$linkUrl}\">{$linkLabel}</a>\n";
+            $textReport .= "<blockquote>- 🔗 <a href=\"{$linkUrl}\">{$linkLabel}</a></blockquote>\n";
         }
         foreach ((array)$extraLines as $line) {
-            $textReport .= '- ' . $line . "\n";
+            $textReport .= "<blockquote>- {$line}</blockquote>\n";
         }
-        $textReport .= "- 💳 روش پرداخت :  {$method}";
+        $textReport .= "<blockquote>- 💳 روش پرداخت : {$method}</blockquote>";
 
         $channelReport = is_array($setting ?? null) ? (string)($setting['Channel_Report'] ?? '') : '';
         if ($channelReport !== '' && function_exists('telegram')) {
@@ -236,6 +210,9 @@ if (!function_exists('payment_mark_expired')) {
         if ($status === 'paid') return false;
 
         update('Payment_report', 'payment_Status', 'expire', 'id_order', $orderId);
+        if (function_exists('rx_redis_del') && isset($report['id_user'])) {
+            rx_redis_del('faoxima:paystatus:' . $orderId . ':' . (string)$report['id_user']);
+        }
 
         if (!function_exists('telegram')) return true;
 

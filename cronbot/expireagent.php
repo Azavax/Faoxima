@@ -7,6 +7,10 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../botapi.php';
 require_once __DIR__ . '/../function.php';
 
+if (!rx_cron_db_ready('expireagent')) {
+    return;
+}
+
 $setting = select("setting", "*");
 $otherreport = select("topicid","idreport","report","otherreport","select")['idreport'];
 
@@ -27,8 +31,8 @@ foreach ($rows as $user) {
     sendmessage($user['id'],$textexpire, null, 'HTML');
     $textreport = "📌 گروه کاربری کاربر بدلیل انقضای زمان نمایندگی  به f تغییر پیدا کرد
 
-آیدی عددی کاربر :  {$user['id']}
-نام کاربری کاربر :‌ {$user['username']}";
+<blockquote>آیدی عددی کاربر :  {$user['id']}</blockquote>
+<blockquote>نام کاربری کاربر :‌ {$user['username']}</blockquote>";
     if (strlen($setting['Channel_Report']) > 0) {
         telegram('sendmessage',[
             'chat_id' => $setting['Channel_Report'],

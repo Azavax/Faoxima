@@ -1,15 +1,18 @@
 <?php
 date_default_timezone_set('Asia/Tehran');
-@putenv('TZ=Asia/Tehran');
+if (function_exists('putenv') && !preg_match('/(^|,)\s*putenv\s*(,|$)/', strtolower((string) ini_get('disable_functions')))) {
+    @putenv('TZ=Asia/Tehran');
+}
 ini_set('display_errors', 0);
 ini_set('display_startup_errors', 0);
 error_reporting(E_ALL);
 
-
 $rxBackupLock = __DIR__ . '/backup.lock';
 $rxBackupFh = @fopen($rxBackupLock, 'c');
 if ($rxBackupFh === false) {
-    if (is_file($rxBackupLock) && (time() - (int) @filemtime($rxBackupLock)) < 600) { exit; }
+    if (is_file($rxBackupLock) && (time() - (int) @filemtime($rxBackupLock)) < 600) {
+        exit;
+    }
     @file_put_contents($rxBackupLock, getmypid() . '|' . date('Y-m-d H:i:s'));
     register_shutdown_function(static function () use ($rxBackupLock) { @unlink($rxBackupLock); });
 } else {
@@ -160,6 +163,46 @@ try {
         $canExec = true;
         return $canExec;
     }
+    function runMysqldumpWithFallback($dbhost, $usernamedb, $passworddb, $dbname, $tmpDump, $tmpDumpErr)
+    {
+        $baseArgs = sprintf(
+            '-h %s -u %s --no-tablespaces %s',
+            escapeshellarg((string)($dbhost !== '' ? $dbhost : 'localhost')),
+            escapeshellarg((string)$usernamedb),
+            escapeshellarg((string)$dbname)
+        );
+        $envPrefix = sprintf('MYSQL_PWD=%s', escapeshellarg((string)$passworddb));
+
+        $attempts = [
+            sprintf('%s mysqldump %s > %s 2> %s', $envPrefix, $baseArgs, escapeshellarg($tmpDump), escapeshellarg($tmpDumpErr)),
+            sprintf('%s mysqldump --ssl-mode=DISABLED %s > %s 2> %s', $envPrefix, $baseArgs, escapeshellarg($tmpDump), escapeshellarg($tmpDumpErr)),
+            sprintf('%s mysqldump --ssl=0 %s > %s 2> %s', $envPrefix, $baseArgs, escapeshellarg($tmpDump), escapeshellarg($tmpDumpErr)),
+        ];
+
+        $lastOutput = [];
+        $lastReturnVar = 1;
+        $lastStderr = '';
+
+        foreach ($attempts as $command) {
+            @unlink($tmpDump);
+            @unlink($tmpDumpErr);
+            $output = [];
+            $return_var = 0;
+            exec($command, $output, $return_var);
+            $stderrOutput = is_file($tmpDumpErr) ? (string) @file_get_contents($tmpDumpErr) : '';
+            $lastOutput = $output;
+            $lastReturnVar = $return_var;
+            $lastStderr = $stderrOutput;
+
+            if ($return_var === 0 && file_exists($tmpDump) && filesize($tmpDump) > 0) {
+                return ['success' => true, 'output' => $output, 'return_var' => $return_var, 'stderr' => $stderrOutput];
+            }
+        }
+
+        @unlink($tmpDump);
+        return ['success' => false, 'output' => $lastOutput, 'return_var' => $lastReturnVar, 'stderr' => $lastStderr];
+    }
+
     function createSqlDump(?PDO $pdo, $databaseName, $filePath)
     {
         if (!($pdo instanceof PDO)) {
@@ -254,29 +297,16 @@ try {
     $zip_file_name = 'backup_' . date("Y-m-d") . '.zip';
     $dumpCreated = false;
     $tmpDump = $backup_file_name . '.tmp';
-    $command = sprintf(
-        'MYSQL_PWD=%s mysqldump -h localhost -u %s --no-tablespaces %s > %s',
-        escapeshellarg((string)$passworddb),
-        escapeshellarg((string)$usernamedb),
-        escapeshellarg((string)$dbname),
-        escapeshellarg($tmpDump)
-    );
+    $tmpDumpErr = $tmpDump . '.err';
     if (isExecAvailable()) {
-        $output = [];
-        $return_var = 0;
-        exec($command, $output, $return_var);
-        if ($return_var === 0 && file_exists($tmpDump) && filesize($tmpDump) > 0) {
+        $dumpResult = runMysqldumpWithFallback($dbhost, $usernamedb, $passworddb, $dbname, $tmpDump, $tmpDumpErr);
+        if ($dumpResult['success']) {
             @rename($tmpDump, $backup_file_name);
             $dumpCreated = file_exists($backup_file_name) && filesize($backup_file_name) > 0;
         } else {
             @unlink($tmpDump);
         }
-        if (!$dumpCreated) {
-            logMessage('ERROR', 'mysqldump command failed', [
-                'return_code' => $return_var,
-                'output' => implode("\n", $output)
-            ]);
-        }
+        @unlink($tmpDumpErr);
     }
     if (!$dumpCreated) {
         $dumpCreated = createSqlDump($pdoInstance, $dbname, $backup_file_name);
@@ -285,6 +315,7 @@ try {
         logMessage('CRITICAL', 'Failed to create database backup using any method');
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
+            'parse_mode' => 'HTML',
             'message_thread_id' => $reportbackup,
             'text' => "❌❌❌❌❌❌خطا در بکاپ گرفتن لطفا به پشتیبانی اطلاع دهید",
         ]);
@@ -294,6 +325,7 @@ try {
         logMessage('ERROR', 'Backup file is empty or does not exist', ['file' => $backup_file_name]);
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
+            'parse_mode' => 'HTML',
             'message_thread_id' => $reportbackup,
             'text' => "❌ فایل بکاپ ایجاد شده خالی است. لطفا بررسی شود.",
         ]);
@@ -306,6 +338,7 @@ try {
         logMessage('CRITICAL', 'ZipArchive class not available');
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
+            'parse_mode' => 'HTML',
             'message_thread_id' => $reportbackup,
             'text' => "❌ ماژول ZipArchive در هاست فعال نیست و امکان ارسال بکاپ وجود ندارد.",
         ]);
@@ -329,6 +362,7 @@ try {
             logMessage('ERROR', 'Zip file is empty or does not exist', ['file' => $zip_file_name]);
             telegram('sendmessage', [
                 'chat_id' => $setting['Channel_Report'],
+                'parse_mode' => 'HTML',
                 'message_thread_id' => $reportbackup,
                 'text' => "❌ فایل فشرده‌ی بکاپ ایجاد نشد یا خالی است.",
             ]);
@@ -343,6 +377,7 @@ try {
 
         $sendResult = telegram('sendDocument', [
             'chat_id' => $setting['Channel_Report'],
+            'parse_mode' => 'HTML',
             'message_thread_id' => $reportbackup,
             'document' => new CURLFile($zip_file_name),
             'caption' => "📦 خروجی دیتابیس ربات اصلی\n\nبرای حمایت از این پروژه، لطفاً در گیت‌هاب به آن ستاره (Star) دهید.\n⭐ https://github.com/Mmd-Amir/Faoxima",

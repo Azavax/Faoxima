@@ -114,3 +114,129 @@ register_shutdown_function(function() {
         rx_log_event('HTTP_5XX', 'Request finished with server error status', ['status' => $status]);
     }
 });
+
+if (!function_exists('rx_strip_php_open')) {
+    function rx_strip_php_open($raw)
+    {
+        $raw = (string) $raw;
+        if (strncmp($raw, "\xEF\xBB\xBF", 3) === 0) {
+            $raw = substr($raw, 3);
+        }
+        $raw = ltrim($raw);
+        if (strncasecmp($raw, '<?php', 5) === 0) {
+            $raw = substr($raw, 5);
+            $raw = preg_replace('/^[ \t]*\r?\n/', '', $raw, 1);
+        } elseif (strncmp($raw, '<?=', 3) !== 0 && strncmp($raw, '<?', 2) === 0) {
+            $raw = substr($raw, 2);
+            $raw = preg_replace('/^[ \t]*\r?\n/', '', $raw, 1);
+        }
+        return $raw;
+    }
+}
+
+if (!function_exists('rx_compile_section')) {
+    function rx_compile_section($dir)
+    {
+        $manifestPath = $dir . DIRECTORY_SEPARATOR . 'manifest.php';
+        $parts = require $manifestPath;
+        if (!is_array($parts)) {
+            throw new RuntimeException('Invalid manifest: ' . $manifestPath);
+        }
+
+        $compiled = $dir . DIRECTORY_SEPARATOR . '.compiled.php';
+        $mapPath  = $dir . DIRECTORY_SEPARATOR . '.compiled.map';
+
+        $partPaths = [];
+        $newest = (int) @filemtime($manifestPath);
+        $sourceHashInput = '';
+        foreach ($parts as $part) {
+            $partPath = $dir . DIRECTORY_SEPARATOR . $part;
+            if (!is_file($partPath)) {
+                rx_log_event('RX_MISSING_PART', $partPath, ['module' => basename($dir)]);
+                throw new RuntimeException('Missing refactored part: ' . $partPath);
+            }
+            $partPaths[$part] = $partPath;
+            $mtime = (int) @filemtime($partPath);
+            if ($mtime > $newest) {
+                $newest = $mtime;
+            }
+            $sourceHashInput .= $part . ':' . md5_file($partPath) . ';';
+        }
+        $sourceHash = md5($sourceHashInput);
+
+        $cachedMap = null;
+        if (is_file($mapPath)) {
+            $decodedMap = json_decode((string) @file_get_contents($mapPath), true);
+            if (is_array($decodedMap)) {
+                $cachedMap = $decodedMap;
+            }
+        }
+        $cachedHash = is_array($cachedMap) && isset($cachedMap['_source_hash']) ? (string) $cachedMap['_source_hash'] : null;
+
+        if ($cachedHash === $sourceHash && is_file($compiled)
+            && ($newest <= 0 || (int) @filemtime($compiled) >= $newest)) {
+            return ['path' => $compiled, 'body' => null];
+        }
+
+        $body = '';
+        $map = ['_source_hash' => $sourceHash, '_entries' => []];
+        $lineAt = 2;
+        foreach ($partPaths as $part => $partPath) {
+            $stripped = rx_strip_php_open((string) file_get_contents($partPath));
+            $map['_entries'][] = ['start' => $lineAt, 'file' => $part];
+            $body .= $stripped;
+            $lineAt += substr_count($stripped, "\n");
+        }
+        $code = "<?php\n" . $body;
+
+        $written = false;
+        $tmp = $compiled . '.' . getmypid() . '.' . substr(md5($code), 0, 8) . '.tmp';
+        if (@file_put_contents($tmp, $code, LOCK_EX) !== false) {
+            if (@rename($tmp, $compiled)) {
+                @chmod($compiled, 0644);
+                @file_put_contents($mapPath, json_encode($map), LOCK_EX);
+                if (function_exists('opcache_invalidate')) {
+                    @opcache_invalidate($compiled, true);
+                }
+                $written = true;
+            } else {
+                @unlink($tmp);
+            }
+        }
+
+        if ($written) {
+            return ['path' => $compiled, 'body' => $body];
+        }
+        return ['path' => null, 'body' => $body];
+    }
+}
+
+if (!function_exists('rx_map_compiled_line')) {
+    function rx_map_compiled_line($dir, $line)
+    {
+        $mapPath = $dir . DIRECTORY_SEPARATOR . '.compiled.map';
+        if (!is_file($mapPath)) {
+            return null;
+        }
+        $map = json_decode((string) @file_get_contents($mapPath), true);
+        if (!is_array($map)) {
+            return null;
+        }
+        $entries = isset($map['_entries']) && is_array($map['_entries']) ? $map['_entries'] : $map;
+        $found = null;
+        foreach ($entries as $entry) {
+            if (!isset($entry['start'])) {
+                continue;
+            }
+            if ((int) $entry['start'] <= (int) $line) {
+                $found = $entry;
+            } else {
+                break;
+            }
+        }
+        if ($found === null) {
+            return null;
+        }
+        return ['file' => $found['file'], 'line' => ((int) $line - (int) $found['start']) + 2];
+    }
+}

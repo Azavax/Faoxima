@@ -11,7 +11,13 @@ if (!defined('FAOXIMA_SKIP_BOTAPI_ROUTER')) {
 }
 session_start();
 require_once __DIR__ . '/../config.php';
+require_once __DIR__ . '/../jdf.php';
 require_once __DIR__ . '/lib/icons.php';
+require_once __DIR__ . '/lib/pagination.php';
+require_once __DIR__ . '/lib/bulk_delete.php';
+require_once __DIR__ . '/lib/date_filter.php';
+require_once __DIR__ . '/lib/search_filter.php';
+require_once __DIR__ . '/lib/compact_badges.php';
 
 $query = $pdo->prepare("SELECT * FROM admin WHERE username=:username");
 $query->bindValue(":username", $_SESSION["user"] ?? '', PDO::PARAM_STR);
@@ -24,6 +30,21 @@ if (!isset($_SESSION["user"]) || !$adminRow) {
 
 $flash = ['ok' => '', 'err' => ''];
 
+$discountSectionOptions = [
+    'all'    => 'همه بخش‌ها',
+    'buy'    => 'خرید سرویس',
+    'extend' => 'تمدید سرویس',
+    'volume' => 'حجم اضافه',
+    'time'   => 'زمان اضافه',
+    'charge' => 'شارژ کیف پول',
+];
+$discountAgentOptions = [
+    'allusers' => 'همه کاربران',
+    'f'        => 'فقط کاربر عادی',
+    'n'        => 'فقط نمایندگان',
+    'n2'       => 'فقط نمایندگان پیشرفته',
+];
+
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $action = $_POST['_action'] ?? '';
@@ -31,10 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     if ($action === 'add') {
         $code    = trim((string)($_POST['codeDiscount'] ?? ''));
         $vtype   = (string)($_POST['type']            ?? 'percent');
-        $section = (string)($_POST['section']         ?? 'all');
         $value   = (string)($_POST['price']           ?? '0');
         $limit   = (int)($_POST['limitDiscount']      ?? 0);
-        $agent   = (string)($_POST['agent']           ?? 'allusers');
         $first   = !empty($_POST['usefirst']) ? '1' : '0';
         $oneper  = !empty($_POST['useuser'])  ? '1' : '0';
         $target  = trim((string)($_POST['target_user'] ?? ''));
@@ -55,9 +74,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             $errors[] = 'نوع تخفیف نامعتبر است.';
         }
 
-        if (!in_array($section, ['all', 'buy', 'extend', 'volume', 'time', 'charge'], true)) {
+        $sectionList = array_values(array_unique(array_filter(array_map('trim', explode(',', (string)($_POST['section_csv'] ?? 'all'))))));
+        if (empty($sectionList)) {
+            $errors[] = 'حداقل یک بخش کد باید انتخاب شود.';
+        } elseif (array_diff($sectionList, array_keys($discountSectionOptions)) !== []) {
             $errors[] = 'بخش کد نامعتبر است.';
         }
+        $section = implode(',', $sectionList);
 
 
         $numericValue = (float)$value;
@@ -81,12 +104,38 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         }
 
 
-        if (!in_array($agent, ['allusers', 'f', 'n', 'n2'], true)) {
+        $agentList = array_values(array_unique(array_filter(array_map('trim', explode(',', (string)($_POST['agent_csv'] ?? 'allusers'))))));
+        if (empty($agentList)) {
+            $errors[] = 'گروه هدف نامعتبر است.';
+        } elseif (array_diff($agentList, array_keys($discountAgentOptions)) !== []) {
             $errors[] = 'گروه هدف نامعتبر است.';
         }
+        $agent = implode(',', $agentList);
 
         if ($target !== '' && !ctype_digit($target)) {
             $errors[] = 'آیدی عددی کاربر هدف نامعتبر است.';
+        }
+
+        $targetingMode = (string)($_POST['targeting_mode'] ?? 'none');
+        if (!in_array($targetingMode, ['none', 'category', 'panel'], true)) {
+            $errors[] = 'نحوه هدف‌گیری نامعتبر است.';
+        }
+        $codeCategorySave = 'all';
+        $codePanelTargeted = '/all';
+        if ($targetingMode === 'category') {
+            $categoryList = array_values(array_filter(array_map('trim', explode(',', (string)($_POST['code_category_csv'] ?? '')))));
+            if (empty($categoryList)) {
+                $errors[] = 'حداقل یک دسته‌بندی باید انتخاب شود.';
+            } else {
+                $codeCategorySave = implode(',', $categoryList);
+            }
+        } elseif ($targetingMode === 'panel') {
+            $panelList = array_values(array_filter(array_map('trim', explode(',', (string)($_POST['code_panel_csv'] ?? '')))));
+            if (empty($panelList)) {
+                $errors[] = 'حداقل یک پنل باید انتخاب شود.';
+            } else {
+                $codePanelTargeted = implode(',', $panelList);
+            }
         }
 
 
@@ -107,8 +156,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 $expiry = $expDays > 0 ? (string)(time() + $expDays * 86400) : '0';
                 $stmt = $pdo->prepare(
                     "INSERT INTO DiscountSell
-                     (codeDiscount, price, limitDiscount, agent, usefirst, useuser, code_product, code_panel, time, type, usedDiscount, section, value_type, target_user, status)
-                     VALUES (:c, :p, :l, :a, :f, :u, 'all', '/all', :t, :sec, '0', :sec2, :vt, :tg, 'active')"
+                     (codeDiscount, price, limitDiscount, agent, usefirst, useuser, code_product, code_panel, time, type, usedDiscount, section, value_type, target_user, status, targeting_mode, code_category)
+                     VALUES (:c, :p, :l, :a, :f, :u, 'all', :cpanel, :t, :sec, '0', :sec2, :vt, :tg, 'active', :tm, :ccat)"
                 );
                 $stmt->execute([
                     ':c'   => $code,
@@ -122,6 +171,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':sec2'=> $section,
                     ':vt'  => $vtype,
                     ':tg'  => ($target === '' ? null : $target),
+                    ':cpanel' => $codePanelTargeted,
+                    ':tm'  => $targetingMode,
+                    ':ccat'=> $codeCategorySave,
                 ]);
                 $flash['ok'] = 'کد تخفیف افزوده شد.';
             } catch (\Throwable $e) {
@@ -133,10 +185,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         $id      = (int)($_POST['id'] ?? 0);
         $code    = trim((string)($_POST['codeDiscount'] ?? ''));
         $vtype   = (string)($_POST['type']            ?? 'percent');
-        $section = (string)($_POST['section']         ?? 'all');
         $value   = (string)($_POST['price']           ?? '0');
         $limit   = (int)($_POST['limitDiscount']      ?? 0);
-        $agent   = (string)($_POST['agent']           ?? 'allusers');
         $first   = !empty($_POST['usefirst']) ? '1' : '0';
         $oneper  = !empty($_POST['useuser'])  ? '1' : '0';
         $target  = trim((string)($_POST['target_user'] ?? ''));
@@ -154,9 +204,13 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if (!in_array($vtype, ['percent', 'amount', 'free'], true)) {
             $errors[] = 'نوع تخفیف نامعتبر است.';
         }
-        if (!in_array($section, ['all', 'buy', 'extend', 'volume', 'time', 'charge'], true)) {
+        $sectionList = array_values(array_unique(array_filter(array_map('trim', explode(',', (string)($_POST['section_csv'] ?? 'all'))))));
+        if (empty($sectionList)) {
+            $errors[] = 'حداقل یک بخش کد باید انتخاب شود.';
+        } elseif (array_diff($sectionList, array_keys($discountSectionOptions)) !== []) {
             $errors[] = 'بخش کد نامعتبر است.';
         }
+        $section = implode(',', $sectionList);
         $numericValue = (float)$value;
         if ($vtype === 'percent') {
             if ($numericValue <= 0 || $numericValue > 100) {
@@ -174,11 +228,36 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
         if ($limit < 0) {
             $errors[] = 'سقف کل استفاده نمی‌تواند منفی باشد.';
         }
-        if (!in_array($agent, ['allusers', 'f', 'n', 'n2'], true)) {
+        $agentList = array_values(array_unique(array_filter(array_map('trim', explode(',', (string)($_POST['agent_csv'] ?? 'allusers'))))));
+        if (empty($agentList)) {
+            $errors[] = 'گروه هدف نامعتبر است.';
+        } elseif (array_diff($agentList, array_keys($discountAgentOptions)) !== []) {
             $errors[] = 'گروه هدف نامعتبر است.';
         }
+        $agent = implode(',', $agentList);
         if ($target !== '' && !ctype_digit($target)) {
             $errors[] = 'آیدی عددی کاربر هدف نامعتبر است.';
+        }
+        $targetingMode = (string)($_POST['targeting_mode'] ?? 'none');
+        if (!in_array($targetingMode, ['none', 'category', 'panel'], true)) {
+            $errors[] = 'نحوه هدف‌گیری نامعتبر است.';
+        }
+        $codeCategorySave = 'all';
+        $codePanelTargeted = '/all';
+        if ($targetingMode === 'category') {
+            $categoryList = array_values(array_filter(array_map('trim', explode(',', (string)($_POST['code_category_csv'] ?? '')))));
+            if (empty($categoryList)) {
+                $errors[] = 'حداقل یک دسته‌بندی باید انتخاب شود.';
+            } else {
+                $codeCategorySave = implode(',', $categoryList);
+            }
+        } elseif ($targetingMode === 'panel') {
+            $panelList = array_values(array_filter(array_map('trim', explode(',', (string)($_POST['code_panel_csv'] ?? '')))));
+            if (empty($panelList)) {
+                $errors[] = 'حداقل یک پنل باید انتخاب شود.';
+            } else {
+                $codePanelTargeted = implode(',', $panelList);
+            }
         }
         if (empty($errors)) {
             try {
@@ -198,7 +277,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     "UPDATE DiscountSell
                         SET codeDiscount = :c, price = :p, limitDiscount = :l, agent = :a,
                             usefirst = :f, useuser = :u, time = :t, section = :sec,
-                            value_type = :vt, type = :sec2, target_user = :tg
+                            value_type = :vt, type = :sec2, target_user = :tg,
+                            code_panel = :cpanel, code_product = 'all', targeting_mode = :tm, code_category = :ccat
                       WHERE id = :id"
                 );
                 $stmt->execute([
@@ -213,6 +293,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                     ':sec2'=> $section,
                     ':vt'  => $vtype,
                     ':tg'  => ($target === '' ? null : $target),
+                    ':cpanel' => $codePanelTargeted,
+                    ':tm'  => $targetingMode,
+                    ':ccat'=> $codeCategorySave,
                     ':id'  => $id,
                 ]);
                 $flash['ok'] = 'کد تخفیف ویرایش شد.';
@@ -360,22 +443,103 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             }
         }
     }
+    elseif ($action === 'bulk_delete') {
+        $requestedIds = $_POST['ids'] ?? [];
+        $deletedCount = fx_bulk_delete_ids($pdo, 'DiscountSell', 'id', $requestedIds);
+        fx_bulk_delete_redirect('discounts.php', count($requestedIds), $deletedCount, '1');
+    }
+    elseif ($action === 'gift_bulk_delete') {
+        $requestedIds = $_POST['ids'] ?? [];
+        $deletedCount = fx_bulk_delete_ids($pdo, 'Discount', 'id', $requestedIds);
+        fx_bulk_delete_redirect('discounts.php', count($requestedIds), $deletedCount, '2');
+    }
 }
 
 
+$df1 = fx_date_filter_resolve('1');
+$df2 = fx_date_filter_resolve('2');
+$discQ = fx_search_current('q1');
+$giftQ = fx_search_current('q2');
+
 $list = [];
+$pg1 = ['page' => 1, 'perPage' => 5, 'offset' => 0, 'total' => 0, 'pages' => 1];
 try {
-    $r = $pdo->query("SELECT * FROM DiscountSell ORDER BY id DESC");
-    if ($r) $list = $r->fetchAll(PDO::FETCH_ASSOC);
+    $where1 = '1=1';
+    $params1 = [];
+    if ($df1['active']) {
+        $where1 .= ' AND `time` BETWEEN :dfrom1 AND :dto1';
+        $params1[':dfrom1'] = $df1['from'];
+        $params1[':dto1'] = $df1['to'];
+    }
+    if ($discQ !== '') {
+        $where1 .= ' AND (codeDiscount LIKE :dq1 OR target_user LIKE :dq2)';
+        $params1[':dq1'] = '%' . $discQ . '%';
+        $params1[':dq2'] = '%' . $discQ . '%';
+    }
+    $pg1 = fx_paginate($pdo, "SELECT COUNT(*) FROM DiscountSell WHERE $where1", $params1, 5, 'p1');
+    $r = $pdo->prepare("SELECT * FROM DiscountSell WHERE $where1 ORDER BY id DESC LIMIT :perPage OFFSET :offset");
+    foreach ($params1 as $k => $v) $r->bindValue($k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
+    $r->bindValue(':perPage', $pg1['perPage'], PDO::PARAM_INT);
+    $r->bindValue(':offset', $pg1['offset'], PDO::PARAM_INT);
+    $r->execute();
+    $list = $r->fetchAll(PDO::FETCH_ASSOC);
 } catch (\Throwable $e) {
     $flash['err'] = 'بارگذاری ناموفق: ' . $e->getMessage();
 }
 
 $giftList = [];
+$pg2 = ['page' => 1, 'perPage' => 5, 'offset' => 0, 'total' => 0, 'pages' => 1];
 try {
-    $rg = $pdo->query("SELECT * FROM Discount ORDER BY id DESC");
-    if ($rg) $giftList = $rg->fetchAll(PDO::FETCH_ASSOC);
+    $where2 = '1=1';
+    $params2 = [];
+    if ($df2['active']) {
+        $where2 .= ' AND expire_at BETWEEN :dfrom2 AND :dto2';
+        $params2[':dfrom2'] = $df2['from'];
+        $params2[':dto2'] = $df2['to'];
+    }
+    if ($giftQ !== '') {
+        $where2 .= ' AND (code LIKE :gq1 OR target_user LIKE :gq2)';
+        $params2[':gq1'] = '%' . $giftQ . '%';
+        $params2[':gq2'] = '%' . $giftQ . '%';
+    }
+    $pg2 = fx_paginate($pdo, "SELECT COUNT(*) FROM Discount WHERE $where2", $params2, 5, 'p2');
+    $rg = $pdo->prepare("SELECT * FROM Discount WHERE $where2 ORDER BY id DESC LIMIT :perPage OFFSET :offset");
+    foreach ($params2 as $k => $v) $rg->bindValue($k, $v, is_int($v) ? PDO::PARAM_INT : PDO::PARAM_STR);
+    $rg->bindValue(':perPage', $pg2['perPage'], PDO::PARAM_INT);
+    $rg->bindValue(':offset', $pg2['offset'], PDO::PARAM_INT);
+    $rg->execute();
+    $giftList = $rg->fetchAll(PDO::FETCH_ASSOC);
 } catch (\Throwable $e) {  }
+
+$listcategory = [];
+try {
+    $catQuery = $pdo->prepare("SELECT remark FROM category ORDER BY id ASC");
+    $catQuery->execute();
+    $listcategory = $catQuery->fetchAll(PDO::FETCH_COLUMN);
+} catch (\Throwable $e) {  }
+
+$listpanel = [];
+$panelNameByCode = [];
+try {
+    $panQuery = $pdo->prepare("SELECT * FROM marzban_panel");
+    $panQuery->execute();
+    $listpanel = $panQuery->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($listpanel as $p) {
+        $panelNameByCode[(string)($p['code_panel'] ?? '')] = (string)($p['name_panel'] ?? '');
+    }
+} catch (\Throwable $e) {  }
+
+function faoxima_d_label_targeting($mode, $category, $panelCode, $panelNameByCode) {
+    if ($mode === 'category') {
+        return ['🎯 دسته: ' . htmlspecialchars((string)$category, ENT_QUOTES), 'badge-purple'];
+    }
+    if ($mode === 'panel') {
+        $codes = array_values(array_filter(array_map('trim', explode(',', (string)$panelCode))));
+        $names = array_map(function ($c) use ($panelNameByCode) { return $panelNameByCode[$c] ?? $c; }, $codes);
+        return ['🎯 پنل: ' . htmlspecialchars(implode('، ', $names), ENT_QUOTES), 'badge-info'];
+    }
+    return ['بدون محدودیت هدف', 'badge-gray'];
+}
 
 function faoxima_d_label_type($t) {
     switch ($t) {
@@ -386,25 +550,22 @@ function faoxima_d_label_type($t) {
     }
 }
 function faoxima_d_label_agent($a) {
-    switch ($a) {
-        case 'f':        return ['کاربر عادی', 'badge-info'];
-        case 'n':        return ['نماینده', 'badge-purple'];
-        case 'n2':       return ['نماینده+', 'badge-warning'];
-        case 'all':
-        case 'allusers': return ['همه', 'badge-success'];
-        default:         return [htmlspecialchars((string)$a, ENT_QUOTES), 'badge-gray'];
+    $map = ['f' => 'کاربر عادی', 'n' => 'نماینده', 'n2' => 'نماینده+', 'all' => 'همه', 'allusers' => 'همه'];
+    $values = array_values(array_filter(array_map('trim', explode(',', (string)$a))));
+    if (empty($values) || in_array('allusers', $values, true) || in_array('all', $values, true)) {
+        return ['همه', 'badge-success'];
     }
+    $names = array_map(function ($v) use ($map) { return $map[$v] ?? $v; }, $values);
+    return [htmlspecialchars(implode('، ', $names), ENT_QUOTES), count($values) > 1 ? 'badge-purple' : 'badge-info'];
 }
 function faoxima_d_label_section($s) {
-    switch ($s) {
-        case 'buy':    return ['خرید', 'badge-info'];
-        case 'extend': return ['تمدید', 'badge-purple'];
-        case 'volume': return ['حجم', 'badge-warning'];
-        case 'time':   return ['زمان', 'badge-warning'];
-        case 'charge': return ['شارژ', 'badge-success'];
-        case 'all':
-        default:       return ['همه بخش‌ها', 'badge-gray'];
+    $map = ['buy' => 'خرید', 'extend' => 'تمدید', 'volume' => 'حجم', 'time' => 'زمان', 'charge' => 'شارژ', 'all' => 'همه بخش‌ها'];
+    $values = array_values(array_filter(array_map('trim', explode(',', (string)$s))));
+    if (empty($values) || in_array('all', $values, true)) {
+        return ['همه بخش‌ها', 'badge-gray'];
     }
+    $names = array_map(function ($v) use ($map) { return $map[$v] ?? $v; }, $values);
+    return [htmlspecialchars(implode('، ', $names), ENT_QUOTES), count($values) > 1 ? 'badge-purple' : 'badge-warning'];
 }
 ?>
 <!DOCTYPE html>
@@ -413,8 +574,9 @@ function faoxima_d_label_section($s) {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>کدهای تخفیف | پنل فاکسیما</title>
-    <link rel="stylesheet" href="css/theme.css">
-    <script src="js/theme.js" defer>
+    <link rel="stylesheet" href="css/theme.css?v=flat47">
+    <script src="js/money-input.js?v=fx1" defer></script>
+    <script src="js/theme.js?v=flat5" defer>
 
 </script>
 </head>
@@ -429,7 +591,7 @@ function faoxima_d_label_section($s) {
             <div class="page-head">
                 <div>
                     <div class="page-head__title">
-                        <?php echo icon('ticket', 'svg-icon svg-lg'); ?>
+                        <svg class="svg-icon svg-lg" viewBox="0 0 511.998 511.998" aria-hidden="true"><g fill="currentColor" stroke="none"><path d="M179.34,262.92c-9.217,0-16.716,7.499-16.716,16.716s7.499,16.716,16.716,16.716c9.217,0,16.716-7.499,16.716-16.716C196.056,270.419,188.559,262.92,179.34,262.92z"/><path d="M379.934,262.92c-9.217,0-16.716,7.499-16.716,16.716s7.499,16.716,16.716,16.716c9.217,0,16.716-7.499,16.716-16.716C396.65,270.419,389.152,262.92,379.934,262.92z"/><path d="M474.505,354.619l22.789-22.805c19.596-19.573,19.616-51.325,0-70.919L291.456,55.058l-47.275,47.28c-6.529,6.529-17.107,6.53-23.638,0c-6.529-6.524-6.529-17.108,0-23.638l47.275-47.28l-16.716-16.717c-19.548-19.558-51.268-19.638-70.924,0.007l-22.811,22.794l-11.514-8.2C113.358,6.17,67.665,8.998,38.341,38.342C9.382,67.306,5.584,112.524,29.309,145.864l8.184,11.514l-22.789,22.805c-19.596,19.573-19.616,51.325,0,70.919l16.716,16.716l47.275-47.275c6.529-6.529,17.108-6.529,23.638,0c6.529,6.524,6.529,17.113,0,23.638l-47.275,47.275l205.839,205.839c19.548,19.559,51.268,19.639,70.924-0.006l22.811-22.8l11.525,8.228c32.14,22.971,77.86,20.592,107.501-9.06c28.959-28.965,32.758-74.183,9.032-107.523L474.505,354.619z M125.981,173.262l47.275-47.281c6.529-6.529,17.108-6.529,23.638,0c6.529,6.524,6.529,17.108,0,23.638l-47.275,47.281c-6.529,6.529-17.107,6.53-23.638,0C119.452,190.376,119.452,179.791,125.981,173.262z M179.34,329.785c-27.653,0-50.148-22.495-50.148-50.148s22.495-50.148,50.148-50.148s50.148,22.495,50.148,50.148S206.994,329.785,179.34,329.785z M296.353,396.649c0,9.234-7.488,16.716-16.716,16.716c-9.228,0-16.716-7.482-16.716-16.716V162.624c0-9.234,7.488-16.716,16.716-16.716c9.228,0,16.716,7.482,16.716,16.716V396.649z M379.934,329.785c-27.653,0-50.148-22.495-50.148-50.148s22.495-50.148,50.148-50.148s50.148,22.495,50.148,50.148S407.588,329.785,379.934,329.785z"/></g></svg>
                         کدهای تخفیف
                     </div>
                     <div class="page-head__sub">مدیریت کدهای تخفیف و هدیه</div>
@@ -458,11 +620,20 @@ function faoxima_d_label_section($s) {
                 </div>
             <?php endif; ?>
 
+            <?php echo fx_bulk_delete_flash_html('1', 'کدهای تخفیف'); ?>
+            <?php echo fx_bulk_delete_flash_html('2', 'کدهای هدیه'); ?>
+
+            <?php echo fx_search_ui('discounts.php', $discQ, ['p2' => $pg2['page'] > 1 ? $pg2['page'] : null], 'جستجو در کد تخفیف یا کاربر هدف…', 'q1'); ?>
+
+            <?php echo fx_date_filter_ui('discounts.php', '1', ['p2' => $pg2['page'] > 1 ? $pg2['page'] : null, 'q1' => $discQ !== '' ? $discQ : null], 'انقضا'); ?>
+
             <div class="card">
+                <div id="bulk-scope-1">
                 <div class="table-wrap">
-                    <table id="discountsTable" class="display app-table" style="width:100%">
+                    <table id="discountsTable" class="display app-table app-table--summary" style="width:100%">
                         <thead>
                             <tr>
+                                <th><input type="checkbox" id="check-all-1" onclick="faoximaToggleAll(this, 'bulk-scope-1')"></th>
                                 <th>کد</th>
                                 <th>نوع</th>
                                 <th>مقدار</th>
@@ -490,7 +661,7 @@ function faoxima_d_label_section($s) {
                             [$agentLabel, $agentBadge] = faoxima_d_label_agent($d['agent'] ?? '');
                             $valDisplay = htmlspecialchars((string)$d['price'], ENT_QUOTES);
                             if ($kind === 'percent') $valDisplay .= '%';
-                            elseif ($kind === 'amount') $valDisplay = number_format((int)$d['price']) . ' <small>تومان</small>';
+                            elseif ($kind === 'amount') $valDisplay = number_format((int)$d['price']) . ' <small>T</small>';
                             elseif ($kind === 'free') $valDisplay = 'رایگان';
                             $limit = (int)$d['limitDiscount'];
                             $used  = (int)$d['usedDiscount'];
@@ -499,15 +670,29 @@ function faoxima_d_label_section($s) {
                             $editAgent = in_array(($d['agent'] ?? ''), ['f','n','n2'], true) ? $d['agent'] : 'allusers';
                             $editExpTs = (int)($d['time'] ?? 0);
                             $editExpDays = ($editExpTs > time()) ? (int)ceil(($editExpTs - time()) / 86400) : 0;
+                            $targetingMode = in_array(($d['targeting_mode'] ?? ''), ['category','panel'], true) ? $d['targeting_mode'] : 'none';
+                            $codeCategoryVal = (string)($d['code_category'] ?? 'all');
+                            [$targetingLabel, $targetingBadge] = faoxima_d_label_targeting($targetingMode, $codeCategoryVal, $d['code_panel'] ?? '', $panelNameByCode);
                         ?>
-                            <tr>
-                                <td data-label="کد"><code style="direction:ltr; background:var(--accent-soft); color:var(--accent); padding:4px 8px; border-radius:6px; font-weight:700;"><?php echo htmlspecialchars($d['codeDiscount'], ENT_QUOTES); ?></code></td>
-                                <td data-label="نوع">
-                                    <span class="badge <?php echo $typeBadge; ?>"><?php echo $typeLabel; ?></span>
-                                    <span class="badge <?php echo $secBadge; ?>"><?php echo $secLabel; ?></span>
-                                    <?php if ($targetUser !== ''): ?><span class="badge badge-warning">کاربر <?php echo htmlspecialchars($targetUser, ENT_QUOTES); ?></span><?php endif; ?>
+                            <tr data-detail-row data-detail-title="کد <?php echo htmlspecialchars($d['codeDiscount'], ENT_QUOTES); ?>">
+                                <td><label class="fx-check-row"><input type="checkbox" name="ids[]" value="<?php echo (int)$d['id']; ?>"></label></td>
+                                <td data-label="کد" data-summary="1"><code style="direction:ltr; background:var(--accent-soft); color:var(--accent); padding:4px 8px; border-radius:6px; font-weight:700;"><?php echo htmlspecialchars($d['codeDiscount'], ENT_QUOTES); ?></code></td>
+                                <td data-label="نوع" data-summary="1">
+                                    <?php
+                                        $discountTypeBadgesHtml = [
+                                            '<span class="badge ' . $typeBadge . '">' . $typeLabel . '</span>',
+                                            '<span class="badge ' . $secBadge . '">' . $secLabel . '</span>',
+                                        ];
+                                        if ($targetUser !== '') {
+                                            $discountTypeBadgesHtml[] = '<span class="badge badge-warning">کاربر ' . htmlspecialchars($targetUser, ENT_QUOTES) . '</span>';
+                                        }
+                                        if ($targetingMode !== 'none') {
+                                            $discountTypeBadgesHtml[] = '<span class="badge ' . $targetingBadge . '">' . $targetingLabel . '</span>';
+                                        }
+                                        echo faoxima_render_compact_badges($discountTypeBadgesHtml);
+                                    ?>
                                 </td>
-                                <td data-label="مقدار"><?php echo $valDisplay; ?></td>
+                                <td data-label="مقدار" data-summary="1"><?php echo $valDisplay; ?></td>
                                 <td data-label="سقف کل"><?php echo $limit > 0 ? $limit : '<span class="text-muted">نامحدود</span>'; ?></td>
                                 <td data-label="تعداد استفاده">
                                     <b style="color:<?php echo ($remaining === 0) ? 'var(--color-danger)' : 'var(--color-success)'; ?>;"><?php echo $used; ?></b>
@@ -539,6 +724,9 @@ function faoxima_d_label_section($s) {
                                             data-useuser="<?php echo $d['useuser'] == '1' ? '1' : '0'; ?>"
                                             data-target="<?php echo htmlspecialchars($targetUser, ENT_QUOTES); ?>"
                                             data-exp="<?php echo (int)$editExpDays; ?>"
+                                            data-targeting-mode="<?php echo htmlspecialchars($targetingMode, ENT_QUOTES); ?>"
+                                            data-category="<?php echo htmlspecialchars($codeCategoryVal === 'all' ? '' : $codeCategoryVal, ENT_QUOTES); ?>"
+                                            data-panel="<?php echo htmlspecialchars((string)($d['code_panel'] ?? ''), ENT_QUOTES); ?>"
                                             onclick="editDiscount(this)">
                                             <?php echo icon('pen-to-square', 'svg-icon'); ?>
                                         </button>
@@ -562,17 +750,36 @@ function faoxima_d_label_section($s) {
                         <?php endforeach; endif; ?>
                         </tbody>
                     </table>
+                    <?php
+                    $d1Keep = ['p2' => $pg2['page'] > 1 ? $pg2['page'] : null, 'q1' => $discQ !== '' ? $discQ : null, 'q2' => $giftQ !== '' ? $giftQ : null];
+                    foreach (['dpreset1', 'ddays1', 'dfrom1', 'dto1', 'dpreset2', 'ddays2', 'dfrom2', 'dto2'] as $dk) {
+                        if (isset($_GET[$dk]) && $_GET[$dk] !== '') $d1Keep[$dk] = $_GET[$dk];
+                    }
+                    echo fx_pager_html($pg1['page'], $pg1['pages'], $pg1['total'], count($list), 'discounts.php', $d1Keep, 'p1');
+                    ?>
+                </div>
+                <div style="padding:12px 0;">
+                    <button type="button" class="btn btn-soft-danger btn-sm js-bulk-delete-btn js-bulk-delete-btn-1" style="display:none;" onclick="faoximaBulkDelete('bulk-scope-1', 'bulk_delete', '_action')">
+                        <?php echo icon('trash', 'svg-icon'); ?> حذف انتخاب‌شده‌ها
+                    </button>
+                </div>
                 </div>
             </div>
+
+            <?php echo fx_search_ui('discounts.php', $giftQ, ['p1' => $pg1['page'] > 1 ? $pg1['page'] : null], 'جستجو در کد هدیه یا کاربر هدف…', 'q2'); ?>
+
+            <?php echo fx_date_filter_ui('discounts.php', '2', ['p1' => $pg1['page'] > 1 ? $pg1['page'] : null, 'q2' => $giftQ !== '' ? $giftQ : null], 'انقضا'); ?>
 
             <div class="card" style="margin-top:18px">
                 <div style="padding:14px 16px; font-weight:700; display:flex; align-items:center; gap:8px;">
                     <?php echo icon('gift', 'svg-icon'); ?> کدهای هدیه (شارژ کیف پول)
                 </div>
+                <div id="bulk-scope-2">
                 <div class="table-wrap">
-                    <table id="giftsTable" class="display app-table" style="width:100%">
+                    <table id="giftsTable" class="display app-table app-table--summary" style="width:100%">
                         <thead>
                             <tr>
+                                <th><input type="checkbox" id="check-all-2" onclick="faoximaToggleAll(this, 'bulk-scope-2')"></th>
                                 <th>کد</th>
                                 <th>مبلغ</th>
                                 <th>سقف کل</th>
@@ -591,12 +798,13 @@ function faoxima_d_label_section($s) {
                             $gEditExpTs = (int)($g['expire_at'] ?? 0);
                             $gEditExpDays = ($gEditExpTs > time()) ? (int)ceil(($gEditExpTs - time()) / 86400) : 0;
                         ?>
-                            <tr>
-                                <td data-label="کد"><code style="direction:ltr; background:var(--accent-soft); color:var(--accent); padding:4px 8px; border-radius:6px; font-weight:700;"><?php echo htmlspecialchars((string)$g['code'], ENT_QUOTES); ?></code></td>
-                                <td data-label="مبلغ"><?php echo number_format((int)($g['price'] ?? 0)); ?> <small>تومان</small></td>
+                            <tr data-detail-row data-detail-title="کد هدیه <?php echo htmlspecialchars((string)$g['code'], ENT_QUOTES); ?>">
+                                <td><label class="fx-check-row"><input type="checkbox" name="ids[]" value="<?php echo (int)$g['id']; ?>"></label></td>
+                                <td data-label="کد" data-summary="1"><code style="direction:ltr; background:var(--accent-soft); color:var(--accent); padding:4px 8px; border-radius:6px; font-weight:700;"><?php echo htmlspecialchars((string)$g['code'], ENT_QUOTES); ?></code></td>
+                                <td data-label="مبلغ" data-summary="1"><?php echo number_format((int)($g['price'] ?? 0)); ?> <small>T</small></td>
                                 <td data-label="سقف کل"><?php echo $glimit > 0 ? $glimit : '<span class="text-muted">نامحدود</span>'; ?></td>
                                 <td data-label="تعداد استفاده"><?php echo $gused; ?><?php if ($glimit > 0): ?> / <?php echo $glimit; ?><?php endif; ?></td>
-                                <td data-label="اختصاصی"><?php echo $gtarget !== '' ? '<span class="badge badge-warning">کاربر ' . htmlspecialchars($gtarget, ENT_QUOTES) . '</span>' : '<span class="text-muted">عمومی</span>'; ?></td>
+                                <td data-label="اختصاصی" data-summary="1"><?php echo $gtarget !== '' ? '<span class="badge badge-warning">کاربر ' . htmlspecialchars($gtarget, ENT_QUOTES) . '</span>' : '<span class="text-muted">عمومی</span>'; ?></td>
                                 <td data-label="عملیات" class="cell-actions">
                                     <div style="display:flex; gap:6px; flex-wrap:wrap; justify-content:flex-end;">
                                         <button type="button" class="btn btn-sm btn-soft-info" title="ویرایش"
@@ -620,6 +828,19 @@ function faoxima_d_label_section($s) {
                         <?php endforeach; endif; ?>
                         </tbody>
                     </table>
+                    <?php
+                    $d2Keep = ['p1' => $pg1['page'] > 1 ? $pg1['page'] : null, 'q1' => $discQ !== '' ? $discQ : null, 'q2' => $giftQ !== '' ? $giftQ : null];
+                    foreach (['dpreset1', 'ddays1', 'dfrom1', 'dto1', 'dpreset2', 'ddays2', 'dfrom2', 'dto2'] as $dk) {
+                        if (isset($_GET[$dk]) && $_GET[$dk] !== '') $d2Keep[$dk] = $_GET[$dk];
+                    }
+                    echo fx_pager_html($pg2['page'], $pg2['pages'], $pg2['total'], count($giftList), 'discounts.php', $d2Keep, 'p2');
+                    ?>
+                </div>
+                <div style="padding:12px 0;">
+                    <button type="button" class="btn btn-soft-danger btn-sm js-bulk-delete-btn js-bulk-delete-btn-2" style="display:none;" onclick="faoximaBulkDelete('bulk-scope-2', 'gift_bulk_delete', '_action')">
+                        <?php echo icon('trash', 'svg-icon'); ?> حذف انتخاب‌شده‌ها
+                    </button>
+                </div>
                 </div>
             </div>
 
@@ -642,7 +863,7 @@ function faoxima_d_label_section($s) {
                     <label class="form-label">نوع تخفیف</label>
                     <select name="type" class="form-control" required onchange="updateValueHint(this.value)">
                         <option value="percent">درصدی (٪)</option>
-                        <option value="amount">مبلغی (تومان)</option>
+                        <option value="amount">مبلغی (T)</option>
                         <option value="free">رایگان (۱۰۰٪)</option>
                     </select>
                 </div>
@@ -651,7 +872,7 @@ function faoxima_d_label_section($s) {
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label" id="valueLabel">مقدار تخفیف (٪)</label>
-                    <input type="number" name="price" class="form-control" placeholder="20" required min="0">
+                    <input type="text" name="price" id="add_price" class="form-control" placeholder="20" required min="0">
                 </div>
                 <div class="form-group">
                     <label class="form-label">سقف کل استفاده <small style="color:var(--text-muted)">(۰ = نامحدود)</small></label>
@@ -659,38 +880,69 @@ function faoxima_d_label_section($s) {
                 </div>
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">بخش کد</label>
-                    <select name="section" class="form-control">
-                        <option value="all">همه بخش‌ها</option>
-                        <option value="buy">خرید سرویس</option>
-                        <option value="extend">تمدید سرویس</option>
-                        <option value="volume">حجم اضافه</option>
-                        <option value="time">زمان اضافه</option>
-                        <option value="charge">شارژ کیف پول</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">انقضا (روز) <small style="color:var(--text-muted)">(۰ = بدون انقضا)</small></label>
-                    <input type="number" name="expire_days" class="form-control" placeholder="0" value="0" min="0">
-                </div>
+            <div class="form-group">
+                <label class="form-label">انقضا (روز) <small style="color:var(--text-muted)">(۰ = بدون انقضا)</small></label>
+                <input type="number" name="expire_days" class="form-control" placeholder="0" value="0" min="0">
             </div>
 
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">گروه هدف</label>
-                    <select name="agent" class="form-control">
-                        <option value="allusers">همه کاربران</option>
-                        <option value="f">فقط کاربر عادی</option>
-                        <option value="n">فقط نمایندگان</option>
-                        <option value="n2">فقط نمایندگان پیشرفته</option>
-                    </select>
+            <div class="form-group">
+                <label class="form-label">بخش کد <small style="color:var(--text-muted)">(می‌توانید چند مورد انتخاب کنید)</small></label>
+                <div class="chip-row" data-section-picker>
+                    <?php foreach ($discountSectionOptions as $secVal => $secLabel): ?>
+                    <button type="button" class="chip" data-section-chip data-value="<?php echo htmlspecialchars($secVal, ENT_QUOTES); ?>">
+                        <span><?php echo htmlspecialchars($secLabel, ENT_QUOTES); ?></span>
+                    </button>
+                    <?php endforeach; ?>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">کد اختصاصی کاربر <small style="color:var(--text-muted)">(آیدی عددی، اختیاری)</small></label>
-                    <input type="text" name="target_user" class="form-control" style="direction:ltr" placeholder="123456789">
+                <input type="hidden" name="section_csv" data-section-hidden value="all">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">نحوه هدف‌گیری</label>
+                <select name="targeting_mode" id="targeting_mode" class="form-control" onchange="faoximaToggleTargeting(this.value)">
+                    <option value="none">بدون محدودیت (همه محصولات/پنل‌ها)</option>
+                    <option value="category">بر اساس دسته‌بندی</option>
+                    <option value="panel">بر اساس پنل مشخص</option>
+                </select>
+            </div>
+            <div class="form-group" id="targeting_category_wrap" style="display:none;">
+                <label class="form-label">دسته‌بندی‌ها <small style="color:var(--text-muted)">(می‌توانید چند مورد انتخاب کنید)</small></label>
+                <div class="chip-row" data-category-picker>
+                    <?php foreach ($listcategory as $catName): ?>
+                        <button type="button" class="chip" data-category-chip data-value="<?php echo htmlspecialchars((string)$catName, ENT_QUOTES); ?>">
+                            <span><?php echo htmlspecialchars((string)$catName, ENT_QUOTES); ?></span>
+                        </button>
+                    <?php endforeach; ?>
                 </div>
+                <input type="hidden" name="code_category_csv" data-category-hidden value="">
+            </div>
+            <div class="form-group" id="targeting_panel_wrap" style="display:none;">
+                <label class="form-label">پنل‌ها <small style="color:var(--text-muted)">(می‌توانید چند مورد انتخاب کنید)</small></label>
+                <div class="chip-row" data-panel-picker>
+                    <?php foreach ($listpanel as $p): ?>
+                        <button type="button" class="chip" data-panel-chip data-value="<?php echo htmlspecialchars((string)($p['code_panel'] ?? ''), ENT_QUOTES); ?>">
+                            <span><?php echo htmlspecialchars((string)($p['name_panel'] ?? ''), ENT_QUOTES); ?></span>
+                        </button>
+                    <?php endforeach; ?>
+                </div>
+                <input type="hidden" name="code_panel_csv" data-panel-hidden value="">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">گروه هدف <small style="color:var(--text-muted)">(می‌توانید چند مورد انتخاب کنید)</small></label>
+                <div class="chip-row" data-agent-picker>
+                    <?php foreach ($discountAgentOptions as $agVal => $agLabel): ?>
+                    <button type="button" class="chip" data-agent-chip data-value="<?php echo htmlspecialchars($agVal, ENT_QUOTES); ?>">
+                        <span><?php echo htmlspecialchars($agLabel, ENT_QUOTES); ?></span>
+                    </button>
+                    <?php endforeach; ?>
+                </div>
+                <input type="hidden" name="agent_csv" data-agent-hidden value="allusers">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">کد اختصاصی کاربر <small style="color:var(--text-muted)">(آیدی عددی، اختیاری)</small></label>
+                <input type="text" name="target_user" class="form-control" style="direction:ltr" placeholder="123456789">
             </div>
 
             <div class="form-group" style="display:flex; flex-direction:column; gap:8px;">
@@ -729,8 +981,8 @@ function faoxima_d_label_section($s) {
                     <input type="text" name="code" class="form-control" style="direction:ltr;" placeholder="GIFT50" required>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">مبلغ (تومان)</label>
-                    <input type="number" name="gift_price" class="form-control" placeholder="50000" required min="1">
+                    <label class="form-label">مبلغ (T)</label>
+                    <input type="text" name="gift_price" class="form-control" data-money placeholder="50000" required min="1">
                 </div>
             </div>
             <div class="form-row">
@@ -773,7 +1025,7 @@ function faoxima_d_label_section($s) {
                     <label class="form-label">نوع تخفیف</label>
                     <select name="type" id="ed_type" class="form-control" required onchange="updateEditValueHint(this.value)">
                         <option value="percent">درصدی (٪)</option>
-                        <option value="amount">مبلغی (تومان)</option>
+                        <option value="amount">مبلغی (T)</option>
                         <option value="free">رایگان (۱۰۰٪)</option>
                     </select>
                 </div>
@@ -781,44 +1033,75 @@ function faoxima_d_label_section($s) {
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label" id="ed_valueLabel">مقدار تخفیف (٪)</label>
-                    <input type="number" name="price" id="ed_price" class="form-control" required min="0">
+                    <input type="text" name="price" id="ed_price" class="form-control" required min="0">
                 </div>
                 <div class="form-group">
                     <label class="form-label">سقف کل استفاده <small style="color:var(--text-muted)">(۰ = نامحدود)</small></label>
                     <input type="number" name="limitDiscount" id="ed_limit" class="form-control" min="0">
                 </div>
             </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">بخش کد</label>
-                    <select name="section" id="ed_section" class="form-control">
-                        <option value="all">همه بخش‌ها</option>
-                        <option value="buy">خرید سرویس</option>
-                        <option value="extend">تمدید سرویس</option>
-                        <option value="volume">حجم اضافه</option>
-                        <option value="time">زمان اضافه</option>
-                        <option value="charge">شارژ کیف پول</option>
-                    </select>
-                </div>
-                <div class="form-group">
-                    <label class="form-label">انقضا (روز) <small style="color:var(--text-muted)">(۰ = بدون انقضا)</small></label>
-                    <input type="number" name="expire_days" id="ed_exp" class="form-control" min="0">
-                </div>
+            <div class="form-group">
+                <label class="form-label">انقضا (روز) <small style="color:var(--text-muted)">(۰ = بدون انقضا)</small></label>
+                <input type="number" name="expire_days" id="ed_exp" class="form-control" min="0">
             </div>
-            <div class="form-row">
-                <div class="form-group">
-                    <label class="form-label">گروه هدف</label>
-                    <select name="agent" id="ed_agent" class="form-control">
-                        <option value="allusers">همه کاربران</option>
-                        <option value="f">فقط کاربر عادی</option>
-                        <option value="n">فقط نمایندگان</option>
-                        <option value="n2">فقط نمایندگان پیشرفته</option>
-                    </select>
+
+            <div class="form-group">
+                <label class="form-label">بخش کد <small style="color:var(--text-muted)">(می‌توانید چند مورد انتخاب کنید)</small></label>
+                <div class="chip-row" id="ed_section_picker" data-section-picker>
+                    <?php foreach ($discountSectionOptions as $secVal => $secLabel): ?>
+                    <button type="button" class="chip" data-section-chip data-value="<?php echo htmlspecialchars($secVal, ENT_QUOTES); ?>">
+                        <span><?php echo htmlspecialchars($secLabel, ENT_QUOTES); ?></span>
+                    </button>
+                    <?php endforeach; ?>
                 </div>
-                <div class="form-group">
-                    <label class="form-label">کد اختصاصی کاربر <small style="color:var(--text-muted)">(آیدی عددی، اختیاری)</small></label>
-                    <input type="text" name="target_user" id="ed_target" class="form-control" style="direction:ltr">
+                <input type="hidden" name="section_csv" id="ed_section_csv" data-section-hidden value="all">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">نحوه هدف‌گیری</label>
+                <select name="targeting_mode" id="ed_targeting_mode" class="form-control" onchange="faoximaToggleEditTargeting(this.value)">
+                    <option value="none">بدون محدودیت (همه محصولات/پنل‌ها)</option>
+                    <option value="category">بر اساس دسته‌بندی</option>
+                    <option value="panel">بر اساس پنل مشخص</option>
+                </select>
+            </div>
+            <div class="form-group" id="ed_targeting_category_wrap" style="display:none;">
+                <label class="form-label">دسته‌بندی‌ها <small style="color:var(--text-muted)">(می‌توانید چند مورد انتخاب کنید)</small></label>
+                <div class="chip-row" id="ed_category_picker" data-category-picker>
+                    <?php foreach ($listcategory as $catName): ?>
+                        <button type="button" class="chip" data-category-chip data-value="<?php echo htmlspecialchars((string)$catName, ENT_QUOTES); ?>">
+                            <span><?php echo htmlspecialchars((string)$catName, ENT_QUOTES); ?></span>
+                        </button>
+                    <?php endforeach; ?>
                 </div>
+                <input type="hidden" name="code_category_csv" id="ed_code_category" data-category-hidden value="">
+            </div>
+            <div class="form-group" id="ed_targeting_panel_wrap" style="display:none;">
+                <label class="form-label">پنل‌ها <small style="color:var(--text-muted)">(می‌توانید چند مورد انتخاب کنید)</small></label>
+                <div class="chip-row" id="ed_panel_picker" data-panel-picker>
+                    <?php foreach ($listpanel as $p): ?>
+                        <button type="button" class="chip" data-panel-chip data-value="<?php echo htmlspecialchars((string)($p['code_panel'] ?? ''), ENT_QUOTES); ?>">
+                            <span><?php echo htmlspecialchars((string)($p['name_panel'] ?? ''), ENT_QUOTES); ?></span>
+                        </button>
+                    <?php endforeach; ?>
+                </div>
+                <input type="hidden" name="code_panel_csv" id="ed_code_panel_csv" data-panel-hidden value="">
+            </div>
+            <div class="form-group">
+                <label class="form-label">گروه هدف <small style="color:var(--text-muted)">(می‌توانید چند مورد انتخاب کنید)</small></label>
+                <div class="chip-row" id="ed_agent_picker" data-agent-picker>
+                    <?php foreach ($discountAgentOptions as $agVal => $agLabel): ?>
+                    <button type="button" class="chip" data-agent-chip data-value="<?php echo htmlspecialchars($agVal, ENT_QUOTES); ?>">
+                        <span><?php echo htmlspecialchars($agLabel, ENT_QUOTES); ?></span>
+                    </button>
+                    <?php endforeach; ?>
+                </div>
+                <input type="hidden" name="agent_csv" id="ed_agent_csv" data-agent-hidden value="allusers">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">کد اختصاصی کاربر <small style="color:var(--text-muted)">(آیدی عددی، اختیاری)</small></label>
+                <input type="text" name="target_user" id="ed_target" class="form-control" style="direction:ltr">
             </div>
             <div class="form-group" style="display:flex; flex-direction:column; gap:8px;">
                 <label style="display:flex; align-items:center; gap:10px; font-size:13px; cursor:pointer;">
@@ -853,8 +1136,8 @@ function faoxima_d_label_section($s) {
                     <input type="text" name="code" id="ed_g_code" class="form-control" style="direction:ltr;" required>
                 </div>
                 <div class="form-group">
-                    <label class="form-label">مبلغ (تومان)</label>
-                    <input type="number" name="gift_price" id="ed_g_price" class="form-control" required min="1">
+                    <label class="form-label">مبلغ (T)</label>
+                    <input type="text" name="gift_price" id="ed_g_price" class="form-control" data-money required min="1">
                 </div>
             </div>
             <div class="form-row">
@@ -879,51 +1162,199 @@ function faoxima_d_label_section($s) {
     </div>
 </div>
 
-<script src="js/datatable.js" defer>
-
-</script>
+<script src="js/bulk-select.js?v=fx2"></script>
+<script src="js/compact-badges.js?v=fx1"></script>
 <script>
-document.addEventListener('DOMContentLoaded', function () {
-    FaoximaDT.init('#discountsTable');
-    FaoximaDT.init('#giftsTable');
+function faoximaToggleAll(master, scopeId) {
+    var scope = scopeId ? document.getElementById(scopeId) : document;
+    scope.querySelectorAll('input[name="ids[]"]:not(:disabled)').forEach(function(cb) {
+        if (cb.checked === master.checked) return;
+        cb.checked = master.checked;
+        cb.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+}
+var fxBulkHandle1 = FxBulkSelect.init({
+    scope: '1',
+    checkboxSelector: 'input[name="ids[]"]',
+    scopeRoot: document.getElementById('bulk-scope-1'),
+    formEl: null,
+    deleteButtonSelector: '.js-bulk-delete-btn-1',
+    clearOnQueryFlags: ['bulk1']
 });
-
-function openModal(id) { var m = document.getElementById(id); if (m) m.classList.add('active'); }
+var fxBulkHandle2 = FxBulkSelect.init({
+    scope: '2',
+    checkboxSelector: 'input[name="ids[]"]',
+    scopeRoot: document.getElementById('bulk-scope-2'),
+    formEl: null,
+    deleteButtonSelector: '.js-bulk-delete-btn-2',
+    clearOnQueryFlags: ['bulk2']
+});
+function faoximaBulkDelete(scopeId, actionValue, actionField) {
+    var scope = document.getElementById(scopeId);
+    var handle = scopeId === 'bulk-scope-1' ? fxBulkHandle1 : fxBulkHandle2;
+    var idSet = {};
+    Array.prototype.forEach.call(scope.querySelectorAll('input[name="ids[]"]:checked'), function (cb) {
+        idSet[cb.value] = true;
+    });
+    FxBulkSelect.getPersistedIds(handle.key).forEach(function (v) {
+        idSet[v] = true;
+    });
+    var ids = Object.keys(idSet);
+    if (ids.length === 0) return;
+    if (!confirm('آیا از حذف موارد انتخاب‌شده مطمئن هستید؟')) return;
+    var form = document.createElement('form');
+    form.method = 'POST';
+    form.action = 'discounts.php';
+    var actionInput = document.createElement('input');
+    actionInput.type = 'hidden';
+    actionInput.name = actionField;
+    actionInput.value = actionValue;
+    form.appendChild(actionInput);
+    ids.forEach(function(val) {
+        var idInput = document.createElement('input');
+        idInput.type = 'hidden';
+        idInput.name = 'ids[]';
+        idInput.value = val;
+        form.appendChild(idInput);
+    });
+    document.body.appendChild(form);
+    form.submit();
+}
+function openModal(id) {
+    var m = document.getElementById(id);
+    if (!m) return;
+    if (typeof window.closeDetailSheet === 'function') window.closeDetailSheet();
+    m.classList.add('active');
+    if (id === 'modal-add-discount') {
+        m.querySelector('form')?.reset();
+        var picker = document.querySelector('#targeting_category_wrap [data-category-picker]');
+        if (picker) faoximaCategoryPickerSetSelected(picker, []);
+        faoximaToggleTargeting('none');
+        updateValueHint('percent');
+        faoximaSectionPickerSetSelected(m.querySelector('[data-section-picker]'), ['all']);
+        faoximaAgentPickerSetSelected(m.querySelector('[data-agent-picker]'), ['allusers']);
+    }
+}
 function closeModal(id) { var m = document.getElementById(id); if (m) m.classList.remove('active'); }
 
 function updateValueHint(type) {
     var lbl = document.getElementById('valueLabel');
     if (type === 'percent') lbl.textContent = 'مقدار تخفیف (٪)';
-    else if (type === 'amount') lbl.textContent = 'مقدار تخفیف (تومان)';
+    else if (type === 'amount') lbl.textContent = 'مقدار تخفیف (T)';
     else lbl.textContent = 'مقدار (استفاده‌نمی‌شود)';
+    if (window.FaoximaMoneyInput) {
+        window.FaoximaMoneyInput.setMode(document.getElementById('add_price'), type === 'amount');
+    }
 }
 
 function updateEditValueHint(type) {
     var lbl = document.getElementById('ed_valueLabel');
     if (!lbl) return;
     if (type === 'percent') lbl.textContent = 'مقدار تخفیف (٪)';
-    else if (type === 'amount') lbl.textContent = 'مقدار تخفیف (تومان)';
+    else if (type === 'amount') lbl.textContent = 'مقدار تخفیف (T)';
     else lbl.textContent = 'مقدار (استفاده‌نمی‌شود)';
+    if (window.FaoximaMoneyInput) {
+        window.FaoximaMoneyInput.setMode(document.getElementById('ed_price'), type === 'amount');
+    }
 }
+
+function faoximaToggleTargeting(mode) {
+    document.getElementById('targeting_category_wrap').style.display = (mode === 'category') ? '' : 'none';
+    document.getElementById('targeting_panel_wrap').style.display = (mode === 'panel') ? '' : 'none';
+}
+function faoximaToggleEditTargeting(mode) {
+    document.getElementById('ed_targeting_category_wrap').style.display = (mode === 'category') ? '' : 'none';
+    document.getElementById('ed_targeting_panel_wrap').style.display = (mode === 'panel') ? '' : 'none';
+}
+
+function faoximaChipPickerSync(picker, hiddenAttr, chipAttr) {
+    var hidden = picker.parentElement.querySelector('[' + hiddenAttr + ']');
+    if (!hidden) return;
+    var values = Array.from(picker.querySelectorAll('.chip.is-active')).map(function (c) { return c.getAttribute('data-value'); });
+    hidden.value = values.join(',');
+}
+function faoximaChipPickerSetSelected(picker, values, chipAttr, hiddenAttr) {
+    var set = values.filter(function (v) { return v !== ''; });
+    picker.querySelectorAll('.chip[' + chipAttr + ']').forEach(function (chip) {
+        chip.classList.toggle('is-active', set.indexOf(chip.getAttribute('data-value')) !== -1);
+    });
+    faoximaChipPickerSync(picker, hiddenAttr, chipAttr);
+}
+function faoximaCategoryPickerSync(picker) {
+    faoximaChipPickerSync(picker, 'data-category-hidden', 'data-category-chip');
+}
+function faoximaCategoryPickerSetSelected(picker, values) {
+    faoximaChipPickerSetSelected(picker, values, 'data-category-chip', 'data-category-hidden');
+}
+function faoximaPanelPickerSync(picker) {
+    faoximaChipPickerSync(picker, 'data-panel-hidden', 'data-panel-chip');
+}
+function faoximaPanelPickerSetSelected(picker, values) {
+    faoximaChipPickerSetSelected(picker, values, 'data-panel-chip', 'data-panel-hidden');
+}
+function faoximaSectionPickerSync(picker) {
+    faoximaChipPickerSync(picker, 'data-section-hidden', 'data-section-chip');
+}
+function faoximaSectionPickerSetSelected(picker, values) {
+    faoximaChipPickerSetSelected(picker, values, 'data-section-chip', 'data-section-hidden');
+}
+function faoximaAgentPickerSync(picker) {
+    faoximaChipPickerSync(picker, 'data-agent-hidden', 'data-agent-chip');
+}
+function faoximaAgentPickerSetSelected(picker, values) {
+    faoximaChipPickerSetSelected(picker, values, 'data-agent-chip', 'data-agent-hidden');
+}
+function faoximaBindChipPicker(pickerRootSelector, chipSelector, syncFn) {
+    document.querySelectorAll(pickerRootSelector).forEach(function (picker) {
+        picker.addEventListener('click', function (ev) {
+            var chip = ev.target.closest(chipSelector);
+            if (!chip || !picker.contains(chip)) return;
+            chip.classList.toggle('is-active');
+            syncFn(picker);
+        });
+    });
+}
+faoximaBindChipPicker('[data-category-picker]', '.chip[data-category-chip]', faoximaCategoryPickerSync);
+faoximaBindChipPicker('[data-panel-picker]', '.chip[data-panel-chip]', faoximaPanelPickerSync);
+faoximaBindChipPicker('[data-section-picker]', '.chip[data-section-chip]', faoximaSectionPickerSync);
+faoximaBindChipPicker('[data-agent-picker]', '.chip[data-agent-chip]', faoximaAgentPickerSync);
+
 function editDiscount(btn) {
     document.getElementById('ed_id').value      = btn.getAttribute('data-id');
     document.getElementById('ed_code').value    = btn.getAttribute('data-code');
     document.getElementById('ed_type').value    = btn.getAttribute('data-vt');
-    document.getElementById('ed_section').value = btn.getAttribute('data-section');
     document.getElementById('ed_price').value   = btn.getAttribute('data-price');
     document.getElementById('ed_limit').value   = btn.getAttribute('data-limit');
-    document.getElementById('ed_agent').value   = btn.getAttribute('data-agent');
     document.getElementById('ed_exp').value      = btn.getAttribute('data-exp');
     document.getElementById('ed_target').value  = btn.getAttribute('data-target');
     document.getElementById('ed_first').checked   = btn.getAttribute('data-first') === '1';
     document.getElementById('ed_useuser').checked = btn.getAttribute('data-useuser') === '1';
     updateEditValueHint(btn.getAttribute('data-vt'));
+
+    var targetingMode = btn.getAttribute('data-targeting-mode') || 'none';
+    document.getElementById('ed_targeting_mode').value = targetingMode;
+    var categoryStr = btn.getAttribute('data-category') || '';
+    var categoryArr = categoryStr.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s !== ''; });
+    faoximaCategoryPickerSetSelected(document.getElementById('ed_category_picker'), categoryArr);
+    var panelStr = btn.getAttribute('data-panel') || '';
+    var panelArr = panelStr.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s !== ''; });
+    faoximaPanelPickerSetSelected(document.getElementById('ed_panel_picker'), panelArr);
+    faoximaToggleEditTargeting(targetingMode);
+
+    var sectionStr = btn.getAttribute('data-section') || 'all';
+    var sectionArr = sectionStr.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s !== ''; });
+    faoximaSectionPickerSetSelected(document.getElementById('ed_section_picker'), sectionArr);
+
+    var agentStr = btn.getAttribute('data-agent') || 'allusers';
+    var agentArr = agentStr.split(',').map(function (s) { return s.trim(); }).filter(function (s) { return s !== ''; });
+    faoximaAgentPickerSetSelected(document.getElementById('ed_agent_picker'), agentArr);
+
     openModal('modal-edit-discount');
 }
 function editGift(btn) {
     document.getElementById('ed_g_id').value     = btn.getAttribute('data-id');
     document.getElementById('ed_g_code').value   = btn.getAttribute('data-code');
-    document.getElementById('ed_g_price').value  = btn.getAttribute('data-price');
+    document.getElementById('ed_g_price').value  = window.FaoximaMoneyInput ? window.FaoximaMoneyInput.format(btn.getAttribute('data-price')) : btn.getAttribute('data-price');
     document.getElementById('ed_g_limit').value  = btn.getAttribute('data-limit');
     document.getElementById('ed_g_target').value = btn.getAttribute('data-target');
     document.getElementById('ed_g_exp').value    = btn.getAttribute('data-exp');

@@ -1,5 +1,10 @@
 <?php
 
+if (!defined('REFACTORED_LEGACY_ROOT')) {
+    define('REFACTORED_LEGACY_ROOT', __DIR__);
+}
+@chdir(__DIR__);
+
 require_once 'config.php';
 require_once 'botapi.php';
 require_once 'panels.php';
@@ -79,11 +84,11 @@ if(intval($user['status_cron']) != 0){
 }
     $text_report = "📌 اطلاعیه کرون حجم
 
-نام کاربری سرویس :‌ <code>$line</code>
-آیدی عددی کاربر :‌ <code>{$invoice['id_user']}</code>
-وضعیت سرویس : {$data['status']}
-حجم باقی مانده : $RemainingVolume
-حجم کل سرویس : $data_limit";
+<blockquote>نام کاربری سرویس :‌ <code>$line</code></blockquote>
+<blockquote>آیدی عددی کاربر :‌ <code>{$invoice['id_user']}</code></blockquote>
+<blockquote>وضعیت سرویس : {$data['status']}</blockquote>
+<blockquote>حجم باقی مانده : $RemainingVolume</blockquote>
+<blockquote>حجم کل سرویس : $data_limit</blockquote>";
     if (strlen($setting['Channel_Report']) > 0) {
             telegram('sendmessage',[
                 'chat_id' => $setting['Channel_Report'],
@@ -126,10 +131,10 @@ if(intval($user['status_cron']) != 0){
 }
     $text_report = "📌 اطلاعیه کرون زمان
 
-نام کاربری سرویس :‌ <code>{$data['username']}</code>
-آیدی عددی کاربر :‌ <code>{$invoice['id_user']}</code>
-وضعیت سرویس : {$data['status']}
-تعداد روز باقی مانده ‌:‌$day";
+<blockquote>نام کاربری سرویس :‌ <code>{$data['username']}</code></blockquote>
+<blockquote>آیدی عددی کاربر :‌ <code>{$invoice['id_user']}</code></blockquote>
+<blockquote>وضعیت سرویس : {$data['status']}</blockquote>
+<blockquote>تعداد روز باقی مانده ‌:‌$day</blockquote>";
         if (strlen($setting['Channel_Report']) > 0) {
             telegram('sendmessage',[
                 'chat_id' => $setting['Channel_Report'],
@@ -150,11 +155,20 @@ elseif(in_array($data['action'],["user_expired","user_limited"])){
         if($invoice == false)return;
         if($invoice['name_product'] == "سرویس تست")return;
         $panel = select("marzban_panel","*","name_panel",$invoice['Service_location'],"select");
+        $actionName = $data['action'];
         $data = $data['user'];
+        if($actionName === "user_expired"){
+            update("invoice","Status","end_of_time","username",$line);
+        }elseif($actionName === "user_limited"){
+            update("invoice","Status","end_of_volume","username",$line);
+        }
+        try {
+            update("invoice","user_info",json_encode($data, JSON_UNESCAPED_UNICODE),"username",$line);
+        } catch (Throwable $e) {
+        }
         if($panel['inboundstatus'] == "oninbounddisable"){
         if($data['data_limit_reset_strategy'] == "no_reset"){
         $inbound = explode("*", $panel['inbound_deactive']);
-        update("invoice","uuid",json_encode($data['proxies']), "username",$line);
         $proxies = [];
         $proxies[$inbound[0]] = new stdClass();;
         $inbounds[$inbound[0]][] = $inbound[1];
@@ -162,7 +176,20 @@ elseif(in_array($data['action'],["user_expired","user_limited"])){
             "proxies" => $proxies,
             "inbounds" => $inbounds
             );
-        $ManagePanel->Modifyuser($line,$panel['name_panel'],$configs);
+        $modifyResult = $ManagePanel->Modifyuser($line,$panel['name_panel'],$configs);
+        if (!$modifyResult['status']) {
+            if (function_exists('rx_log_event')) {
+                rx_log_event('WEBHOOK_MODIFYUSER_FAIL', 'Modifyuser call failed, invoice uuid not updated', [
+                    'username' => $line,
+                    'name_panel' => $panel['name_panel'],
+                    'msg' => $modifyResult['msg'] ?? '',
+                ]);
+            } else {
+                error_log('[webhook] Modifyuser failed for ' . $line . ': ' . ($modifyResult['msg'] ?? ''));
+            }
+        } else {
+            update("invoice","uuid",json_encode($data['proxies']), "username",$line);
+        }
          }
     }
 

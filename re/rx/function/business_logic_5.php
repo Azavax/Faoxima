@@ -13,8 +13,10 @@ function nm_appendInfoCardQrButton($existing, $invoice_id)
     } elseif (is_array($existing) && isset($existing['inline_keyboard'])) {
         $kb = $existing;
     }
-    $qrButton = ['text' => '📷 دریافت QR Code', 'callback_data' => 'infocard_qr_' . $invoice_id];
-    array_unshift($kb['inline_keyboard'], [$qrButton]);
+    if (!function_exists('isQrDisabled') || !isQrDisabled()) {
+        $qrButton = ['text' => '📷 دریافت QR Code', 'callback_data' => 'infocard_qr_' . $invoice_id];
+        array_unshift($kb['inline_keyboard'], [$qrButton]);
+    }
     return json_encode($kb, JSON_UNESCAPED_UNICODE);
 }
 
@@ -44,19 +46,29 @@ function nm_sendInfoCardsForServiceList($from_id, array $services)
         }
         $cardPath = nm_renderInfoCardForInvoice($panel, $row['username'], $row['id_invoice'], $from_id);
         if ($cardPath === null) {
+            if (function_exists('nm_sendServiceQrFallback')) {
+                global $ManagePanel;
+                $subLink = '';
+                if (isset($ManagePanel) && is_object($ManagePanel) && method_exists($ManagePanel, 'DataUser')) {
+                    $data = @$ManagePanel->DataUser($row['Service_location'] ?? '', $row['username']);
+                    if (is_array($data)) {
+                        $subLink = (string)($data['subscription_url'] ?? '');
+                    }
+                }
+                if ($subLink !== '') {
+                    nm_sendServiceQrFallback($from_id, $subLink);
+                }
+            }
             continue;
         }
         $note = isset($row['note']) && $row['note'] !== '' ? ' | ' . $row['note'] : '';
         $caption = '✨ <b>' . htmlspecialchars((string)$row['username'], ENT_QUOTES, 'UTF-8') . '</b>'
             . htmlspecialchars($note, ENT_QUOTES, 'UTF-8');
-        $kb = json_encode([
-            'inline_keyboard' => [
-                [
-                    ['text' => '🔧 مدیریت سرویس', 'callback_data' => 'product_' . $row['id_invoice']],
-                    ['text' => '📷 دریافت QR Code', 'callback_data' => 'infocard_qr_' . $row['id_invoice']],
-                ],
-            ],
-        ], JSON_UNESCAPED_UNICODE);
+        $__kbButtons = [['text' => '🔧 مدیریت سرویس', 'callback_data' => 'product_' . $row['id_invoice']]];
+        if (!function_exists('isQrDisabled') || !isQrDisabled()) {
+            $__kbButtons[] = ['text' => '📷 دریافت QR Code', 'callback_data' => 'infocard_qr_' . $row['id_invoice']];
+        }
+        $kb = json_encode(['inline_keyboard' => [$__kbButtons]], JSON_UNESCAPED_UNICODE);
         try {
             telegram('sendphoto', [
                 'chat_id' => $from_id,
@@ -73,6 +85,326 @@ function nm_sendInfoCardsForServiceList($from_id, array $services)
     }
 }
 
+
+function rxRenderFeatureStatus($rxFeatView, $from_id) {
+    global $textbotlang, $setting, $pdo, $status_cron,
+        $name_status, $name_status_role, $Authenticationphone, $Authenticationiran,
+        $statusverify, $statusverifybyuser, $authScopeBtn, $authScopeVal, $statusinline,
+        $name_status_username, $name_status_notifnewuser, $name_status_showagent,
+        $statuspvsupport, $statusnameconfig, $statusnotef,
+        $statusnamebulk, $btnstatuscategory, $keyboard_config_text, $status_copy_cart,
+        $statusDebtsettlement, $statuslimitchangeloc, $infocardColorEmoji, $infocardStatusText,
+        $infocardStatusValue, $forced_miniapp_status,
+        $wheel_luck, $statusfirstwheel, $wheelagent, $score, $Lotteryagent, $refralstatus, $statusDice,
+        $cronteststatustext, $cronuptime_nodestatustext, $cronuptime_panelstatustext,
+        $crondaystatustext, $cronon_holdtext, $cronvolumestatustext,
+        $cronremovestatustext, $cronremovevolumestatustext,
+        $randomWalletStatusText, $randomWalletStatusValue;
+
+    if ($setting['Bot_Status'] == "✅  ربات روشن است") {
+        update("setting", "Bot_Status", "botstatuson");
+    } elseif ($setting['Bot_Status'] == "❌ ربات خاموش است") {
+        update("setting", "Bot_Status", "botstatusoff");
+    }
+    if ($setting['roll_Status'] == "✅ تایید قانون روشن است") {
+        update("setting", "roll_Status", "rolleon");
+    } elseif ($setting['roll_Status'] == "❌ تایید قوانین خاموش است") {
+        update("setting", "roll_Status", "rolleoff");
+    }
+    if ($setting['get_number'] == "✅ تایید شماره موبایل روشن است") {
+        update("setting", "get_number", "onAuthenticationphone");
+    } elseif ($setting['get_number'] == "❌ احرازهویت شماره تماس غیرفعال است") {
+        update("setting", "get_number", "offAuthenticationphone");
+    }
+    if ($setting['iran_number'] == "✅ احرازشماره ایرانی روشن است") {
+        update("setting", "iran_number", "onAuthenticationiran");
+    } elseif ($setting['iran_number'] == "❌ بررسی شماره ایرانی غیرفعال است") {
+        update("setting", "iran_number", "offAuthenticationiran");
+    }
+    $status_cron = normalizeCronStatus($setting['cron_status'] ?? null, true);
+    $setting = select("setting", "*", null, null, "select");
+    $name_status = [
+        'botstatuson' => $textbotlang['Admin']['Status']['statuson'],
+        'botstatusoff' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['Bot_Status']];
+    $name_status_username = [
+        'onnotuser' => $textbotlang['Admin']['Status']['statuson'],
+        'offnotuser' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['NotUser']];
+    $name_status_notifnewuser = [
+        'onnewuser' => $textbotlang['Admin']['Status']['statuson'],
+        'offnewuser' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['statusnewuser']];
+    $name_status_showagent = [
+        'onrequestagent' => $textbotlang['Admin']['Status']['statuson'],
+        'offrequestagent' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['statusagentrequest']];
+    $name_status_role = [
+        'rolleon' => $textbotlang['Admin']['Status']['statuson'],
+        'rolleoff' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['roll_Status']];
+    $Authenticationphone = [
+        'onAuthenticationphone' => $textbotlang['Admin']['Status']['statuson'],
+        'offAuthenticationphone' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['get_number']];
+    $Authenticationiran = [
+        'onAuthenticationiran' => $textbotlang['Admin']['Status']['statuson'],
+        'offAuthenticationiran' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['iran_number']];
+    $statusinline = [
+        'oninline' => $textbotlang['Admin']['Status']['statuson'],
+        'offinline' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['inlinebtnmain']];
+    $statusverify = [
+        'onverify' => $textbotlang['Admin']['Status']['statuson'],
+        'offverify' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['verifystart']];
+    $statuspvsupport = [
+        'onpvsupport' => $textbotlang['Admin']['Status']['statuson'],
+        'offpvsupport' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['statussupportpv']];
+    $statusnameconfig = [
+        'onnamecustom' => $textbotlang['Admin']['Status']['statuson'],
+        'offnamecustom' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['statusnamecustom']];
+    $statusnamebulk = [
+        'onbulk' => $textbotlang['Admin']['Status']['statuson'],
+        'offbulk' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['bulkbuy']];
+    $statusverifybyuser = [
+        'onverify' => $textbotlang['Admin']['Status']['statuson'],
+        'offverify' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['verifybucodeuser']];
+    $authScopeVal = (string)($setting['auth_scope'] ?? 'all');
+    if ($authScopeVal === '') { $authScopeVal = 'all'; }
+    $authScopeBtn = ($authScopeVal === 'newonly')
+        ? "👥 محدوده احراز هویت: فقط کاربران جدید"
+        : "👥 محدوده احراز هویت: همه کاربران";
+    $score = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['scorestatus']];
+    $wheel_luck = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['wheelـluck']];
+    $refralstatus = [
+        'onaffiliates' => $textbotlang['Admin']['Status']['statuson'],
+        'offaffiliates' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['affiliatesstatus']];
+    $btnstatuscategory = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['categoryhelp']];
+    $cronteststatustext = [
+        true => $textbotlang['Admin']['Status']['statuson'],
+        false => $textbotlang['Admin']['Status']['statusoff']
+    ][$status_cron['test']];
+    $crondaystatustext = [
+        true => $textbotlang['Admin']['Status']['statuson'],
+        false => $textbotlang['Admin']['Status']['statusoff']
+    ][$status_cron['day']];
+    $cronvolumestatustext = [
+        true => $textbotlang['Admin']['Status']['statuson'],
+        false => $textbotlang['Admin']['Status']['statusoff']
+    ][$status_cron['volume']];
+    $cronremovestatustext = [
+        true => $textbotlang['Admin']['Status']['statuson'],
+        false => $textbotlang['Admin']['Status']['statusoff']
+    ][$status_cron['remove']];
+    $cronremovevolumestatustext = [
+        true => $textbotlang['Admin']['Status']['statuson'],
+        false => $textbotlang['Admin']['Status']['statusoff']
+    ][$status_cron['remove_volume']];
+    $cronuptime_nodestatustext = [
+        true => $textbotlang['Admin']['Status']['statuson'],
+        false => $textbotlang['Admin']['Status']['statusoff']
+    ][$status_cron['uptime_node']];
+    $cronuptime_panelstatustext = [
+        true => $textbotlang['Admin']['Status']['statuson'],
+        false => $textbotlang['Admin']['Status']['statusoff']
+    ][$status_cron['uptime_panel']];
+    $cronon_holdtext = [
+        true => $textbotlang['Admin']['Status']['statuson'],
+        false => $textbotlang['Admin']['Status']['statusoff']
+    ][$status_cron['on_hold']];
+    $wheelagent = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['wheelagent']];
+    $Lotteryagent = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['Lotteryagent']];
+    $statusfirstwheel = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['statusfirstwheel']];
+    $statuslimitchangeloc = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['statuslimitchangeloc']];
+    $statusDebtsettlement = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['Debtsettlement']];
+    $statusDice = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['Dice']];
+    $statusnotef = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['statusnoteforf']];
+    $status_copy_cart = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['statuscopycart']];
+    $keyboard_config_text = [
+        '1' => $textbotlang['Admin']['Status']['statuson'],
+        '0' => $textbotlang['Admin']['Status']['statusoff']
+    ][$setting['status_keyboard_config']];
+    $forced_miniapp_status = (((string)($setting['forced_miniapp_mode'] ?? '0')) === '1')
+        ? $textbotlang['Admin']['Status']['statuson']
+        : $textbotlang['Admin']['Status']['statusoff'];
+
+    $randomWalletStatusRow = select("PaySetting", "ValuePay", "NamePay", "randomwallet_status", "select");
+    $randomWalletStatusValue = is_array($randomWalletStatusRow) ? (string)($randomWalletStatusRow['ValuePay'] ?? '0') : '0';
+    $randomWalletStatusText = $randomWalletStatusValue === '1'
+        ? $textbotlang['Admin']['Status']['statuson']
+        : $textbotlang['Admin']['Status']['statusoff'];
+
+    $infocardStatusRow = select("shopSetting", "*", "Namevalue", "infocard_status", "select");
+    $infocardStatusValue = (is_array($infocardStatusRow) && isset($infocardStatusRow['value']))
+        ? (string)$infocardStatusRow['value'] : '0';
+    $infocardColorRow = select("shopSetting", "*", "Namevalue", "infocard_color", "select");
+    $infocardColorValue = (is_array($infocardColorRow) && isset($infocardColorRow['value']))
+        ? (string)$infocardColorRow['value'] : 'yellow';
+    $infocardStatusText = $infocardStatusValue === '1'
+        ? $textbotlang['Admin']['Status']['statuson']
+        : $textbotlang['Admin']['Status']['statusoff'];
+    $infocardColorEmojiMap = [
+        'yellow' => '🟡', 'green' => '🟢', 'red' => '🔴',
+        'blue'   => '🔵', 'purple' => '🟣', 'orange' => '🟠'
+    ];
+    $infocardColorEmoji = $infocardColorEmojiMap[$infocardColorValue] ?? '🟡';
+
+    $premiumEmojiCount = 0;
+    try {
+        $rxPemRow = $pdo->query("SELECT COUNT(*) AS c FROM premium_emojis WHERE custom_emoji_id IS NOT NULL AND custom_emoji_id <> ''")->fetch(PDO::FETCH_ASSOC);
+        $premiumEmojiCount = (int)($rxPemRow['c'] ?? 0);
+    } catch (\Throwable $rxPemErr) { $premiumEmojiCount = 0; }
+
+    $rxAsStatusValue = (string)($setting['antispam_status'] ?? '0');
+    $rxAsStatusText  = ($rxAsStatusValue === '1')
+        ? $textbotlang['Admin']['Status']['statuson']
+        : $textbotlang['Admin']['Status']['statusoff'];
+    $rxAsMsgCountVal = (int)($setting['antispam_msg_count'] ?? 5);
+    if ($rxAsMsgCountVal < 1)    { $rxAsMsgCountVal = 1; }
+    if ($rxAsMsgCountVal > 1000) { $rxAsMsgCountVal = 1000; }
+    $rxAsSecondsVal = (int)($setting['antispam_seconds'] ?? 3);
+    if ($rxAsSecondsVal < 1)    { $rxAsSecondsVal = 1; }
+    if ($rxAsSecondsVal > 3600) { $rxAsSecondsVal = 3600; }
+    $rxAsMuteSecondsVal = (int)($setting['antispam_mute_seconds'] ?? 5);
+    if ($rxAsMuteSecondsVal < 1)     { $rxAsMuteSecondsVal = 1; }
+    if ($rxAsMuteSecondsVal > 86400) { $rxAsMuteSecondsVal = 86400; }
+
+    $rxBackRow = [['text' => "🔙 بازگشت", 'callback_data' => 'featcat_main']];
+
+    if ($rxFeatView === 'main') {
+        $rxFeatKb = [
+            [['text' => "🤖 آپشن‌های اصلی ربات",       'callback_data' => 'featcat_bot']],
+            [['text' => "👥 کاربران و پشتیبانی",        'callback_data' => 'featcat_users']],
+            [['text' => "🛍 فروش و خدمات",              'callback_data' => 'featcat_shop']],
+            [['text' => "🎁 گردونه و قرعه‌کشی",          'callback_data' => 'featcat_lottery']],
+            [['text' => "⏱ کرون‌ها و زمان‌بندی",          'callback_data' => 'featcat_crons']],
+            [['text' => "🌟 ایموجی پرمیوم ({$premiumEmojiCount})", 'callback_data' => 'premium_emoji_settings']],
+            [['text' => "🛡 آنتی اسپم", 'callback_data' => 'featcat_antispam']],
+            [['text' => "🖥 بهینه‌ساز هاست اشتراکی", 'callback_data' => 'run_host_optimizer']],
+            [['text' => "🧠 وضعیت Redis", 'callback_data' => 'run_redis_status']],
+            [['text' => "🔙 بازگشت", 'callback_data' => 'admin_settings'],
+             ['text' => "❌ بستن", 'callback_data' => 'close_stat']],
+        ];
+        $rxFeatTitle = "📌 <b>وضعیت قابلیت‌ها</b>\n\nاز کدام دسته از قابلیت‌ها می‌خواهید استفاده کنید؟\n\n💡 برای تنظیمات هر بخش، روی دکمه دسته بزنید.";
+    } elseif ($rxFeatView === 'bot') {
+        $rxFeatKb = rx_featCategoryRows('bot');
+        $rxFeatKb[] = $rxBackRow;
+        $rxFeatTitle = "🤖 <b>آپشن‌های اصلی ربات</b>\n\nقابلیت‌های اصلی ربات را در اینجا تنظیم کنید.";
+    } elseif ($rxFeatView === 'users') {
+        $rxFeatKb = rx_featCategoryRows('users');
+        $rxFeatKb[] = $rxBackRow;
+        $rxFeatTitle = "👥 <b>کاربران و پشتیبانی</b>\n\nقابلیت‌های مربوط به کاربران، اعلان‌ها و پشتیبانی را اینجا تنظیم کنید.";
+    } elseif ($rxFeatView === 'shop') {
+        $rxFeatKb = rx_featCategoryRows('shop');
+        $rxFeatKb[] = $rxBackRow;
+        $rxFeatTitle = "🛍 <b>فروش و خدمات</b>\n\nقابلیت‌های فروشگاه، کانفیگ و خدمات جانبی را اینجا تنظیم کنید.";
+    } elseif ($rxFeatView === 'lottery') {
+        $rxFeatKb = rx_featCategoryRows('lottery');
+        $rxFeatKb[] = $rxBackRow;
+        $rxFeatTitle = "🎁 <b>گردونه و قرعه‌کشی</b>\n\nقابلیت‌های گردونه شانس، قرعه‌کشی و زیرمجموعه را اینجا تنظیم کنید.";
+    } elseif ($rxFeatView === 'crons') {
+        $rxFeatKb = rx_featCategoryRows('crons');
+        $rxFeatKb[] = $rxBackRow;
+        $rxFeatTitle = "⏱ <b>کرون‌ها و زمان‌بندی</b>\n\nقابلیت‌های مربوط به کرون‌ها (cronjobs) و زمان‌بندی را اینجا تنظیم کنید.";
+    } elseif ($rxFeatView === 'antispam') {
+        $rxFeatKb = [
+            [['text' => $rxAsStatusText, 'callback_data' => "antispam_toggle"],
+             ['text' => "🛡 وضعیت آنتی اسپم", 'callback_data' => "antispam_noop"]],
+            [['text' => (string)$rxAsMsgCountVal, 'callback_data' => "antispam_set_count"],
+             ['text' => "✉️ تعداد پیام مجاز", 'callback_data' => "antispam_noop"]],
+            [['text' => (string)$rxAsSecondsVal, 'callback_data' => "antispam_set_seconds"],
+             ['text' => "⏱ بازه (ثانیه)", 'callback_data' => "antispam_noop"]],
+            [['text' => (string)$rxAsMuteSecondsVal, 'callback_data' => "antispam_set_mute"],
+             ['text' => "🔇 آف بودن (ثانیه)", 'callback_data' => "antispam_noop"]],
+            $rxBackRow,
+        ];
+        $rxFeatTitle = "🛡 <b>آنتی اسپم</b>\n\n"
+            . "محدودیت ارسال پیام برای جلوگیری از اسپم.\n\n"
+            . "📌 <b>تنظیمات فعلی:</b>\n"
+            . "• وضعیت: {$rxAsStatusText}\n"
+            . "• تعداد پیام مجاز: <b>{$rxAsMsgCountVal}</b> پیام\n"
+            . "• بازه زمانی: هر <b>{$rxAsSecondsVal}</b> ثانیه\n"
+            . "• مدت آف بودن پس از تخلف: <b>{$rxAsMuteSecondsVal}</b> ثانیه\n\n"
+            . "💡 اگر کاربری بیشتر از {$rxAsMsgCountVal} پیام در {$rxAsSecondsVal} ثانیه ارسال کند، ربات برای {$rxAsMuteSecondsVal} ثانیه به او پاسخ نمی‌دهد.\n"
+            . "پس از پایان این مدت، با ارسال مجدد /start کاربر مجدداً پاسخ می‌گیرد.\n\n"
+            . "ℹ️ <b>توجه:</b> این محدودیت فقط برای کاربران معمولی اعمال می‌شود. ادمین‌ها هرگز محدود نمی‌شوند.";
+    } elseif ($rxFeatView === 'redis') {
+        $rxRedisExtOk = function_exists('rx_redis_extension_available') && rx_redis_extension_available();
+        $rxRedisAdminOn = (string)($setting['redis_enabled'] ?? '0') === '1';
+        $rxRedisReachable = $rxRedisExtOk && function_exists('rx_redis_is_active') && rx_redis_is_active();
+        $rxRedisCooldown = function_exists('rx_redis_cooldown_remaining') ? rx_redis_cooldown_remaining() : 0;
+
+        $rxRedisExtText = $rxRedisExtOk ? "✅ فعال" : "❌ غیرفعال";
+        $rxRedisReachText = $rxRedisReachable ? "✅ متصل" : "❌ متصل نیست";
+        $rxRedisAdminText = $rxRedisAdminOn ? "✅ فعال" : "❌ غیرفعال";
+        $rxRedisToggleLabel = $rxRedisAdminOn ? "✅ فعال" : "❌ غیرفعال";
+
+        $rxFeatKb = [
+            [['text' => $rxRedisToggleLabel, 'callback_data' => "editstsuts-redis_enabled-" . ($rxRedisAdminOn ? '1' : '0')],
+             ['text' => "🧠 فعال‌سازی Redis", 'callback_data' => "none"]],
+            [['text' => "🧪 تست خواندن/نوشتن", 'callback_data' => "run_redis_test"]],
+            $rxBackRow,
+        ];
+
+        $rxFeatTitle = "🧠 <b>وضعیت Redis</b>\n\n"
+            . "📌 <b>وضعیت فعلی:</b>\n"
+            . "• افزونه PHP: {$rxRedisExtText}\n"
+            . "• اتصال زنده: {$rxRedisReachText}\n"
+            . "• فعال‌سازی توسط ادمین: {$rxRedisAdminText}\n";
+        if ($rxRedisCooldown > 0) {
+            $rxFeatTitle .= "• ⏳ در حالت استراحت پس از خطای اتصال — {$rxRedisCooldown} ثانیه دیگر دوباره تلاش می‌شود.\n";
+        }
+        $rxFeatTitle .= "\n💡 Redis فقط برای کش، Session موقت، Rate Limit و صف استفاده می‌شود؛ جایگزین دیتابیس اصلی نیست.";
+    } else {
+        return false;
+    }
+    $Bot_Status = json_encode(['inline_keyboard' => $rxFeatKb]);
+    nm_adminInstantReply($from_id, $rxFeatTitle, $Bot_Status, 'HTML');
+    if (function_exists('rxNavSetState')) {
+        rxNavSetState($from_id, 'featcat_' . $rxFeatView);
+    }
+    return true;
+}
 
 function rxRenderPremiumEmojiPanel($from_id, $page = 1) {
     global $pdo, $setting;
@@ -98,7 +430,7 @@ function rxRenderPremiumEmojiPanel($from_id, $page = 1) {
 
     $msg  = "🌟 <b>تنظیمات ایموجی پرمیوم</b>\n\n";
     $msg .= "وضعیت کلی: <b>{$statusText}</b>\n";
-    $msg .= "تعداد ایموجی‌های ثبت‌شده: <b>{$total}</b>";
+    $msg .= "تعداد ثبت‌شده: <b>{$total}</b>";
     if ($totalPages > 1) {
         $msg .= "  ·  📄 صفحه <b>{$page}</b> از <b>{$totalPages}</b>";
     }
@@ -107,26 +439,18 @@ function rxRenderPremiumEmojiPanel($from_id, $page = 1) {
         $msg .= "📭 هنوز هیچ ایموجی‌ای ثبت نشده است.\n\n";
         $msg .= "برای افزودن، روی دکمه «➕ افزودن ایموجی جدید» بزنید.";
     } else {
-        $msg .= "📋 <b>لیست ایموجی‌ها</b>\n\n";
-        foreach ($pageItems as $it) {
-            $em = (string)$it['emoji'];
-            $cid = (string)$it['custom_emoji_id'];
-            $cidShort = mb_strlen($cid) > 14 ? mb_substr($cid, 0, 14) . '…' : $cid;
-
-
-            $msg .= "{$em} ↦ <code>{$cidShort}</code>\n";
-        }
-        $msg .= "\nبرای ویرایش/حذف، از دکمه‌های زیر استفاده کنید.";
+        $msg .= "برای ویرایش/حذف، از دکمه‌های زیر استفاده کنید.";
     }
 
     $kb = ['inline_keyboard' => []];
     foreach ($pageItems as $it) {
         $em = (string)$it['emoji'];
         $id = (int)$it['id'];
-
+        $isValid = function_exists('isValidPremiumEmojiSource') ? isValidPremiumEmojiSource($em) : true;
+        $btnLabel = $isValid ? $em : "⚠️ نامعتبر: " . mb_substr($em, 0, 15, 'UTF-8');
 
         $kb['inline_keyboard'][] = [
-            ['text' => "{$em}", 'callback_data' => "premium_emoji_noop"],
+            ['text' => $btnLabel, 'callback_data' => "premium_emoji_noop"],
             ['text' => "✏️ ویرایش", 'callback_data' => "premium_emoji_edit_{$id}"],
             ['text' => "🗑 حذف", 'callback_data' => "premium_emoji_del_{$id}"],
         ];
@@ -146,6 +470,12 @@ function rxRenderPremiumEmojiPanel($from_id, $page = 1) {
         ['text' => "➕ افزودن ایموجی جدید", 'callback_data' => "premium_emoji_add"],
     ];
     $kb['inline_keyboard'][] = [
+        ['text' => "🔍 شناسایی خودکار ایموجی‌های ساده", 'callback_data' => "premium_emoji_scan"],
+    ];
+    $kb['inline_keyboard'][] = [
+        ['text' => "🗑 حذف همگانی همه ایموجی‌ها", 'callback_data' => "premium_emoji_del_all"],
+    ];
+    $kb['inline_keyboard'][] = [
         ['text' => ($statusVal === '1' ? "🚫 خاموش کردن قابلیت" : "☑️ روشن کردن قابلیت"),
          'callback_data' => "editstsuts-premiumemoji-{$statusVal}"],
     ];
@@ -157,6 +487,9 @@ function rxRenderPremiumEmojiPanel($from_id, $page = 1) {
 
 
     global $callback_query_id, $message_id;
+    if (function_exists('rxNavSetState')) {
+        rxNavSetState($from_id, 'premium_emoji');
+    }
     $kbJson = json_encode($kb, JSON_UNESCAPED_UNICODE);
     $isCallback = !empty($callback_query_id) && !empty($message_id);
     $delivered = false;
@@ -170,7 +503,7 @@ function rxRenderPremiumEmojiPanel($from_id, $page = 1) {
                     try {
                         telegram('answerCallbackQuery', [
                             'callback_query_id' => $callback_query_id,
-                            'cache_time'        => 1,
+                            'cache_time'        => 0,
                         ]);
                     } catch (Throwable $e) {}
                 }
@@ -196,7 +529,7 @@ function rxRenderPremiumEmojiPanel($from_id, $page = 1) {
                     try {
                         telegram('answerCallbackQuery', [
                             'callback_query_id' => $callback_query_id,
-                            'cache_time'        => 1,
+                            'cache_time'        => 0,
                         ]);
                     } catch (Throwable $e) {}
                 }
@@ -256,22 +589,31 @@ if (!function_exists('crypto_extract_hash')) {
         $input = str_replace(["\xE2\x80\x8B", "\xE2\x80\x8C", "\xE2\x80\x8D", "\xEF\xBB\xBF"], '', (string) $input);
         $input = trim((string) $input);
 
-        if (preg_match('~(?:tronscan\.org|tonscan\.org|tonviewer\.com|tonapi\.io)[^\s]*?/(?:tx|transaction|transactions|events)/([0-9a-fA-F]{64})~i', $input, $m)) {
+
+        if (preg_match('~[a-z0-9.-]+\.[a-z]{2,}[^\s]*?/(?:tx|transaction|transactions|events)/(0x[0-9a-fA-F]{64}|[0-9a-fA-F]{64})~i', $input, $m)) {
             return strtolower($m[1]);
         }
 
-        if (preg_match('/[0-9a-fA-F]{64}/', $input, $m)) {
+
+        if (preg_match('/\b0x[0-9a-fA-F]{64}\b/', $input, $m)) {
             return strtolower($m[0]);
         }
 
-        if (preg_match('~(?:tronscan\.org|tonscan\.org|tonviewer\.com|tonapi\.io)[^\s]*?/(?:tx|transaction|transactions|events)/([A-Za-z0-9_\-+/=]{43,44}=?)~i', $input, $m)) {
+
+        if (preg_match('/\b[0-9a-fA-F]{64}\b/', $input, $m)) {
+            return strtolower($m[0]);
+        }
+
+
+        if (preg_match('~[a-z0-9.-]+\.[a-z]{2,}[^\s]*?/(?:tx|transaction|transactions|events)/([A-Za-z0-9_\-+/=]{40,44}=?)~i', $input, $m)) {
             return $m[1];
         }
-        if (preg_match('~/(?:tx|transaction|transactions|events)/([A-Za-z0-9_\-+/=]{43,44}=?)(?:[/?#]|$)~', $input, $m)) {
+        if (preg_match('~/(?:tx|transaction|transactions|events)/([A-Za-z0-9_\-+/=]{40,44}=?)(?:[/?#]|$)~', $input, $m)) {
             return $m[1];
         }
 
-        if (preg_match('/^[A-Za-z0-9_\-+\/]{43}=?$/', $input)) {
+
+        if (preg_match('/^[A-Za-z0-9_\-+\/]{40,44}=?$/', $input) && !preg_match('/^0x[0-9a-fA-F]{40}$/i', $input)) {
             return $input;
         }
 
@@ -362,12 +704,73 @@ if (!function_exists('crypto_save_wallet')) {
     }
 }
 
+if (!function_exists('crypto_manual_currencies')) {
+    function crypto_manual_currencies(): array
+    {
+        $pdo = function_exists('getDatabaseConnection') ? getDatabaseConnection() : null;
+        if (!($pdo instanceof PDO)) return [];
+        try {
+            $stmt = $pdo->query("SELECT currency, network, label
+                                    FROM crypto_wallets
+                                   WHERE verification_mode = 'manual' AND enabled = 1
+                                   ORDER BY id ASC");
+            $rows = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
+            $out = [];
+            foreach ($rows as $row) {
+                $out[$row['currency']] = [
+                    'network'   => $row['network'],
+                    'decimals'  => 6,
+                    'label'     => $row['label'] ?: $row['currency'],
+                    'fa_short'  => $row['label'] ?: $row['currency'],
+                ];
+            }
+            return $out;
+        } catch (Throwable $e) {
+            return [];
+        }
+    }
+}
+
+if (!function_exists('crypto_create_manual_wallet')) {
+    function crypto_create_manual_wallet(string $currency, string $network, string $label, string $address): bool
+    {
+        $currency = strtoupper(trim($currency));
+        $network  = trim($network);
+        $label    = trim($label);
+        if ($currency === '' || $network === '') return false;
+        if (strpos($currency, 'USDT_') !== 0) return false;
+        if (isset(crypto_supported_currencies()[$currency])) return false;
+        $pdo = function_exists('getDatabaseConnection') ? getDatabaseConnection() : null;
+        if (!($pdo instanceof PDO)) return false;
+        try {
+            $up = $pdo->prepare("INSERT INTO crypto_wallets (currency, network, wallet_address, label, enabled, verification_mode)
+                                  VALUES (:c, :n, :a, :l, 1, 'manual')
+                                  ON DUPLICATE KEY UPDATE wallet_address = VALUES(wallet_address),
+                                                          network        = VALUES(network),
+                                                          label          = VALUES(label),
+                                                          enabled        = 1,
+                                                          verification_mode = 'manual'");
+            $up->execute([
+                ':c' => $currency,
+                ':n' => $network,
+                ':a' => $address,
+                ':l' => $label !== '' ? $label : $currency,
+            ]);
+            return true;
+        } catch (Throwable $e) {
+            error_log('[crypto] create_manual_wallet: ' . $e->getMessage());
+            return false;
+        }
+    }
+}
+
 if (!function_exists('crypto_delete_wallet')) {
 
     function crypto_delete_wallet(string $currency): bool
     {
         $supported = crypto_supported_currencies();
-        if (!isset($supported[$currency])) return false;
+        $manual = function_exists('crypto_manual_currencies') ? crypto_manual_currencies() : [];
+        if (!isset($supported[$currency]) && !isset($manual[$currency])) return false;
         $pdo = function_exists('getDatabaseConnection') ? getDatabaseConnection() : null;
         if (!($pdo instanceof PDO)) return false;
         try {
@@ -412,21 +815,100 @@ if (!function_exists('crypto_invoice_button_style')) {
 if (!function_exists('cm_apply_payment')) {
     function cm_apply_payment(string $orderId, int $finalIrr, array $payment, $adminId, $adminUsername, array $setting, $paymentreports, $messageId, $callbackQueryId, string $textInline = ''): void
     {
+        global $pdo;
+        if (!($pdo instanceof PDO)) return;
+        $atomic = $pdo->prepare(
+            "UPDATE Payment_report SET payment_Status = 'paid' "
+            . "WHERE id_order = :id AND payment_Status <> 'paid'"
+        );
+        $atomic->bindValue(':id', $orderId, PDO::PARAM_STR);
+        $atomic->execute();
+        if ($atomic->rowCount() < 1) {
+            return;
+        }
+        if (function_exists('crypto_record_verified_hash')) {
+            crypto_record_verified_hash($orderId, 'manual_admin');
+        }
+
+        $idInvoiceRaw = (string) ($payment['id_invoice'] ?? '');
+        $pendingActionTags = ['getconfigafterpay', 'getextenduser', 'getextratimeuser', 'getextravolumeuser'];
+        $pendingActionTag = '';
+        if ($idInvoiceRaw !== '' && strpos($idInvoiceRaw, '|') !== false) {
+            $tag = explode('|', $idInvoiceRaw, 2)[0];
+            if (in_array($tag, $pendingActionTags, true)) {
+                $pendingActionTag = $tag;
+            }
+        }
+
+        if ($pendingActionTag !== '') {
+            // پرداخت برای تکمیل یک عملیات معلق (خرید/تمدید/افزودن حجم-زمان) است — مثل مسیر خودکار
+            // cronbot/cryptocheck.php، مبلغ به کیف پول اضافه نمی‌شود؛ DirectPayment() خودش عملیات را انجام می‌دهد.
+            if (function_exists('DirectPayment')) {
+                DirectPayment($orderId);
+            }
+            if (function_exists('update')) {
+                update('Payment_report', 'at_updated', date('Y/m/d H:i:s'), 'id_order', $orderId);
+            }
+            if ($callbackQueryId && function_exists('telegram')) {
+                telegram('answerCallbackQuery', [
+                    'callback_query_id' => $callbackQueryId,
+                    'text' => '✅ تایید شد.',
+                    'cache_time' => 0,
+                ]);
+            }
+            if ($messageId && function_exists('Editmessagetext')) {
+                $doneNote = "\n\n━━━━━━━━━━━━\n✅ <b>تایید شده</b> (مبلغ: " . number_format($finalIrr) . " تومان)\n👨‍💼 توسط ادمین: <code>{$adminId}</code>\n⏰ " . date('Y/m/d H:i:s');
+                @Editmessagetext($adminId, $messageId, $textInline . $doneNote, null);
+            }
+            if (!empty($setting['Channel_Report']) && function_exists('telegram')) {
+                $payload = [
+                    'chat_id' => $setting['Channel_Report'],
+                    'text'    => "✅ بررسی دستی پرداخت کریپتو تایید شد\n\n"
+                        . "🛒 کد پیگیری: <code>{$orderId}</code>\n"
+                        . "👤 کاربر: <code>{$payment['id_user']}</code>\n"
+                        . "💎 ارز: " . htmlspecialchars((string) ($payment['crypto_currency'] ?? '')) . "\n"
+                        . "💵 مبلغ: " . number_format($finalIrr) . " تومان\n"
+                        . "👨‍💼 ادمین تاییدکننده: <code>{$adminId}</code> (@{$adminUsername})",
+                    'parse_mode' => 'HTML',
+                ];
+                if (!empty($paymentreports)) {
+                    $payload['message_thread_id'] = $paymentreports;
+                }
+                telegram('sendmessage', $payload);
+            }
+            return;
+        }
+
         $userRow = function_exists('select') ? select('user', '*', 'id', $payment['id_user'], 'select') : null;
         $oldBalance = is_array($userRow) ? (int) ($userRow['Balance'] ?? 0) : 0;
         $newBalance = $oldBalance + $finalIrr;
         if (function_exists('update')) {
             update('user', 'Balance', $newBalance, 'id', $payment['id_user']);
-            update('Payment_report', 'payment_Status', 'paid', 'id_order', $orderId);
             update('Payment_report', 'at_updated', date('Y/m/d H:i:s'), 'id_order', $orderId);
         }
-        if (function_exists('crypto_record_verified_hash')) {
-            crypto_record_verified_hash($orderId, 'manual_admin');
+
+        $__cmDiscountCode = trim((string) ($payment['discount_code'] ?? ''));
+        $__cmDiscountAlreadyConsumed = (string) ($payment['discount_consumed'] ?? '') === '1';
+        if ($__cmDiscountCode !== '' && !$__cmDiscountAlreadyConsumed && class_exists('MiniDiscount') && is_array($userRow)) {
+            update('Payment_report', 'discount_consumed', '1', 'id_order', $orderId);
+            MiniDiscount::markSellUsed($__cmDiscountCode, $userRow);
+            MiniDiscount::logOrderDiscount([
+                'id_user' => $payment['id_user'],
+                'code' => $__cmDiscountCode,
+                'kind' => 'sell',
+                'value_type' => null,
+                'value_raw' => null,
+                'price_before' => (float) ($payment['price_before_discount'] ?? 0),
+                'discount_amount' => (float) ($payment['discount_amount'] ?? 0),
+                'price_after' => $finalIrr,
+                'section' => 'charge',
+            ]);
         }
         $coinAmt = rtrim(rtrim(number_format((float) ($payment['crypto_amount'] ?? 0), 9, '.', ''), '0'), '.');
         $explorerUrl = function_exists('crypto_explorer_url')
             ? crypto_explorer_url((string) ($payment['crypto_currency'] ?? ''), (string) ($payment['crypto_tx_hash'] ?? ''))
-            : (string) ($payment['crypto_tx_hash'] ?? '');
+            : '';
+        $explorerLine = $explorerUrl !== '' ? "🔗 <a href=\"" . htmlspecialchars($explorerUrl, ENT_QUOTES) . "\">مشاهده تراکنش</a>" : '';
         if (function_exists('sendmessage')) {
             sendmessage(
                 (string) $payment['id_user'],
@@ -435,8 +917,8 @@ if (!function_exists('cm_apply_payment')) {
                 . "💎 ارز: <b>" . htmlspecialchars((string) ($payment['crypto_currency'] ?? '')) . "</b>\n"
                 . "🪙 مقدار: <code>{$coinAmt}</code>\n"
                 . "💵 مبلغ شارژ شده: " . number_format($finalIrr) . " تومان\n"
-                . "💰 موجودی جدید: " . number_format($newBalance) . " تومان\n"
-                . "🔗 <a href=\"" . htmlspecialchars($explorerUrl, ENT_QUOTES) . "\">مشاهده تراکنش</a>",
+                . "💰 موجودی جدید: " . number_format($newBalance) . " تومان"
+                . ($explorerLine !== '' ? "\n{$explorerLine}" : ''),
                 null,
                 'HTML'
             );
@@ -445,7 +927,7 @@ if (!function_exists('cm_apply_payment')) {
             telegram('answerCallbackQuery', [
                 'callback_query_id' => $callbackQueryId,
                 'text' => '✅ تایید شد و کیف پول شارژ شد.',
-                'cache_time' => 1,
+                'cache_time' => 0,
             ]);
         }
         if ($messageId && function_exists('Editmessagetext')) {
@@ -476,7 +958,8 @@ if (!function_exists('crypto_save_wallet_memo')) {
     function crypto_save_wallet_memo(string $currency, string $memo): bool
     {
         $supported = crypto_supported_currencies();
-        if (!isset($supported[$currency])) return false;
+        $manual = function_exists('crypto_manual_currencies') ? crypto_manual_currencies() : [];
+        if (!isset($supported[$currency]) && !isset($manual[$currency])) return false;
         $pdo = function_exists('getDatabaseConnection') ? getDatabaseConnection() : null;
         if (!($pdo instanceof PDO)) return false;
         try {
@@ -552,7 +1035,7 @@ if (!function_exists('crypto_irt_rate_for')) {
             $rates = crypto_get_irt_rates(['TON']);
             return $rates['TON'] ?? null;
         }
-        if ($currency === 'USDT_TRC20' || $currency === 'USDT_TON') {
+        if ($currency === 'USDT_TRC20' || $currency === 'USDT_TON' || strpos($currency, 'USDT_') === 0) {
             $rates = crypto_get_irt_rates(['USDT']);
             return $rates['USDT'] ?? null;
         }
@@ -627,7 +1110,7 @@ if (!function_exists('crypto_unique_amount')) {
 if (!function_exists('crypto_create_invoice')) {
     function crypto_create_invoice($userId, int $amountIrt, string $currency, string $invoiceMeta = '', bool $iranianMode = false, ?string $source = null): array
     {
-        $currencies = crypto_supported_currencies();
+        $currencies = crypto_supported_currencies() + (function_exists('crypto_manual_currencies') ? crypto_manual_currencies() : []);
         if (!isset($currencies[$currency])) {
             return ['ok' => false, 'error' => 'currency-not-supported'];
         }
@@ -650,6 +1133,7 @@ if (!function_exists('crypto_create_invoice')) {
         }
         $rawCoin = $amountIrt / $rate;
         $finalCoin = crypto_unique_amount($rawCoin, $currency, null, $iranianMode);
+        $finalAmountIrt = (int) round($finalCoin * $rate);
 
         global $connect;
         $orderId = bin2hex(random_bytes(6));
@@ -664,18 +1148,19 @@ if (!function_exists('crypto_create_invoice')) {
             $stmt = $connect->prepare(
                 "INSERT INTO Payment_report
                     (id_user, id_order, time, price, payment_Status, Payment_Method,
-                     id_invoice, crypto_currency, crypto_network, crypto_amount, crypto_wallet_to, crypto_iranian_mode, source)
-                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+                     id_invoice, crypto_currency, crypto_network, crypto_amount, crypto_wallet_to, crypto_iranian_mode, crypto_rate_irt, source)
+                 VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
             );
             $userIdStr = (string) $userId;
             $amountIrtStr = (string) $amountIrt;
             $coinStr = number_format($finalCoin, $currencies[$currency]['decimals'], '.', '');
             $iranianModeStr = '0';
+            $rateStr = (string) $rate;
             $sourceStr = ($source !== null && $source !== '') ? $source : null;
             $stmt->bind_param(
-                'sssssssssssss',
+                'ssssssssssssss',
                 $userIdStr, $orderId, $now, $amountIrtStr, $statusUnpaid, $methodLabel,
-                $invoiceMeta, $currency, $network, $coinStr, $wallet['wallet_address'], $iranianModeStr, $sourceStr
+                $invoiceMeta, $currency, $network, $coinStr, $wallet['wallet_address'], $iranianModeStr, $rateStr, $sourceStr
             );
             $stmt->execute();
             $stmt->close();
@@ -686,15 +1171,18 @@ if (!function_exists('crypto_create_invoice')) {
 
         $ttl = 1800;
         return [
-            'ok' => true,
-            'order_id'    => $orderId,
-            'amount_coin' => $finalCoin,
-            'wallet'      => $wallet['wallet_address'],
-            'wallet_memo' => trim((string) ($wallet['wallet_memo'] ?? '')),
-            'currency'    => $currency,
-            'network'     => $network,
-            'rate'        => $rate,
-            'expires_at'  => time() + $ttl,
+            'ok'                => true,
+            'order_id'          => $orderId,
+            'amount_coin'       => $finalCoin,
+            'base_amount_coin'  => $rawCoin,
+            'base_amount_irt'   => $amountIrt,
+            'final_amount_irt'  => $finalAmountIrt,
+            'wallet'            => $wallet['wallet_address'],
+            'wallet_memo'       => trim((string) ($wallet['wallet_memo'] ?? '')),
+            'currency'          => $currency,
+            'network'           => $network,
+            'rate'              => $rate,
+            'expires_at'        => time() + $ttl,
         ];
     }
 }

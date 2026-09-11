@@ -18,7 +18,7 @@ final class CryptoCancelInvoiceHandler extends BaseHandler
         }
 
         $report = FaoximaDb::fetchOne(
-            'SELECT id_order, payment_Status, Payment_Method FROM Payment_report
+            'SELECT id_order, payment_Status, Payment_Method, atlaspay_order_id FROM Payment_report
               WHERE id_order = :o AND id_user = :u AND source = \'miniapp\' LIMIT 1',
             [':o' => $orderId, ':u' => (string)$this->user['id']]
         );
@@ -26,14 +26,14 @@ final class CryptoCancelInvoiceHandler extends BaseHandler
             FaoximaResponse::notFound('Payment not found');
         }
         $method = trim((string)($report['Payment_Method'] ?? ''));
-        $cancellable = ['arze digital offline', 'plisio', 'nowpayment', 'digitaltron', 'cart to cart', 'carttocart_pv', 'iranpay1'];
+        $cancellable = ['arze digital offline', 'plisio', 'nowpayment', 'digitaltron', 'cart to cart', 'carttocart_pv', 'iranpay2', 'tonpay', 'cubepay', 'blupal', 'atlaspay', 'tetrapay'];
         if (!in_array($method, $cancellable, true)) {
             FaoximaResponse::fail(422, 'این فاکتور قابل لغو از این طریق نیست');
         }
         $status = (string)($report['payment_Status'] ?? '');
 
 
-        if (in_array($status, ['expire', 'paid', 'reject'], true)) {
+        if (in_array($status, ['cancelled', 'paid', 'reject'], true)) {
             FaoximaResponse::ok([
                 'kind'    => 'already_finalized',
                 'message' => 'این فاکتور قبلاً نهایی شده است',
@@ -42,21 +42,35 @@ final class CryptoCancelInvoiceHandler extends BaseHandler
             return;
         }
 
-        if (!in_array($status, ['Unpaid', 'AwaitingHash'], true)) {
+        if (!in_array($status, ['Unpaid', 'AwaitingHash', 'expire'], true)) {
             FaoximaResponse::fail(409, 'این فاکتور در وضعیتی نیست که قابل لغو باشد (' . $status . ')');
         }
 
         MiniDiscount::releaseLastUnpaidDiscount((string)$this->user['id']);
 
+        if ($method === 'atlaspay' && function_exists('atlaspayCancelOrder')) {
+            $atlaspayOrderId = trim((string)($report['atlaspay_order_id'] ?? ''));
+            if ($atlaspayOrderId !== '') {
+                try {
+                    atlaspayCancelOrder($atlaspayOrderId);
+                } catch (Throwable $e) {
+                    FaoximaLogger::exception($e, 'AtlasPay cancel-order call failed', [
+                        'user'  => $this->user['id'],
+                        'order' => $orderId,
+                    ]);
+                }
+            }
+        }
+
         try {
             $pdo = FaoximaDb::pdo();
             $stmt = $pdo->prepare(
                 "UPDATE Payment_report
-                    SET payment_Status = 'expire'
+                    SET payment_Status = 'cancelled'
                   WHERE id_order = :o
                     AND id_user = :u
                     AND source = 'miniapp'
-                    AND payment_Status IN ('Unpaid', 'AwaitingHash')"
+                    AND payment_Status IN ('Unpaid', 'AwaitingHash', 'expire')"
             );
             $stmt->bindValue(':o', $orderId, PDO::PARAM_STR);
             $stmt->bindValue(':u', (string)$this->user['id'], PDO::PARAM_STR);

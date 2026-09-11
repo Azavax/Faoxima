@@ -61,19 +61,28 @@ class CurlRequest {
     }
 
     private function execute($method, $data = null) {
-        $this->timeout = !$this->timeout ? 8 : $this->timeout;
+        if (!$this->timeout) {
+            $cfgTimeout = isset($GLOBALS['setting']['panel_curl_timeout']) ? (int)$GLOBALS['setting']['panel_curl_timeout'] : 0;
+            $this->timeout = $cfgTimeout > 0 ? $cfgTimeout : 20;
+        }
+        $connectTimeout = max(6, (int)round($this->timeout * 0.4));
+        $maxAttempts = 2;
+        $lastError = '';
+        $response = false;
+        $httpCode  = 0;
+
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $this->url);
         curl_setopt($ch, CURLOPT_CUSTOMREQUEST, strtoupper($method));
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 6);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, $connectTimeout);
         curl_setopt($ch, CURLOPT_TIMEOUT, $this->timeout);
         curl_setopt($ch, CURLOPT_ENCODING, '');
         curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
         curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
         curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 60);
         curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 30);
-
 
         $verifyTls = defined('BOT_CURL_VERIFY_TLS') && BOT_CURL_VERIFY_TLS === true;
         if ($verifyTls) {
@@ -105,23 +114,30 @@ class CurlRequest {
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        if (curl_errno($ch)) {
-            $error = curl_error($ch);
+        $curlErrno = curl_errno($ch);
+        if ($curlErrno) {
+            $lastError = curl_error($ch);
+            curl_close($ch);
+            $isTimeout = stripos($lastError, 'timed out') !== false || stripos($lastError, 'Operation timed out') !== false || $curlErrno === CURLE_OPERATION_TIMEDOUT;
+            if ($attempt < $maxAttempts && $isTimeout) {
+                continue;
+            }
             $host = parse_url($this->url, PHP_URL_HOST);
             $port = parse_url($this->url, PHP_URL_PORT);
-            $dedupKey = 'curlerr|' . ($host ?: $this->url) . ':' . ($port ?: '') . '|' . $error;
+            $dedupKey = 'curlerr|' . ($host ?: $this->url) . ':' . ($port ?: '') . '|' . $lastError;
             faoxima_dedup_error_log(
                 $dedupKey,
-                sprintf('CurlRequest error calling %s: %s (HTTP code: %s)', $this->url, $error, var_export($httpCode, true))
+                sprintf('CurlRequest error calling %s: %s (HTTP code: %s)', $this->url, $lastError, var_export($httpCode, true))
             );
-            curl_close($ch);
             return [
                 'status' => $httpCode,
                 'body' => $response,
-                'error' => $error,
+                'error' => $lastError,
             ];
         }
         curl_close($ch);
+        break;
+        }
 
 
         $rxLogAll = defined('BOT_CURL_LOG_ALL_HTTP_ERRORS') && BOT_CURL_LOG_ALL_HTTP_ERRORS === true;

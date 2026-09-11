@@ -7,6 +7,7 @@ require_once __DIR__ . '/BaseHandler.php';
 
 final class PendingPaymentsHandler extends BaseHandler
 {
+    private const MAX_AGE_SEC = 86400;
 
     public function handle(): void
     {
@@ -20,11 +21,11 @@ final class PendingPaymentsHandler extends BaseHandler
         try {
             $rows = FaoximaDb::fetchAll(
                 "SELECT id, id_order, time, price, payment_Status, Payment_Method,
-                        dec_not_confirmed, crypto_currency, crypto_tx_hash
+                        dec_not_confirmed, crypto_currency, crypto_tx_hash, tonpay_invoice_id, cubepay_payment_link, blupal_invoice_id, atlaspay_order_id, tetrapay_token
                    FROM Payment_report
                   WHERE id_user = :u
-                    AND payment_Status IN ('Unpaid','waiting','AwaitingHash','pending')
-                    AND Payment_Method IN ('plisio','nowpayment','digitaltron','arze digital offline','cart to cart','carttocart_pv','iranpay1')
+                    AND payment_Status IN ('Unpaid','waiting','AwaitingHash','pending','expire')
+                    AND Payment_Method IN ('plisio','nowpayment','digitaltron','arze digital offline','cart to cart','carttocart_pv','iranpay2','tonpay','cubepay','blupal','atlaspay','tetrapay')
                     AND source = 'miniapp'
                   ORDER BY id DESC
                   LIMIT 8",
@@ -40,7 +41,60 @@ final class PendingPaymentsHandler extends BaseHandler
         }
 
         $now = time();
+        $seenMethods = [];
         $pending = [];
+        $labels = [];
+        try {
+            $txtRows = FaoximaDb::fetchAll("SELECT id_text, text FROM textbot");
+            if (is_array($txtRows)) {
+                foreach ($txtRows as $tr) {
+                    if (isset($tr['id_text'])) {
+                        $labels[$tr['id_text']] = trim((string)($tr['text'] ?? ''));
+                    }
+                }
+            }
+        } catch (Throwable $e) {}
+
+        $resolveMethodLabel = static function (string $method) use ($labels): string {
+            $m = strtolower(trim($method));
+            switch ($m) {
+                case 'cart to cart':
+                case 'carttocart_pv':
+                case 'carttocart':
+                    return !empty($labels['carttocart']) ? $labels['carttocart'] : 'کارت‌به‌کارت';
+                case 'iranpay2':
+                    return !empty($labels['iranpay3']) ? $labels['iranpay3'] : 'ترونادو';
+                case 'tonpay':
+                    return !empty($labels['tonpay']) ? $labels['tonpay'] : 'تون‌پی';
+                case 'cubepay':
+                    return !empty($labels['cubepay']) ? $labels['cubepay'] : 'کیوب‌پی';
+                case 'blupal':
+                    return !empty($labels['blupal']) ? $labels['blupal'] : 'بلوپال';
+                case 'atlaspay':
+                    return !empty($labels['atlaspay']) ? $labels['atlaspay'] : 'اطلس‌پی';
+                case 'tetrapay':
+                    return !empty($labels['tetrapay']) ? $labels['tetrapay'] : 'تتراپی';
+                case 'zarinpal':
+                    return !empty($labels['zarinpal']) ? $labels['zarinpal'] : 'زرین‌پال';
+                case 'plisio':
+                    return !empty($labels['textnowpayment']) ? $labels['textnowpayment'] : 'پرداخت ارزی (Plisio)';
+                case 'nowpayment':
+                    return !empty($labels['textsnowpayment']) ? $labels['textsnowpayment'] : 'NowPayments';
+                case 'digitaltron':
+                    return !empty($labels['textnowpaymenttron']) ? $labels['textnowpaymenttron'] : 'پرداخت با ترون';
+                case 'arze digital offline':
+                case 'crypto_offline':
+                    return !empty($labels['textnowpaymenttron']) ? $labels['textnowpaymenttron'] : (!empty($labels['cryptopay']) ? $labels['cryptopay'] : 'ارز آفلاین');
+                case 'star telegram':
+                case 'startelegrams':
+                    return !empty($labels['text_star_telegram']) ? $labels['text_star_telegram'] : 'Telegram Stars';
+                case 'paymentnotverify':
+                    return !empty($labels['textpaymentnotverify']) ? $labels['textpaymentnotverify'] : 'تایید پرداخت دستی';
+                default:
+                    return $method;
+            }
+        };
+
         foreach ($rows as $r) {
             $createdAt = $this->parseLegacyTime((string)($r['time'] ?? ''));
             if ($createdAt === null) continue;
@@ -54,17 +108,36 @@ final class PendingPaymentsHandler extends BaseHandler
                 if ($hashVal === '') continue;
             } elseif (in_array($methodLc, ['cart to cart', 'carttocart_pv'], true)) {
                 if ($decVal === '') continue;
-            } elseif (in_array($methodLc, ['plisio', 'nowpayment', 'digitaltron', 'iranpay1'], true)) {
+            } elseif ($methodLc === 'tonpay') {
+                if (trim((string)($r['tonpay_invoice_id'] ?? '')) === '') continue;
+            } elseif ($methodLc === 'cubepay') {
+                if (trim((string)($r['cubepay_payment_link'] ?? '')) === '') continue;
+            } elseif ($methodLc === 'blupal') {
+                if (trim((string)($r['blupal_invoice_id'] ?? '')) === '') continue;
+            } elseif ($methodLc === 'atlaspay') {
+                if (trim((string)($r['atlaspay_order_id'] ?? '')) === '') continue;
+            } elseif ($methodLc === 'tetrapay') {
+                if (trim((string)($r['tetrapay_token'] ?? '')) === '') continue;
+            } elseif (in_array($methodLc, ['plisio', 'nowpayment', 'digitaltron', 'iranpay2'], true)) {
                 if ($decVal === '') continue;
             }
 
+            if ($createdAt + self::MAX_AGE_SEC < $now) continue;
+
+            $status = (string)($r['payment_Status'] ?? '');
             $windowSec = $this->methodWindow($method, false);
             $expiresAt = $createdAt + $windowSec;
-            if ($expiresAt < $now) continue;
+            if ($status !== 'expire' && $expiresAt < $now) {
+                continue;
+            }
+
+            if (isset($seenMethods[$methodLc])) continue;
+            $seenMethods[$methodLc] = true;
 
             $pending[] = [
                 'order_id'      => (string)$r['id_order'],
                 'method'        => $method,
+                'method_label'  => $resolveMethodLabel($method),
                 'amount'        => (int)$r['price'],
                 'status'        => (string)$r['payment_Status'],
                 'created_at'    => $createdAt,
@@ -80,6 +153,15 @@ final class PendingPaymentsHandler extends BaseHandler
 
     private function methodWindow(string $method, bool $iranian): int
     {
+        if (strtolower($method) === 'cubepay') {
+            return 3600;
+        }
+        if (strtolower($method) === 'atlaspay') {
+            return 1200;
+        }
+        if (strtolower($method) === 'tetrapay') {
+            return 600;
+        }
         return 1800;
     }
 

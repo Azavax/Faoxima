@@ -14,6 +14,7 @@ if (is_readable($composerAutoload)) {
     unset($composerAutoload);
 }
 require_once APP_ROOT_PATH . '/config.php';
+require_once __DIR__ . '/redis_client.php';
 
 ini_set('error_log', APP_ROOT_PATH . '/error_log');
 
@@ -53,7 +54,9 @@ function getDatabaseConnection()
     }
 
     try {
-        $newPdo = new PDO($dsn, (string) $username, (string) $password, is_array($options) ? $options : []);
+        $newPdo = function_exists('rx_connect_pdo')
+            ? rx_connect_pdo($dsn, (string) $username, (string) $password, is_array($options) ? $options : [])
+            : new PDO($dsn, (string) $username, (string) $password, is_array($options) ? $options : []);
         $GLOBALS['pdo'] = $newPdo;
         $cachedPdo = $newPdo;
         return $cachedPdo;
@@ -66,14 +69,10 @@ function getDatabaseConnection()
 if (!defined('TRONADO_API_CONFIGURATION')) {
     $tronadoApiConfiguration = [
         'base_url' => 'https://bot.tronado.cloud',
-        'order_token_path' => '/Order/GetOrderToken',
-        'versions' => [
-            'api/v1',
-            'api/v2',
-            'api/v3',
-            'api',
-            null,
-        ],
+        'order_token_path' => '/api/v5/GetOrderToken',
+        'price_toman_path' => '/Tron/GetPriceToToman',
+        'get_status_path' => '/Order/GetStatus',
+        'get_status_by_payment_id_path' => '/Order/GetStatusByPaymentID',
     ];
 
     define('TRONADO_API_CONFIGURATION', $tronadoApiConfiguration);
@@ -84,25 +83,9 @@ if (!defined('TRONADO_ORDER_TOKEN_ENDPOINTS')) {
     $tronadoConfig = TRONADO_API_CONFIGURATION;
     $baseUrl = rtrim((string) ($tronadoConfig['base_url'] ?? ''), '/');
     $path = '/' . ltrim((string) ($tronadoConfig['order_token_path'] ?? ''), '/');
-    $versions = is_array($tronadoConfig['versions'] ?? null) ? $tronadoConfig['versions'] : [];
 
-    $computedEndpoints = [];
-    foreach ($versions as $version) {
-        if ($baseUrl === '') {
-            continue;
-        }
-
-        $versionSegment = $version !== null ? '/' . trim((string) $version, '/') : '';
-        $computedEndpoints[] = $baseUrl . $versionSegment . $path;
-    }
-
-    if (!in_array(null, $versions, true)) {
-        $computedEndpoints[] = $baseUrl . $path;
-    }
-
-    $computedEndpoints = array_values(array_unique(array_filter($computedEndpoints)));
-    define('TRONADO_ORDER_TOKEN_ENDPOINTS', $computedEndpoints);
-    unset($computedEndpoints, $baseUrl, $path, $versions, $tronadoConfig);
+    define('TRONADO_ORDER_TOKEN_ENDPOINTS', $baseUrl !== '' ? [$baseUrl . $path] : []);
+    unset($baseUrl, $path, $tronadoConfig);
 }
 
 use Endroid\QrCode\Builder\Builder;
@@ -221,6 +204,40 @@ function ensureUserInvitationCode($userId, $currentCode = null, $length = 12)
     return $newCode;
 }
 
+if (!function_exists('rxManualsaleExtIsFile')) {
+    function rxManualsaleExtIsFile($fileExt)
+    {
+        $ext = strtolower(ltrim(trim((string) $fileExt), '.'));
+        return $ext !== '' && $ext !== 'sub' && $ext !== 'text';
+    }
+}
+
+if (!function_exists('rxShouldShowConnectionLink')) {
+    function rxShouldShowConnectionLink($panel_info, $fileExt = null)
+    {
+        $type = is_array($panel_info) ? ($panel_info['type'] ?? '') : (string) $panel_info;
+        if ($type === 'Manualsale') {
+            return !rxManualsaleExtIsFile($fileExt);
+        }
+        $sublink = is_array($panel_info) ? ($panel_info['sublink'] ?? '') : '';
+        return $sublink == "onsublink";
+    }
+}
+
+if (!function_exists('rxResolveConnectionLink')) {
+    function rxResolveConnectionLink($panel_info, $subscriptionLink, $fileExt = null)
+    {
+        $type = is_array($panel_info) ? ($panel_info['type'] ?? '') : (string) $panel_info;
+        if ($type !== 'Manualsale') {
+            return (string) $subscriptionLink;
+        }
+        if (rxManualsaleExtIsFile($fileExt)) {
+            return '';
+        }
+        return (string) $subscriptionLink;
+    }
+}
+
 if (!function_exists('applyConnectionPlaceholders')) {
 
 
@@ -234,12 +251,13 @@ if (!function_exists('applyConnectionPlaceholders')) {
         $linksSection = '';
 
         if ($trimmedSubscription !== '') {
-            $configSection = "🔗 لینک اتصال:\n\n<code>{$trimmedSubscription}</code>";
+            $configSection = "🔗 لینک اتصال:\n\n<code>" . htmlspecialchars($trimmedSubscription, ENT_QUOTES, 'UTF-8') . "</code>";
             $connectionSections['config'] = $configSection;
         }
 
+        $rxConfigListIsMultiLine = strpos($trimmedConfigList, "\n") !== false;
         if ($trimmedConfigList !== '') {
-            $linksSection = "🔐 کانفیگ اشتراک :\n\n<code>{$trimmedConfigList}</code>";
+            $linksSection = $rxConfigListIsMultiLine ? "🔐 کانفیگ اشتراک :" : "🔐 کانفیگ اشتراک :\n\n<code>" . htmlspecialchars($trimmedConfigList, ENT_QUOTES, 'UTF-8') . "</code>";
             $connectionSections['links'] = $linksSection;
         }
 
@@ -289,6 +307,21 @@ if (!function_exists('applyConnectionPlaceholders')) {
         };
 
         if ($hasConnectionLinksPlaceholder) {
+            if ($connectionLinksBlock === '') {
+                $orphanLabels = [
+                    'اطلاعات سرویس :',
+                    'اطلاعات سرویس:',
+                    '📌 اطلاعات سرویس :',
+                    '📌 اطلاعات سرویس:',
+                ];
+                foreach ($orphanLabels as $orphanLabel) {
+                    $orphanPattern = '/(^|\R)[^\S\r\n]*' . preg_quote($orphanLabel, '/') . '[^\S\r\n]*(?:\r?\n)?[^\S\r\n]*\{connection_links\}/u';
+                    $template = preg_replace($orphanPattern, '$1{connection_links}', $template, 1, $orphanCount);
+                    if ($orphanCount > 0) {
+                        break;
+                    }
+                }
+            }
             $template = str_replace('{connection_links}', $connectionLinksBlock, $template);
 
             if ($hasConfigPlaceholder) {
@@ -321,6 +354,8 @@ if (!function_exists('applyConnectionPlaceholders')) {
         if (strpos($template, '{links2}') !== false) {
             $template = str_replace('{links2}', $trimmedSubscription, $template);
         }
+
+        $template = preg_replace("/\n{3,}/u", "\n\n", $template);
 
         return $template;
     }
@@ -385,7 +420,9 @@ function runShellCommand($command)
     }
 
     if (getenv('PATH') === false || trim((string) getenv('PATH')) === '') {
-        putenv('PATH=/usr/local/bin:/usr/bin:/bin');
+        if (!rx_putenv_disabled()) {
+            putenv('PATH=/usr/local/bin:/usr/bin:/bin');
+        }
     }
 
     return shell_exec($command);
@@ -558,9 +595,52 @@ function copyDirectoryContents($source, $destination)
 function step($step, $from_id)
 {
     global $pdo;
+    try {
+        if (function_exists('rxWizardStepFlow') && function_exists('rxStepStackRead')) {
+            $rxRow = select("user", "step", "id", $from_id, "select", ['cache' => false]);
+            $rxOld = (is_array($rxRow) && isset($rxRow['step'])) ? (string) $rxRow['step'] : '';
+            $rxFlowNew = rxWizardStepFlow((string) $step);
+            $rxFlowOld = rxWizardStepFlow($rxOld);
+            if ($rxFlowNew !== null || $rxFlowOld !== null) {
+                $rxStack = rxStepStackRead($from_id);
+                $rxChanged = false;
+                if ($rxFlowNew === null) {
+                    if (!empty($rxStack)) { $rxStack = []; $rxChanged = true; }
+                } elseif ($rxFlowNew !== $rxFlowOld) {
+                    if (!empty($rxStack)) { $rxStack = []; $rxChanged = true; }
+                } elseif ($rxOld !== (string) $step) {
+                    $rxStack[] = $rxOld;
+                    $rxChanged = true;
+                }
+                if ($rxChanged) {
+                    update("user", "step_stack", json_encode(array_values($rxStack), JSON_UNESCAPED_UNICODE), "id", $from_id);
+                }
+            }
+        }
+    } catch (\Throwable $rxStackError) {
+    }
+    $rxNavFromStep = null;
+    if (class_exists('logNavigation')) {
+        if (isset($rxOld)) {
+            $rxNavFromStep = $rxOld;
+        } else {
+            $rxNavRow = select("user", "step", "id", $from_id, "select", ['cache' => false]);
+            if (is_array($rxNavRow) && isset($rxNavRow['step'])) {
+                $rxNavFromStep = $rxNavRow['step'];
+            } elseif (is_scalar($rxNavRow)) {
+                $rxNavFromStep = $rxNavRow;
+            }
+        }
+    }
     $stmt = $pdo->prepare('UPDATE user SET step = ? WHERE id = ?');
     $stmt->execute([$step, $from_id]);
     clearSelectCache('user');
+    if (function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+        rx_redis_set('faoxima:step:' . $from_id, (string) $step, 3600);
+    }
+    if (class_exists('logNavigation')) {
+        logNavigation::transition($from_id, $rxNavFromStep, $step);
+    }
 }
 function determineColumnTypeFromValue($value)
 {
@@ -720,6 +800,12 @@ function update($table, $field, $newValue, $whereField = null, $whereValue = nul
     }
 
 
+    if ($table === 'invoice' && strtolower($field) === 'status' && $valueToStore === 'active'
+        && $whereField !== null && strtolower($field) !== strtolower($whereField)) {
+        $clearStmt = $pdo->prepare("UPDATE invoice SET invalidated_at = NULL WHERE $whereField = ?");
+        $clearStmt->execute([$whereValueToStore]);
+    }
+
     if (defined('RX_UPDATE_LOG_ENABLED') && RX_UPDATE_LOG_ENABLED === true) {
         static $rx_update_log_skip = [
             'message_count'     => true,
@@ -743,7 +829,12 @@ function update($table, $field, $newValue, $whereField = null, $whereValue = nul
     }
 
 
-    if ($whereField !== null && $whereValueToStore !== null
+    if ($table === 'marzban_panel' || $table === 'textbot') {
+        clearSelectCache($table);
+        if (function_exists('faoxima_bust_bot_selectcache')) {
+            faoxima_bust_bot_selectcache($table);
+        }
+    } elseif ($whereField !== null && $whereValueToStore !== null
         && function_exists('clearSelectCacheRow')) {
         clearSelectCacheRow($table, $whereField, $whereValueToStore);
     } else {
@@ -761,6 +852,22 @@ function &getSelectCacheStore()
     return $store;
 }
 
+function rx_select_cache_hot_tables()
+{
+    return [
+        'user'               => true,
+        'invoice'            => true,
+        'Payment_report'     => true,
+        'reagent_report'     => true,
+        'cron_runtime_state' => true,
+    ];
+}
+
+function rx_select_cache_redis_ttl()
+{
+    return 300;
+}
+
 function clearSelectCache($table = null)
 {
     $store =& getSelectCacheStore();
@@ -769,7 +876,14 @@ function clearSelectCache($table = null)
         $store['results'] = [];
         $store['tableIndex'] = [];
         $store['rowIndex'] = [];
+        if (function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+            rx_redis_clear_selectcache_table(null);
+        }
         return;
+    }
+
+    if (function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+        rx_redis_clear_selectcache_table($table);
     }
 
     if (!isset($store['tableIndex'][$table])) {
@@ -788,6 +902,53 @@ function clearSelectCache($table = null)
             if (strpos($rowKey, $table . '|') === 0) {
                 unset($store['rowIndex'][$rowKey]);
             }
+        }
+    }
+}
+
+function rx_redis_clear_selectcache_table($table)
+{
+    if ($table === null) {
+        if (function_exists('rx_redis_scan_delete')) {
+            rx_redis_scan_delete('faoxima:selectcache:*');
+        }
+        return;
+    }
+
+    $indexKey = 'faoxima:selectcache:tableindex:' . $table;
+    $client = getRedisConnection();
+    if ($client === null) {
+        return;
+    }
+    try {
+        $members = $client->sMembers($indexKey);
+        if (is_array($members) && !empty($members)) {
+            rx_redis_del($members);
+        }
+        rx_redis_del($indexKey);
+    } catch (\Throwable $e) {
+        rx_redis_mark_unavailable('exception');
+    }
+}
+
+function rx_redis_clear_selectcache_row($table, $whereField, $whereValue)
+{
+    $client = getRedisConnection();
+    if ($client === null) {
+        return;
+    }
+    $rowIdx = $table . '|' . (string) $whereField . '|' . (string) $whereValue;
+    $allRowsIdx = $table . '||';
+    foreach ([$rowIdx, $allRowsIdx] as $idx) {
+        $indexKey = 'faoxima:selectcache:rowindex:' . $idx;
+        try {
+            $members = $client->sMembers($indexKey);
+            if (is_array($members) && !empty($members)) {
+                rx_redis_del($members);
+            }
+            rx_redis_del($indexKey);
+        } catch (\Throwable $e) {
+            rx_redis_mark_unavailable('exception');
         }
     }
 }
@@ -832,6 +993,26 @@ function select($table, $field, $whereField = null, $whereValue = null, $type = 
         $store =& getSelectCacheStore();
         if (isset($store['results'][$cacheKey])) {
             return $store['results'][$cacheKey];
+        }
+
+        if (!isset(rx_select_cache_hot_tables()[$table]) && function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+            $rxRedisCached = rx_redis_get('faoxima:selectcache:' . $cacheKey);
+            if ($rxRedisCached !== null) {
+                $rxRedisDecoded = json_decode($rxRedisCached, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $store['results'][$cacheKey] = $rxRedisDecoded;
+                    if (!isset($store['tableIndex'][$table])) {
+                        $store['tableIndex'][$table] = [];
+                    }
+                    $store['tableIndex'][$table][$cacheKey] = true;
+                    $rxRedisHitRowIdx = $table . '|' . (string) $whereField . '|' . (string) $whereValue;
+                    if (!isset($store['rowIndex'][$rxRedisHitRowIdx])) {
+                        $store['rowIndex'][$rxRedisHitRowIdx] = [];
+                    }
+                    $store['rowIndex'][$rxRedisHitRowIdx][$cacheKey] = true;
+                    return $rxRedisDecoded;
+                }
+            }
         }
     }
 
@@ -890,16 +1071,8 @@ function select($table, $field, $whereField = null, $whereValue = null, $type = 
 
     if ($useCache && $cacheKey !== null) {
 
-
-        static $rx_select_cache_hot_tables = [
-            'user'           => true,
-            'invoice'        => true,
-            'Payment_report' => true,
-            'reagent_report' => true,
-            'cron_runtime_state' => true,
-        ];
         $skipCache = false;
-        if (isset($rx_select_cache_hot_tables[$table])) {
+        if (isset(rx_select_cache_hot_tables()[$table])) {
             $skipCache = true;
         }
         if (!$skipCache && is_array($result) && count($result) > 1000) {
@@ -933,6 +1106,16 @@ function select($table, $field, $whereField = null, $whereValue = null, $type = 
                 $store['rowIndex'][$rxRowIdx] = [];
             }
             $store['rowIndex'][$rxRowIdx][$cacheKey] = true;
+
+            if (function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+                $rxRedisEncoded = json_encode($result, JSON_UNESCAPED_UNICODE);
+                if ($rxRedisEncoded !== false) {
+                    $rxSelectCacheTtl = rx_select_cache_redis_ttl();
+                    rx_redis_set('faoxima:selectcache:' . $cacheKey, $rxRedisEncoded, $rxSelectCacheTtl);
+                    rx_redis_sadd_index('faoxima:selectcache:tableindex:' . $table, 'faoxima:selectcache:' . $cacheKey, $rxSelectCacheTtl);
+                    rx_redis_sadd_index('faoxima:selectcache:rowindex:' . $rxRowIdx, 'faoxima:selectcache:' . $cacheKey, $rxSelectCacheTtl);
+                }
+            }
         }
     }
 
@@ -943,6 +1126,10 @@ function select($table, $field, $whereField = null, $whereValue = null, $type = 
 if (!function_exists('clearSelectCacheRow')) {
     function clearSelectCacheRow($table, $whereField, $whereValue)
     {
+        if (function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+            rx_redis_clear_selectcache_row($table, $whereField, $whereValue);
+        }
+
         $store =& getSelectCacheStore();
         if (!isset($store['tableIndex'][$table])) {
             return;
@@ -1090,71 +1277,4 @@ function generateUUID()
     $uuid = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
 
     return $uuid;
-}
-if (!function_exists('isShellExecAvailable')) {
-    function isShellExecAvailable()
-    {
-        static $isAvailable = null;
-        if ($isAvailable !== null) {
-            return $isAvailable;
-        }
-        if (!function_exists('shell_exec')) {
-            return $isAvailable = false;
-        }
-        $disabledFunctions = (string) ini_get('disable_functions');
-        if ($disabledFunctions !== '' && preg_match('/(^|,)\s*shell_exec\s*(,|$)/i', $disabledFunctions)) {
-            return $isAvailable = false;
-        }
-        return $isAvailable = true;
-    }
-}
-
-if (!function_exists('runShellCommand')) {
-    function runShellCommand($command)
-    {
-        if (!isShellExecAvailable()) {
-            error_log('shell_exec is not available; unable to run command: ' . $command);
-            return null;
-        }
-        if (getenv('PATH') === false || trim((string) getenv('PATH')) === '') {
-            putenv('PATH=/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin');
-        }
-        return shell_exec($command);
-    }
-}
-
-if (!function_exists('getCrontabBinary')) {
-    function getCrontabBinary()
-    {
-        static $resolvedPath = null;
-        if ($resolvedPath !== null) {
-            return $resolvedPath ?: null;
-        }
-        $candidateDirectories = ['/usr/local/bin', '/usr/bin', '/bin', '/usr/sbin', '/sbin'];
-        $environmentPath = getenv('PATH');
-        if ($environmentPath !== false && $environmentPath !== '') {
-            foreach (explode(PATH_SEPARATOR, $environmentPath) as $pathDirectory) {
-                $pathDirectory = trim($pathDirectory);
-                if ($pathDirectory !== '' && !in_array($pathDirectory, $candidateDirectories, true)) {
-                    $candidateDirectories[] = $pathDirectory;
-                }
-            }
-        }
-        foreach ($candidateDirectories as $directory) {
-            $executablePath = rtrim($directory, DIRECTORY_SEPARATOR) . DIRECTORY_SEPARATOR . 'crontab';
-            if (@is_file($executablePath) && @is_executable($executablePath)) {
-                return $resolvedPath = $executablePath;
-            }
-        }
-        if (isShellExecAvailable()) {
-            $whichOutput = @shell_exec('command -v crontab 2>/dev/null');
-            $whichOutput = is_string($whichOutput) ? trim($whichOutput) : '';
-            if ($whichOutput !== '' && @is_executable($whichOutput)) {
-                return $resolvedPath = $whichOutput;
-            }
-        }
-        $resolvedPath = '';
-        error_log('Unable to locate the crontab executable on this system.');
-        return null;
-    }
 }

@@ -243,6 +243,9 @@ switch ($action) {
             }
             $stmt = $pdo->prepare("UPDATE user SET Balance =  Balance + :balance WHERE id = '{$invoice['id_user']}'");
             $stmt->execute([':balance' => $data['amount']]);
+            if (function_exists('wallet_ledger_record')) {
+                wallet_ledger_record($invoice['id_user'], 'credit', $data['amount'], 'refund', 'بازگشت وجه لغو سرویس', null, 'invoice', $data['id_invoice']);
+            }
             update("invoice", "Status", "removebyadmin", "id_invoice", $data["id_invoice"]);
             $ManagePanel->RemoveUser($invoice['Service_location'], $invoice['username']);
         } elseif ($data['type'] == "three") {
@@ -303,10 +306,9 @@ switch ($action) {
                 $DataUserOut['msg'] = json_encode($DataUserOut['msg']);
                 $texterros = "
 خطا در ساخت کافنیگ از پنل ادمین
-✍️ دلیل خطا :
-{$DataUserOut['msg']}
-آیدی ادمین : {$data['chat_id']}
-نام پنل : {$panel['name_panel']}";
+<blockquote>✍️ دلیل خطا : {$DataUserOut['msg']}</blockquote>
+<blockquote>آیدی ادمین : {$data['chat_id']}</blockquote>
+<blockquote>نام پنل : {$panel['name_panel']}</blockquote>";
                 if (strlen($setting['Channel_Report']) > 0) {
                     telegram('sendmessage', [
                         'chat_id' => $setting['Channel_Report'],
@@ -401,10 +403,10 @@ switch ($action) {
             $extend['msg'] = json_encode($extend['msg']);
             $textreports = "
         خطای تمدید سرویس
-نام پنل : {$panel['name_panel']}
-نام کاربری سرویس : {$invoice['username']}
-دلیل خطا : {$extend['msg']}";
-            sendmessage($invoice['id_user'], "❌خطایی در تمدید سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
+<blockquote>نام پنل : {$panel['name_panel']}</blockquote>
+<blockquote>نام کاربری سرویس : {$invoice['username']}</blockquote>
+<blockquote>دلیل خطا : {$extend['msg']}</blockquote>";
+            sendmessage($invoice['id_user'], (($extend['code'] ?? '') === 'manual_stock_empty') ? "❌ موجودی انبار برای این محصول تمام شده است." : "❌خطایی در تمدید سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
             if (strlen($setting['Channel_Report']) > 0) {
                 telegram('sendmessage', [
                     'chat_id' => $setting['Channel_Report'],

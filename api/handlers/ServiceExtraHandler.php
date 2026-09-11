@@ -42,7 +42,7 @@ final class ServiceExtraHandler extends BaseHandler
             'username'        => (string)$invoice['username'],
             'kind'            => $kind,
             'price_per_unit'  => (int)$pricePerUnit,
-            'unit_label'      => $kind === 'time' ? 'روز' : 'گیگابایت',
+            'unit_label'      => $kind === 'time' ? faoxima_textbot_get('dyn_serviceextra_unit_day', 'روز') : faoxima_textbot_get('dyn_serviceextra_unit_gigabyte', 'گیگابایت'),
             'min'             => $bounds[0],
             'max'             => $bounds[1],
             'amount'          => $amount,
@@ -63,29 +63,49 @@ final class ServiceExtraHandler extends BaseHandler
             FaoximaResponse::badRequest('amount must be a positive integer');
         }
         if (count($bounds) === 2 && $bounds[0] > 0 && $amount < $bounds[0]) {
-            FaoximaResponse::fail(422, "❌ مقدار باید حداقل {$bounds[0]} باشد");
+            FaoximaResponse::fail(422, faoxima_render_text(faoxima_textbot_get('dyn_serviceextra_amount_min_tpl', '❌ مقدار باید حداقل {min} باشد'), ['min' => $bounds[0]]));
         }
         if (count($bounds) === 2 && $bounds[1] > 0 && $amount > $bounds[1]) {
-            FaoximaResponse::fail(422, "❌ مقدار باید حداکثر {$bounds[1]} باشد");
+            FaoximaResponse::fail(422, faoxima_render_text(faoxima_textbot_get('dyn_serviceextra_amount_max_tpl', '❌ مقدار باید حداکثر {max} باشد'), ['max' => $bounds[1]]));
         }
 
         $price = (float) ($amount * $pricePerUnit);
 
 
         $discountCode = FaoximaInput::string($this->data, 'discount_code');
+        $discPriceBefore = null;
         if ($discountCode !== '') {
-            $dv = MiniDiscount::validateSell(
+            $sourceProduct = FaoximaDb::fetchOne(
+                "SELECT category FROM product WHERE name_product = :n AND (FIND_IN_SET(:loc, Location) > 0 OR Location = '/all') LIMIT 1",
+                [':n' => (string)($invoice['name_product'] ?? ''), ':loc' => (string)($invoice['Service_location'] ?? '')]
+            );
+            $categoryList = is_array($sourceProduct) ? nmProductCategoryList($sourceProduct) : [];
+
+            $dv = MiniDiscount::validateSellForCategories(
                 $discountCode,
                 $kind === 'time' ? 'time' : 'volume',
                 '',
                 (string)($panel['code_panel'] ?? ''),
+                $categoryList,
                 $this->user
             );
             if (empty($dv['ok'])) {
-                FaoximaResponse::fail(422, (string)($dv['reason'] ?? '❌ کد تخفیف نامعتبر است.'));
+                FaoximaResponse::fail(422, (string)($dv['reason'] ?? faoxima_textbot_get('dyn_purchase_invalid_discount_code', '❌ کد تخفیف نامعتبر است.')));
             }
+            $discPriceBefore = $price;
             $price = MiniDiscount::applyToPrice($dv['row'], $price);
-            MiniDiscount::markSellUsed($discountCode, $this->user);
+            MiniDiscount::logOrderDiscount([
+                'id_user' => $this->user['id'],
+                'id_invoice' => $invoice['id_invoice'] ?? null,
+                'code' => $discountCode,
+                'kind' => 'sell',
+                'value_type' => $dv['value_type'],
+                'value_raw' => $dv['value'],
+                'price_before' => $discPriceBefore,
+                'discount_amount' => $discPriceBefore - $price,
+                'price_after' => $price,
+                'section' => $kind === 'time' ? 'time' : 'volume',
+            ]);
         }
 
 
@@ -103,17 +123,16 @@ final class ServiceExtraHandler extends BaseHandler
         $maxBuyAgent = (int)($this->user['maxbuyagent'] ?? 0);
         if ($maxBuyAgent !== 0 && $agent === 'n2') {
             if (($balance - $finalPrice) < (-1 * $maxBuyAgent)) {
-                FaoximaResponse::fail(403, '❌ مبلغ مجاز خرید شما به اتمام رسیده است.');
+                FaoximaResponse::fail(403, faoxima_textbot_get('dyn_serviceaction_purchase_limit_exhausted', '❌ مبلغ مجاز خرید شما به اتمام رسیده است.'));
             }
         }
 
 
         $shortfall = $finalPrice - $balance;
         if ($shortfall > 0 && $agent !== 'n2') {
-            $directBuyRow = select('shopSetting', '*', 'Namevalue', 'statusdirectpabuy', 'select');
-            $directBuy = is_array($directBuyRow) ? (string)($directBuyRow['value'] ?? '') : '';
+            $directBuy = panel_feature_enabled($invoice['Service_location'], 'directbuy') ? 'ondirectbuy' : 'offdirectbuy';
             if ($directBuy !== 'ondirectbuy') {
-                FaoximaResponse::fail(402, '❌ موجودی کیف پول شما کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید.');
+                FaoximaResponse::fail(402, faoxima_textbot_get('dyn_renewconfirm_insufficient_balance', '❌ موجودی کیف پول شما کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید.'));
             }
 
             $orderId = bin2hex(random_bytes(4));
@@ -134,7 +153,7 @@ final class ServiceExtraHandler extends BaseHandler
                 'order_id'    => $orderId,
                 'extra_kind'  => $kind,
                 'extra_amount'=> $amount,
-                'message'     => 'موجودی کیف پول کافی نیست. لطفاً مبلغ کسری را پرداخت کنید.',
+                'message'     => faoxima_textbot_get('dyn_renewconfirm_insufficient_balance_pay_shortfall', 'موجودی کیف پول کافی نیست. لطفاً مبلغ کسری را پرداخت کنید.'),
             ]);
             return;
         }
@@ -151,10 +170,13 @@ final class ServiceExtraHandler extends BaseHandler
                     'price'   => $finalPrice,
                     'reason'  => $charge['reason'] ?? 'unknown',
                 ]);
-                FaoximaResponse::fail(402, '❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.');
+                FaoximaResponse::fail(402, faoxima_textbot_get('dyn_purchase_concurrent_balance_conflict', '❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.'));
             }
             $newBalance = $charge['new_balance'];
             $balanceCharged = true;
+            if (function_exists('wallet_ledger_record')) {
+                wallet_ledger_record($this->user['id'], 'debit', $finalPrice, 'service_action', $kind === 'time' ? faoxima_textbot_get('dyn_serviceextra_ledger_debit_time', 'خرید زمان اضافه') : faoxima_textbot_get('dyn_serviceextra_ledger_debit_volume', 'خرید حجم اضافه'), $orderId, 'invoice', (string)($invoice['id_invoice'] ?? ''));
+            }
         } else {
             $newBalance = $balance;
         }
@@ -187,17 +209,39 @@ final class ServiceExtraHandler extends BaseHandler
 
             if ($balanceCharged) {
                 balance_atomic_credit($this->user['id'], $finalPrice);
+                if (function_exists('wallet_ledger_record')) {
+                    wallet_ledger_record($this->user['id'], 'credit', $finalPrice, 'refund', faoxima_textbot_get('dyn_serviceextra_refund_note', 'بازگشت وجه به دلیل خطا در سرویس اضافه'), $orderId, 'invoice', (string)($invoice['id_invoice'] ?? ''));
+                }
             }
+            $errorTitle = $kind === 'time'
+                ? faoxima_textbot_get('dyn_serviceextra_error_title_time', 'خطای خرید زمان اضافه')
+                : faoxima_textbot_get('dyn_serviceextra_error_title_volume', 'خطای خرید حجم اضافه');
             $this->reportError(
-                ($kind === 'time' ? 'خطای خرید زمان اضافه' : 'خطای خرید حجم اضافه') .
-                "\nنام پنل : {$panel['name_panel']}\n" .
-                "نام کاربری سرویس : {$invoice['username']}\n" .
-                "دلیل خطا : {$reason}"
+                faoxima_render_text(faoxima_textbot_get('dyn_serviceextra_error_report_tpl', "{error_title}\n<blockquote>نام پنل : {panel_name}</blockquote>\n<blockquote>نام کاربری سرویس : {username}</blockquote>\n<blockquote>دلیل خطا : {reason}</blockquote>"), [
+                    'error_title' => $errorTitle,
+                    'panel_name' => $panel['name_panel'],
+                    'username' => $invoice['username'],
+                    'reason' => $reason,
+                ])
             );
             $human = $kind === 'time'
-                ? '❌ خطایی در خرید زمان اضافه رخ داده با پشتیبانی در ارتباط باشید'
-                : '❌ خطایی در خرید حجم اضافه رخ داده با پشتیبانی در ارتباط باشید';
+                ? faoxima_textbot_get('dyn_serviceextra_generic_error_time', '❌ خطایی در خرید زمان اضافه رخ داده با پشتیبانی در ارتباط باشید')
+                : faoxima_textbot_get('dyn_serviceextra_generic_error_volume', '❌ خطایی در خرید حجم اضافه رخ داده با پشتیبانی در ارتباط باشید');
             FaoximaResponse::fail(502, $human);
+        }
+
+        MiniDiscount::logSale([
+            'id_user' => $this->user['id'],
+            'id_invoice' => $invoice['id_invoice'] ?? null,
+            'Service_location' => $invoice['Service_location'],
+            'kind' => $kind === 'time' ? 'time' : 'volume',
+            'name_product' => $invoice['name_product'] ?? null,
+            'amount' => $finalPrice,
+            'source' => 'miniapp',
+        ]);
+
+        if ($discountCode !== '') {
+            MiniDiscount::markSellUsed($discountCode, $this->user);
         }
 
 
@@ -253,6 +297,14 @@ final class ServiceExtraHandler extends BaseHandler
             update('invoice', 'Status', 'active', 'id_invoice', $invoice['id_invoice']);
         }
 
+        if (function_exists('faoxima_public_purchase_log_event')) {
+            faoxima_public_purchase_log_event($kind === 'time' ? 'time_extra' : 'volume_topup', [
+                'user_id' => $this->user['id'],
+                'amount'  => $amount,
+                'price'   => number_format((float)$finalPrice),
+            ], $this->setting);
+        }
+
         FaoximaLogger::debug('Inline extra purchase completed', [
             'kind'     => $kind,
             'user_id'  => $this->user['id'],
@@ -262,8 +314,8 @@ final class ServiceExtraHandler extends BaseHandler
         ]);
 
         $msg = $kind === 'time'
-            ? "✅ {$amount} روز به سرویس شما اضافه شد."
-            : "✅ {$amount} گیگابایت به سرویس شما اضافه شد.";
+            ? faoxima_render_text(faoxima_textbot_get('dyn_serviceextra_success_time_tpl', '✅ {amount} روز به سرویس شما اضافه شد.'), ['amount' => $amount])
+            : faoxima_render_text(faoxima_textbot_get('dyn_serviceextra_success_volume_tpl', '✅ {amount} گیگابایت به سرویس شما اضافه شد.'), ['amount' => $amount]);
 
         FaoximaResponse::ok([
             'kind'          => 'done',
@@ -297,38 +349,28 @@ final class ServiceExtraHandler extends BaseHandler
 
         if ($method === 'POST'
             && !in_array((string)$invoice['Status'], ['active','end_of_time','end_of_volume','sendedwarn','send_on_hold'], true)) {
-            FaoximaResponse::fail(409, '❌ خرید با خطا مواجه گردید مراحل را مجدد انجام دهید.');
+            FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceextra_status_invalid_restart', '❌ خرید با خطا مواجه گردید مراحل را مجدد انجام دهید.'));
         }
 
         $panel = select('marzban_panel', '*', 'name_panel', $invoice['Service_location'], 'select');
-        if (!empty($panel) && function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel((array)$panel)) {
-            $emergencyMap = nmEmergencyReplacementMap();
-            $srcCode = (string)$panel['code_panel'];
-            if (isset($emergencyMap['by_code'][$srcCode])) {
-                $panel = $emergencyMap['by_code'][$srcCode];
-            }
-        }
         if (empty($panel)) {
             FaoximaResponse::notFound('Panel not found');
         }
         if (($panel['status_extend'] ?? '') === 'off_extend') {
             FaoximaResponse::fail(409, $kind === 'time'
-                ? '❌ امکان خرید زمان اضافه در این پنل وجود ندارد'
-                : '❌ امکان خرید حجم اضافه در این پنل وجود ندارد');
+                ? faoxima_textbot_get('dyn_serviceextra_time_unavailable_panel', '❌ امکان خرید زمان اضافه در این پنل وجود ندارد')
+                : faoxima_textbot_get('dyn_serviceextra_volume_unavailable_panel', '❌ امکان خرید حجم اضافه در این پنل وجود ندارد'));
         }
 
 
-        $key = $kind === 'time' ? 'statustimeextra' : 'statusextra';
-        $row = select('shopSetting', '*', 'Namevalue', $key, 'select');
-        $val = is_array($row) ? (string)($row['value'] ?? '') : '';
-        $off = $kind === 'time' ? 'offtimeextraa' : 'offextra';
-        if ($val === $off) {
-            FaoximaResponse::fail(409, '❌ این قابلیت درحال حاضر در دسترس نیست');
+        $featKey = $kind === 'time' ? 'timeextra' : 'extravolume';
+        if (!panel_feature_enabled($panel, $featKey)) {
+            FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceextra_feature_unavailable', '❌ این قابلیت درحال حاضر در دسترس نیست'));
         }
 
 
         if ($kind === 'time' && ($invoice['name_product'] ?? '') === 'سرویس تست') {
-            FaoximaResponse::fail(409, '❌ این قابلیت برای سرویس تست در دسترس نیست');
+            FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceextra_test_service_unavailable', '❌ این قابلیت برای سرویس تست در دسترس نیست'));
         }
 
         $agent = (string)($this->user['agent'] ?? 'f');
@@ -340,7 +382,7 @@ final class ServiceExtraHandler extends BaseHandler
         }
         $pricePerUnit = (int) $this->jsonAgentValue($panel[$priceField] ?? '', $agent, 0);
         if ($pricePerUnit <= 0) {
-            FaoximaResponse::fail(503, '❌ تعرفه خرید اضافه روی این پنل تنظیم نشده است.');
+            FaoximaResponse::fail(503, faoxima_textbot_get('dyn_serviceextra_tariff_not_configured', '❌ تعرفه خرید اضافه روی این پنل تنظیم نشده است.'));
         }
 
 

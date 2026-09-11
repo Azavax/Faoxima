@@ -6,12 +6,19 @@ import { hapticImpact, hapticNotify, showConfirm } from '../telegram.js';
 import { getBuyDraft, setBuyDraft, clearBuyDraft } from '../state.js';
 
 const STEPS = [
-    { key: 'panel',     label: '۱ موقعیت' },
-    { key: 'category',  label: '۲ دسته‌بندی' },
-    { key: 'time',      label: '۳ زمان' },
-    { key: 'product',   label: '۴ سرویس' },
-    { key: 'confirm',   label: '۵ تایید' },
+    { key: 'panel',     label: 'موقعیت' },
+    { key: 'category',  label: 'دسته‌بندی' },
+    { key: 'time',      label: 'زمان' },
+    { key: 'product',   label: 'سرویس' },
+    { key: 'confirm',   label: 'تایید' },
 ];
+
+const FA_NUMS = ['۱', '۲', '۳', '۴', '۵'];
+
+const SELECT_ICON_PATH = '<path d="M9.00024 13.5V9M9.00024 9H13.5002M9.00024 9L15.0002 14.9999M7.20024 20H16.8002C17.9203 20 18.4804 20 18.9082 19.782C19.2845 19.5903 19.5905 19.2843 19.7823 18.908C20.0002 18.4802 20.0002 17.9201 20.0002 16.8V7.2C20.0002 6.0799 20.0002 5.51984 19.7823 5.09202C19.5905 4.71569 19.2845 4.40973 18.9082 4.21799C18.4804 4 17.9203 4 16.8002 4H7.20024C6.08014 4 5.52009 4 5.09226 4.21799C4.71594 4.40973 4.40998 4.71569 4.21823 5.09202C4.00024 5.51984 4.00024 6.07989 4.00024 7.2V16.8C4.00024 17.9201 4.00024 18.4802 4.21823 18.908C4.40998 19.2843 4.71594 19.5903 5.09226 19.782C5.52009 20 6.08014 20 7.20024 20Z"/>';
+function selectIcon(cls = 'ico ico-lg') {
+    return `<svg class="${cls}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${SELECT_ICON_PATH}</svg>`;
+}
 
 export async function buy(view) {
     const draft = getBuyDraft();
@@ -20,23 +27,22 @@ export async function buy(view) {
 
     function render() {
         view.innerHTML = `
-            <article class="card card-window">
+            <article class="card card-window card-bare">
                 <header class="card-window-bar">
                     <span class="dots"><span></span><span></span><span></span></span>
                     <span class="window-url">faoxima/buy</span>
                 </header>
                 <div class="card-body">
-                    <div class="stepper">
-                        ${STEPS.map((s, i) => {
-                            const isActive = i === step;
-                            const isDone = i < step;
-                            return `
-                                <span class="step ${isActive ? 'is-active' : ''} ${isDone ? 'is-done' : ''}">
-                                    <span class="dot">${i + 1}</span>
-                                    <span>${escapeHtml(s.label.replace(/^[\d۰-۹]+\s+/, ''))}</span>
-                                </span>
-                            `;
-                        }).join('')}
+                    <div class="buy-progress">
+                        <div class="buy-progress-top">
+                            <span class="buy-progress-label">${escapeHtml(STEPS[step].label)}</span>
+                            <span class="buy-progress-count">مرحله <b>${FA_NUMS[step]}</b> از ${FA_NUMS[STEPS.length - 1]}</span>
+                        </div>
+                        <div class="buy-progress-track">
+                            ${STEPS.map((s, i) => `
+                                <span class="buy-progress-seg ${i < step ? 'is-done' : ''} ${i === step ? 'is-active' : ''}"></span>
+                            `).join('')}
+                        </div>
                     </div>
                     <div id="buy-step-host"></div>
                 </div>
@@ -106,7 +112,7 @@ export async function buy(view) {
                         </div>
                     </div>
                     <div class="plan-price">
-                        <span class="amt">انتخاب →</span>
+                        <span class="amt">${selectIcon()}</span>
                     </div>
                 </button>
             `).join('');
@@ -152,11 +158,11 @@ export async function buy(view) {
 
 
             $list.innerHTML = `
-                <button class="plan" data-id=""><div class="plan-info"><div class="plan-title">همه دسته‌ها</div><div class="plan-meta">بدون فیلتر</div></div><div class="plan-price"><span class="amt">→</span></div></button>
+                <button class="plan" data-id=""><div class="plan-info"><div class="plan-title">همه دسته‌ها</div><div class="plan-meta">بدون فیلتر</div></div><div class="plan-price"><span class="amt">${selectIcon()}</span></div></button>
                 ${list.map((c) => `
                     <button class="plan" data-id="${escapeHtml(c.id)}">
                         <div class="plan-info"><div class="plan-title">${escapeHtml(c.name)}</div></div>
-                        <div class="plan-price"><span class="amt">→</span></div>
+                        <div class="plan-price"><span class="amt">${selectIcon()}</span></div>
                     </button>
                 `).join('')}
             `;
@@ -193,11 +199,11 @@ export async function buy(view) {
             }
 
             $list.innerHTML = `
-                <button class="plan" data-day=""><div class="plan-info"><div class="plan-title">همه مدت‌ها</div><div class="plan-meta">بدون فیلتر</div></div><div class="plan-price"><span class="amt">→</span></div></button>
+                <button class="plan" data-day=""><div class="plan-info"><div class="plan-title">همه مدت‌ها</div><div class="plan-meta">بدون فیلتر</div></div><div class="plan-price"><span class="amt">${selectIcon()}</span></div></button>
                 ${list.map((t) => `
                     <button class="plan" data-day="${escapeHtml(t.day)}">
                         <div class="plan-info"><div class="plan-title">${escapeHtml(t.name)}</div></div>
-                        <div class="plan-price"><span class="amt">→</span></div>
+                        <div class="plan-price"><span class="amt">${selectIcon()}</span></div>
                     </button>
                 `).join('')}
             `;
@@ -328,7 +334,7 @@ export async function buy(view) {
                             <div class="muted mono" style="font-size:11px">حداقل: ${fmtNumber(dMin)} روز · حداکثر: ${fmtNumber(dMax)} روز</div>
                         </div>
                         <div class="kv mt-md"><span class="kv-label"><span class="glyph">$</span> قیمت لحظه‌ای</span><span class="kv-value gold" id="p-val">${escapeHtml(fmtPrice(0))}</span></div>
-                        <button class="btn btn-primary btn-block mt-md" id="pick-custom"><span>تایید و ادامه</span><span class="arrow">→</span></button>
+                        <button class="btn btn-primary btn-block mt-md" id="pick-custom"><span>تایید و ادامه</span><span class="arrow">${selectIcon('ico')}</span></button>
                     </div>
                 `;
                 const $tRange = target.querySelector('#t-range');
@@ -419,7 +425,7 @@ export async function buy(view) {
 
             <button class="btn btn-primary btn-block mt-md" id="do-purchase">
                 <span>پرداخت و ساخت سرویس</span>
-                <span class="arrow">→</span>
+                <span class="arrow">${selectIcon('ico')}</span>
             </button>
             <p class="muted mono mt-sm" style="font-size:11px;text-align:center">با کلیک روی دکمه بالا، مبلغ از کیف پول شما کسر خواهد شد.</p>
         `;
@@ -453,7 +459,7 @@ export async function buy(view) {
                 clearBuyDraft();
 
                 view.innerHTML = `
-                    <article class="card card-window">
+                    <article class="card card-window card-bare">
                         <header class="card-window-bar">
                             <span class="dots"><span></span><span></span><span></span></span>
                             <span class="window-url">faoxima/buy/success</span>
@@ -475,7 +481,7 @@ export async function buy(view) {
                 hapticNotify('error');
                 toast(err.message || 'خطا در ساخت سرویس', 'error', 5000);
                 $btn.disabled = false;
-                $btn.innerHTML = `<span>پرداخت و ساخت سرویس</span><span class="arrow">→</span>`;
+                $btn.innerHTML = `<span>پرداخت و ساخت سرویس</span><span class="arrow">${selectIcon('ico')}</span>`;
             }
         });
     }

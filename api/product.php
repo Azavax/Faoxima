@@ -164,7 +164,7 @@ switch ($data['actions'] ?? '') {
             $stmt->execute();
             $totalproduct = (int) $stmt->fetchColumn();
             $totalPages = ceil($totalproduct / $limit);
-            $query = "SELECT * FROM product WHERE (id  LIKE CONCAT('%', :id_product, '%') OR name_product  LIKE CONCAT('%', :name_product, '%')) ORDER BY id LIMIT :limit OFFSET :offset";
+            $query = "SELECT * FROM product WHERE (id  LIKE CONCAT('%', :id_product, '%') OR name_product  LIKE CONCAT('%', :name_product, '%')) ORDER BY (position = 0) ASC, position ASC, id ASC LIMIT :limit OFFSET :offset";
             $stmt = $pdo->prepare($query);
             $stmt->bindValue(':name_product', $q, PDO::PARAM_STR);
             $stmt->bindValue(':id_product', $q, PDO::PARAM_INT);
@@ -425,11 +425,6 @@ switch ($data['actions'] ?? '') {
             $stmt->bindParam(':id_product', $data['id']);
             $stmt->execute();
             $datainbound = json_encode($DataUserOut['inbounds']);
-        } elseif ($panel['type'] == "marzneshin") {
-            $userdata = json_decode(getuserm($data['input'], $panel['name_panel'])['body'], true);
-            if (isset($userdata['detail']) and $userdata['detail'] == "User not found")
-                sendJsonResponse(false, "User Not Found", [], 200);
-            $datainbound = json_encode($userdata['service_ids'], true);
         } elseif ($panel['type'] == "x-ui_single") {
             $user_data = get_clinets($data['input'], $panel['name_panel']);
             if (!empty($user_data['error']))
@@ -440,18 +435,6 @@ switch ($data['actions'] ?? '') {
             if ($user_data == null)
                 sendJsonResponse(false, "User Not Found", [], 200);
             $datainbound = $user_data['inboundId'];
-        } elseif ($panel['type'] == "s_ui") {
-            $user_data = GetClientsS_UI($data['input'], $panel['name_panel']);
-            if (count($user_data) == 0) {
-                sendJsonResponse(false, "User Not Found", [], 200);
-            }
-            $servies = [];
-            foreach ($user_data['inbounds'] as $service) {
-                $servies[] = $service;
-            }
-            $datainbound = json_encode($servies);
-        } elseif ($panel['type'] == "ibsng" || $panel['type'] == "mikrotik") {
-            $datainbound = $data['input'];
         } else {
             sendJsonResponse(false, "panel_not_support_options", [], 200);
         }

@@ -1,13 +1,5 @@
 <?php
 
-$keyboardlinkapp = json_encode([
-    'keyboard' => [
-        [['text' => "🔗 اضافه کردن برنامه"],['text' => "❌ حذف برنامه"]],
-        [['text' => "✏️ ویرایش برنامه"]],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
-    ],
-    'resize_keyboard' => true
-]);
 if (!function_exists('rxProductLookupTokens')) {
 function rxProductLookupTokens($rawToken)
 {
@@ -57,7 +49,7 @@ function rxResolveProductForPanel($productToken, $panelName, $agent = null, $cat
     $tokens = rxProductLookupTokens($productToken);
 
     $queryProduct = static function ($extraSql, array $extraParams = []) use ($pdo, $panelName, $agent, $category, $serviceTime) {
-        $sql = "SELECT * FROM product WHERE (Location = :rx_location_where OR Location = '/all')";
+        $sql = "SELECT * FROM product WHERE (FIND_IN_SET(:rx_location_where, Location) > 0 OR Location = '/all')";
         $params = [
             ':rx_location_where' => $panelName,
             ':rx_location_order' => $panelName,
@@ -69,7 +61,7 @@ function rxResolveProductForPanel($productToken, $panelName, $agent = null, $cat
             $params[':rx_agent_order'] = $agent;
         }
         if ($category !== null && $category !== '') {
-            $sql .= " AND (category = :rx_category OR category = :rx_category_id)";
+            $sql .= " AND (FIND_IN_SET(:rx_category, category) > 0 OR FIND_IN_SET(:rx_category_id, category) > 0)";
             $params[':rx_category'] = (string) $category;
             $params[':rx_category_id'] = (string) $category;
         }
@@ -79,7 +71,7 @@ function rxResolveProductForPanel($productToken, $panelName, $agent = null, $cat
         }
 
         $sql .= ' ' . $extraSql;
-        $sql .= " ORDER BY CASE WHEN Location = :rx_location_order THEN 0 ELSE 1 END";
+        $sql .= " ORDER BY CASE WHEN FIND_IN_SET(:rx_location_order, Location) > 0 THEN 0 ELSE 1 END";
         if ($agent !== null && $agent !== '') {
             $sql .= ", CASE WHEN agent = :rx_agent_order THEN 0 WHEN agent = 'all' THEN 1 ELSE 2 END";
         }
@@ -135,14 +127,14 @@ function rxResolveProductForPanel($productToken, $panelName, $agent = null, $cat
 
     $nonEmptyTokens = array_filter($tokens, static function ($token) { return trim((string) $token) !== ''; });
     if (empty($nonEmptyTokens)) {
-        $sql = "SELECT * FROM product WHERE (Location = :rx_location_where OR Location = '/all')";
+        $sql = "SELECT * FROM product WHERE (FIND_IN_SET(:rx_location_where, Location) > 0 OR Location = '/all')";
         $params = [':rx_location_where' => $panelName];
         if ($agent !== null && $agent !== '') {
             $sql .= " AND (agent = :rx_agent_where OR agent = 'all')";
             $params[':rx_agent_where'] = $agent;
         }
         if ($category !== null && $category !== '') {
-            $sql .= " AND (category = :rx_category OR category = :rx_category_id)";
+            $sql .= " AND (FIND_IN_SET(:rx_category, category) > 0 OR FIND_IN_SET(:rx_category_id, category) > 0)";
             $params[':rx_category'] = (string) $category;
             $params[':rx_category_id'] = (string) $category;
         }
@@ -164,7 +156,7 @@ function rxResolveProductForPanel($productToken, $panelName, $agent = null, $cat
 function KeyboardProduct($location,$query,$pricediscount,$datakeyboard,$statuscustom = false,$backuser = "backuser", $valuetow = null,$customvolume = "customsellvolume", $agentFilter = null, $params = []){
     global $pdo,$textbotlang,$from_id;
     $product = ['inline_keyboard' => []];
-    $statusshowprice = select("shopSetting","*","Namevalue","statusshowprice","select")['value'];
+    $statusshowprice = panel_feature_enabled($location, 'showprice') ? "onshowprice" : "offshowprice";
     $stmt = $pdo->prepare($query);
     $stmt->execute($params);
     if($valuetow != null){
@@ -172,12 +164,37 @@ function KeyboardProduct($location,$query,$pricediscount,$datakeyboard,$statuscu
     }else{
             $valuetow = "";
         }
-    while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
+    $productRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    usort($productRows, function ($a, $b) {
+        $pa = (int)($a['position'] ?? 0);
+        $pb = (int)($b['position'] ?? 0);
+        $za = $pa === 0 ? 1 : 0;
+        $zb = $pb === 0 ? 1 : 0;
+        if ($za !== $zb) return $za - $zb;
+        if ($pa !== $pb) return $pa - $pb;
+        return (int)($a['id'] ?? 0) - (int)($b['id'] ?? 0);
+    });
+    $nmPanelRow = null;
+    if (function_exists('nmPanelNationalEnabled') && function_exists('nmStockHasAvailableForProduct')) {
+        $nmPanelRow = select("marzban_panel", "*", "name_panel", $location, "select");
+        if (!is_array($nmPanelRow) || !nmPanelNationalEnabled($nmPanelRow)) $nmPanelRow = null;
+    }
+    if ($statusshowprice == "onshowprice") {
+        $product['inline_keyboard'][] = [
+            ['text' => $textbotlang['users']['sell']['grid_header_name'] ?? '📦 نام سرویس', 'callback_data' => 'noop'],
+            ['text' => $textbotlang['users']['sell']['grid_header_time'] ?? '⏳ زمان', 'callback_data' => 'noop'],
+            ['text' => $textbotlang['users']['sell']['grid_header_price'] ?? '💵 قیمت', 'callback_data' => 'noop'],
+        ];
+    }
+    foreach ($productRows as $result) {
         if ($agentFilter !== null) {
             $productAgent = (string) ($result['agent'] ?? '');
             if ($productAgent !== (string) $agentFilter && $productAgent !== 'all') {
                 continue;
             }
+        }
+        if ($nmPanelRow !== null && !nmStockHasAvailableForProduct($nmPanelRow, $result)) {
+            continue;
         }
         $hide_panel = json_decode($result['hide_panel'], true);
         if (!is_array($hide_panel)) {
@@ -192,19 +209,26 @@ function KeyboardProduct($location,$query,$pricediscount,$datakeyboard,$statuscu
             $resultper = ($result['price_product'] * $pricediscount) / 100;
             $result['price_product'] = $result['price_product'] -$resultper;
         }
-        $namekeyboard = $result['name_product']." - ".number_format($result['price_product']) ."تومان";
-        if($statusshowprice == "onshowprice"){
-            $result['name_product'] = $namekeyboard;
-        }
         $callbackToken = trim((string)($result['code_product'] ?? ''));
         $callbackData = "{$datakeyboard}{$callbackToken}{$valuetow}";
         if ($callbackToken === '' || strlen($callbackData) > 64) {
             $callbackToken = 'pid:' . (string)($result['id'] ?? '');
             $callbackData = "{$datakeyboard}{$callbackToken}{$valuetow}";
         }
-        $product['inline_keyboard'][] = [
-                ['text' =>  $result['name_product'], 'callback_data' => $callbackData]
+        if ($statusshowprice == "onshowprice") {
+            $days = trim((string)($result['Service_time'] ?? ''));
+            $duration = $days !== '' ? "{$days} روزه" : '-';
+            $price = number_format((float)$result['price_product']) . ' تومان';
+            $product['inline_keyboard'][] = [
+                ['text' => $result['name_product'], 'callback_data' => $callbackData],
+                ['text' => $duration, 'callback_data' => $callbackData],
+                ['text' => $price, 'callback_data' => $callbackData],
             ];
+        } else {
+            $product['inline_keyboard'][] = [
+                ['text' => $result['name_product'], 'callback_data' => $callbackData],
+            ];
+        }
     }
     if ($statuscustom)$product['inline_keyboard'][] = [['text' => $textbotlang['users']['customsellvolume']['title'], 'callback_data' => $customvolume]];
     $product['inline_keyboard'][] = [
@@ -228,7 +252,7 @@ function KeyboardCategory($location,$agent,$backuser = "backuser"){
         $stmt = $pdo->prepare("SELECT * FROM category");
         $stmt->execute();
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $stmts = $pdo->prepare("SELECT * FROM product WHERE (Location = :location OR Location = '/all') AND category = :category AND (agent = :agent OR agent = 'all')");
+            $stmts = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:location, Location) > 0 OR Location = '/all') AND FIND_IN_SET(:category, category) > 0 AND (agent = :agent OR agent = 'all')");
             $stmts->bindParam(':location', $location, PDO::PARAM_STR);
             $stmts->bindParam(':category', $row['remark'], PDO::PARAM_STR);
             $stmts->bindParam(':agent', $agent, PDO::PARAM_STR);
@@ -245,7 +269,7 @@ function KeyboardCategory($location,$agent,$backuser = "backuser"){
 
 function keyboardTimeCategory($name_panel,$agent,$callback_data = "producttime_",$callback_data_back = "backuser",$statuscustomvolume = false,$statusbtnextend = false){
     global $pdo,$textbotlang;
-    $stmt = $pdo->prepare("SELECT Service_time FROM product WHERE (Location = :location OR Location = '/all') AND (agent = :agent OR agent = 'all')");
+    $stmt = $pdo->prepare("SELECT Service_time FROM product WHERE (FIND_IN_SET(:location, Location) > 0 OR Location = '/all') AND (agent = :agent OR agent = 'all')");
     $stmt->execute([
         ':location' => $name_panel,
         ':agent' => $agent
@@ -331,9 +355,9 @@ function keyboardTimeCategory($name_panel,$agent,$callback_data = "producttime_"
 }
 $Startelegram = json_encode([
     'keyboard' => [
-        [['text' => "🗂 نام درگاه استار"]],
-        [['text' => "💰 کش بک استار"],['text' => "📚 تنظیم آموزش استار"]],
-        [['text' => "⬇️ حداقل مبلغ استار"],['text' => "⬆️ حداکثر مبلغ استار"]],
+        [['text' => "🏷️ نام نمایشی درگاه استار"]],
+        [['text' => "💰 کش بک استار"],['text' => "📚 آموزش استار"]],
+        [['text' => "⬇️ کف استار"],['text' => "⬆️ سقف استار"]],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
@@ -342,7 +366,7 @@ $keyboardchangelimit = json_encode([
     'keyboard' => [
         [['text' => "🆓 محدودیت رایگان"],['text' => "↙️ محدودیت کلی"]],
         [['text' => "🔄 ریست محدودیت کل کاربران"]],
-        [['text' => $textbotlang['Admin']['backadmin']]]
+        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
 ]);
@@ -370,44 +394,131 @@ function KeyboardCategoryadmin(){
 $nowpayment_setting_keyboard = json_encode([
     'keyboard' => [
         [['text' => "API NOWPAYMENT"],['text' => "🔐 IPN Secret nowpayment"]],
-        [['text' => "🗂 نام درگاه nowpayment"],['text' => "💰 کش بک nowpayment"]],
-        [['text' => "📚 تنظیم آموزش nowpayment"]],
-        [['text' => "⬇️ حداقل مبلغ nowpayment"],['text' => "⬆️ حداکثر مبلغ nowpayment"]],
+        [['text' => "🏷️ نام نمایشی درگاه nowpayment"],['text' => "💰 کش بک nowpayment"]],
+        [['text' => "📚 آموزش nowpayment"]],
+        [['text' => "⬇️ کف nowpayment"],['text' => "⬆️ سقف nowpayment"]],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
+    ],
+    'resize_keyboard' => true
+]);
+$autoconfirm_advanced_keyboard = json_encode([
+    'keyboard' => [
+        [['text' => "🚫 استثناء کاربران"],['text' => "✅ کاربران معتمد"]],
+        [['text' => $textbotlang['Admin']['backadmin']]]
     ],
     'resize_keyboard' => true
 ]);
 $Exception_auto_cart_keyboard = json_encode([
     'keyboard' => [
         [['text' => "➕ استثناء کردن کاربر"],['text' => "❌ حذف کاربر از لیست"]],
-        [['text' => "👁 نمایش لیست افراد"]],
-        [['text' => "▶️ بازگشت به منوی تظنیمات کارت"]]
+        [['text' => "👁 نمایش لیست استثناء"]],
+        [['text' => "◀️ بازگشت به تنظیمات پیشرفته"]]
     ],
     'resize_keyboard' => true
 ]);
-function keyboard_config($config_split,$id_invoice,$back_active = true){
-    global $textbotlang;
-    try {
-        $invoiceForKeyboard = select("invoice", "*", "id_invoice", $id_invoice, "select");
-        if (function_exists("nmServicePanelAccessBlocked") && is_array($invoiceForKeyboard) && nmServicePanelAccessBlocked($invoiceForKeyboard)) {
-            return json_encode(["inline_keyboard" => [[["text" => function_exists("nmServiceRestrictedNotice") ? nmServiceRestrictedNotice() : "این سرویس در حال حاضر به دلیل شرایط اینترنت ملی در دسترس نیست !", "callback_data" => "none"]]]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+$Trust_auto_cart_keyboard = json_encode([
+    'keyboard' => [
+        [['text' => "➕ افزودن به معتمدین"],['text' => "❌ حذف از معتمدین"]],
+        [['text' => "👁 نمایش لیست معتمدین"]],
+        [['text' => "🔁 وضعیت حالت معتمدین"]],
+        [['text' => "◀️ بازگشت به تنظیمات پیشرفته"]]
+    ],
+    'resize_keyboard' => true
+]);
+function rebeccaKeyboardProtocolLabel($config){
+    $schemeMap = [
+        'hysteria2' => 'Hysteria2',
+        'ss' => 'Shadowsocks',
+        'vless' => 'VLESS',
+        'vmess' => 'VMess',
+        'trojan' => 'Trojan',
+        'tg' => 'MTProto',
+        'xuifile' => 'WireGuard',
+        'xuiawgfile' => 'AmneziaWG',
+        'amneziawg' => 'AmneziaWG',
+        'awg' => 'AmneziaWG',
+    ];
+
+    if(strpos($config, "\n") !== false && !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\//', $config)){
+        if(preg_match('/^Protocol:\s*(.+)$/mi', $config, $protoMatch)){
+            return trim($protoMatch[1]);
         }
-    } catch (Throwable $e) {
-        error_log("keyboard_config national block check failed: " . $e->getMessage());
+        if(preg_match('/^\s*(Jc|S1|S2|S3|S4|H1|H2|H3|H4)\s*=/mi', $config)){
+            return 'AmneziaWG';
+        }
+        if(preg_match('/^\s*\[Interface\]/mi', $config)){
+            return 'WireGuard';
+        }
+        return null;
     }
-    $keyboard_config = ['inline_keyboard' => []];
-    $keyboard_config['inline_keyboard'][] = [
-        ['text' => "⚙️ کانفیگ", 'callback_data' => "none"],
-        ['text' => "✏️نام کانفیگ", 'callback_data' => "none"],
-        ];
+
+    if(preg_match('#^https?://#i', $config)){
+        $path = parse_url(strtok($config, '#'), PHP_URL_PATH) ?: '';
+        if(preg_match('#/wg/#', $path)){
+            return 'WireGuard';
+        }
+        if(preg_match('#/ov/#', $path)){
+            return 'OpenVPN';
+        }
+        return null;
+    }
+
+    $split_config = explode("://",$config,2);
+    if(count($split_config) === 2){
+        $scheme = strtolower($split_config[0]);
+        if(in_array($scheme, ['wireguard', 'wg', 'vpn', 'awg', 'amneziawg'], true) && function_exists('xui_wg_conf_from_link')){
+            $wgInfo = xui_wg_conf_from_link($config);
+            if(is_array($wgInfo)){
+                return $wgInfo['protocol'] === 'amneziawg' ? 'AmneziaWG' : 'WireGuard';
+            }
+        }
+        if($scheme === 'wireguard'){
+            return 'WireGuard';
+        }
+        if(isset($schemeMap[$scheme])){
+            return $schemeMap[$scheme];
+        }
+    }
+
+    return null;
+}
+
+function keyboard_config($config_split,$id_invoice,$back_active = true,$page = 0){
+    global $textbotlang;
+    $rxConfigPageSize = 5;
+
+    $rows = [];
     foreach (array_values($config_split) as $i => $config){
         if(!is_string($config) || $config === ''){
             error_log('Invalid configuration entry encountered while building keyboard');
             continue;
         }
 
+        $protocolLabel = rebeccaKeyboardProtocolLabel($config);
+        $protocolButton = ['text' => $protocolLabel !== null ? $protocolLabel : '—', 'callback_data' => "none"];
+
+        if(strpos($config, "\n") !== false && !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\//', $config)){
+            $firstLine = trim(explode("\n", $config, 2)[0]);
+            $rows[] = [
+                ['text' => "دریافت کانفیگ", 'callback_data' => "configget_{$id_invoice}_$i"],
+                $protocolButton,
+                ['text' => $firstLine !== '' ? $firstLine : sprintf('Config %d', $i + 1), 'callback_data' => "none"],
+            ];
+            continue;
+        }
+
         $split_config = explode("://",$config,2);
-        if(count($split_config) !== 2){
+        if(count($split_config) !== 2 || strpos($split_config[0], '{') !== false){
+            $structuredConfig = json_decode($config, true);
+            if (is_array($structuredConfig)) {
+                $structuredName = $structuredConfig['name'] ?? ($structuredConfig['server'] ?? sprintf('Config %d', $i + 1));
+                $rows[] = [
+                    ['text' => "دریافت کانفیگ", 'callback_data' => "configget_{$id_invoice}_$i"],
+                    $protocolButton,
+                    ['text' => urldecode((string) $structuredName), 'callback_data' => "none"],
+                ];
+                continue;
+            }
             error_log('Malformed configuration string: missing scheme separator');
             continue;
         }
@@ -429,6 +540,11 @@ function keyboard_config($config_split,$id_invoice,$back_active = true){
             if(is_array($configJson) && isset($configJson['ps'])){
                 $displayName = $configJson['ps'];
             }
+        }elseif(in_array($type_prtocol, ["anyconnect","l2tp","ikev2","pptp"], true)){
+            $parts = explode("?",$payload,2);
+            if(count($parts) >= 1 && $parts[0] !== ''){
+                $displayName = $parts[0];
+            }
         }else{
             $parts = explode("#",$payload,2);
             if(count($parts) === 2){
@@ -440,12 +556,40 @@ function keyboard_config($config_split,$id_invoice,$back_active = true){
             $displayName = sprintf('Config %d', $i + 1);
         }
 
-        $keyboard_config['inline_keyboard'][] = [
+        $rows[] = [
             ['text' => "دریافت کانفیگ", 'callback_data' => "configget_{$id_invoice}_$i"],
+            $protocolButton,
             ['text' => urldecode($displayName), 'callback_data' => "none"],
         ];
-
     }
+
+    $totalRows = count($rows);
+    $totalPages = $totalRows > 0 ? (int) ceil($totalRows / $rxConfigPageSize) : 1;
+    $page = max(0, min($page, $totalPages - 1));
+    $pageRows = array_slice($rows, $page * $rxConfigPageSize, $rxConfigPageSize);
+
+    $keyboard_config = ['inline_keyboard' => []];
+    $keyboard_config['inline_keyboard'][] = [
+        ['text' => "⚙️ کانفیگ", 'callback_data' => "none"],
+        ['text' => "🔌 پروتکل", 'callback_data' => "none"],
+        ['text' => "✏️نام کانفیگ", 'callback_data' => "none"],
+        ];
+    foreach ($pageRows as $row) {
+        $keyboard_config['inline_keyboard'][] = $row;
+    }
+
+    if ($totalPages > 1) {
+        $navRow = [];
+        if ($page > 0) {
+            $navRow[] = ['text' => "◀️ قبلی", 'callback_data' => "configpage_{$id_invoice}_" . ($page - 1)];
+        }
+        $navRow[] = ['text' => sprintf('%d/%d', $page + 1, $totalPages), 'callback_data' => "none"];
+        if ($page < $totalPages - 1) {
+            $navRow[] = ['text' => "بعدی ▶️", 'callback_data' => "configpage_{$id_invoice}_" . ($page + 1)];
+        }
+        $keyboard_config['inline_keyboard'][] = $navRow;
+    }
+
     $keyboard_config['inline_keyboard'][] = [['text' => "⚙️ دریافت همه کانفیگ ها", 'callback_data' => "configget_$id_invoice"."_1520"]];
     if($back_active){
     $keyboard_config['inline_keyboard'][] = [['text' => $textbotlang['users']['stateus']['backinfo'], 'callback_data' => "product_$id_invoice"]];

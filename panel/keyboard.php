@@ -11,6 +11,9 @@ if (!defined('FAOXIMA_SKIP_BOTAPI_ROUTER')) {
 }
 
 session_start();
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+header('Pragma: no-cache');
+header('Expires: 0');
 require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../jdf.php';
 require_once __DIR__ . '/../function.php';
@@ -108,17 +111,23 @@ $primaryKeys = [
 ];
 ?>
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" data-theme="dark" data-color="blue">
+<html lang="fa" dir="rtl" data-color="blue">
 <head>
+    <script>
+    (function(){try{var t=localStorage.getItem('faoxima_theme');
+    if(t!=='light'&&t!=='dark')t='dark';
+    document.documentElement.setAttribute('data-theme',t);
+    var c=localStorage.getItem('faoxima_color');
+    if(c)document.documentElement.setAttribute('data-color',c);}catch(e){}})();
+    </script>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>چیدمان کیبورد — پنل فاکسیما</title>
-    <link rel="preload" href="fonts/Arad-BoldDots2.ttf" as="font" type="font/ttf" crossorigin>
-    <link rel="stylesheet" href="css/theme.css">
-    <script src="js/theme.js" defer>
+    <link rel="stylesheet" href="css/theme.css?v=flat47">
+    <script src="js/theme.js?v=flat5" defer>
 
 </script>
-    <script src="js/keyboard_editor.js" defer>
+    <script src="js/keyboard_editor.js?v=touch2" defer>
 
 </script>
     <style>
@@ -127,32 +136,48 @@ $primaryKeys = [
             position: fixed;
             top: 0; left: 0; right: 0;
             z-index: 1000;
-            display: flex; align-items: center; gap: 10px;
-            padding: 12px 20px;
-            background: rgba(13, 16, 22, 0.92);
-            backdrop-filter: blur(10px);
-            -webkit-backdrop-filter: blur(10px);
+            display: flex; align-items: center; gap: 10px 16px; justify-content: space-between;
+            padding: 11px 22px;
+            background: var(--surface-1);
             border-bottom: 1px solid var(--border-soft);
+            box-shadow: var(--shadow-1);
             flex-wrap: wrap;
         }
+        .kb-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+        [data-theme="light"] .kb-topbar { background: var(--surface-1); border-bottom-color: var(--border-soft); box-shadow: var(--shadow-1); }
+        .kb-topbar .btn { border-radius: 100px; gap: 7px; }
+        .kb-topbar .btn:hover { border-color: color-mix(in srgb, var(--accent) 55%, transparent); transform: none; }
         .kb-topbar__brand {
             display: flex; align-items: center; gap: 10px;
-            font-weight: 700; color: var(--accent); font-size: 14px;
+            font-weight: 800; color: var(--accent); font-size: 16px; letter-spacing: -.2px;
         }
         .kb-topbar__brand .logo-mark {
-            width: 28px; height: 28px;
+            width: 30px; height: 30px;
             display: grid; place-items: center;
-            background: var(--accent-soft);
-            color: var(--accent);
-            border-radius: 6px;
-            font-family: 'JetBrains Mono', monospace;
-            font-weight: 800;
-            border: 1px solid var(--accent-mid);
+            background: #fff;
+            border-radius: 50%;
+            overflow: hidden;
+            flex-shrink: 0;
+            box-shadow: 0 1px 3px rgba(20, 20, 30, 0.18), 0 3px 8px rgba(20, 20, 30, 0.14);
+        }
+        [data-theme="dark"] .kb-topbar__brand .logo-mark,
+        :root:not([data-theme="light"]) .kb-topbar__brand .logo-mark {
+            box-shadow: none;
+        }
+        .kb-topbar__brand .logo-mark img {
+            width: 100%; height: 100%;
+            object-fit: contain; object-position: center;
+            transform: scale(1.35);
+            display: block;
         }
         .kb-topbar__grow { flex: 1 1 auto; }
         @media (max-width: 600px) {
-            .kb-topbar { padding: 10px 12px; }
-            .kb-topbar__brand span:not(.logo-mark) { display: none; }
+            .kb-topbar { padding: 10px 13px; gap: 10px; flex-wrap: nowrap; }
+            .kb-topbar__brand { min-width: 0; }
+            .kb-topbar__brand span:not(.logo-mark) { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+            .kb-actions { gap: 7px; flex-shrink: 0; }
+            .kb-topbar .btn span { display: none; }
+            .kb-topbar .btn { padding: 8px 10px; }
         }
     </style>
 </head>
@@ -171,10 +196,10 @@ $primaryKeys = [
 
 <div class="kb-topbar">
     <div class="kb-topbar__brand">
-        <span class="logo-mark">F</span>
+        <span class="logo-mark"><img src="logo/faoxima.jpg" alt="faoxima" loading="lazy" width="30" height="30"></span>
         <span>چیدمان کیبورد</span>
     </div>
-    <div class="kb-topbar__grow"></div>
+    <div class="kb-actions">
     <a class="btn btn-outline btn-sm" href="index.php">
         <?php echo icon('arrow-right', 'svg-icon svg-sm'); ?>
         <span>بازگشت</span>
@@ -184,6 +209,7 @@ $primaryKeys = [
         <?php echo icon('rotate-left', 'svg-icon svg-sm'); ?>
         <span>بازگرداندن پیش‌فرض</span>
     </a>
+    </div>
 </div>
 
 <div class="kb-page">

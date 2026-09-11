@@ -39,9 +39,9 @@ final class GiftCodeHandler extends BaseHandler
         $topic = is_array($otherRow) ? (string)($otherRow['idreport'] ?? '') : '';
         $uid = (string)($this->user['id'] ?? '');
         $text = "🎁 استفاده از کد هدیه\n"
-              . "آیدی عددی: {$uid}\n"
-              . "کد: {$code}\n"
-              . "مبلغ: " . number_format($amount) . " تومان";
+              . "<blockquote>آیدی عددی: {$uid}</blockquote>\n"
+              . "<blockquote>کد: {$code}</blockquote>\n"
+              . "<blockquote>مبلغ: " . number_format($amount) . " تومان</blockquote>";
         try {
             telegram('sendmessage', [
                 'chat_id'           => $channel,

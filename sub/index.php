@@ -6,9 +6,9 @@ require_once __DIR__ . '/../Marzban.php';
 require_once __DIR__ . '/../function.php';
 require_once __DIR__ . '/../panels.php';
 $ManagePanel = new ManagePanel();
-$url = $_SERVER['REQUEST_URI'];
-$parts = explode("/sub/", $url);
-$link = $parts[1];
+$requestPath = parse_url($_SERVER['REQUEST_URI'] ?? '', PHP_URL_PATH) ?? '';
+$scriptDir   = rtrim(str_replace('\\', '/', dirname($_SERVER['SCRIPT_NAME'] ?? '')), '/');
+$link        = ltrim(substr($requestPath, strlen($scriptDir)), '/');
 header('Content-Type: text/plain; charset=utf-8');
 $token = htmlspecialchars($link, ENT_QUOTES, 'UTF-8');
 try {

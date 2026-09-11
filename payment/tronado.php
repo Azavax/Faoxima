@@ -7,6 +7,7 @@ require_once __DIR__ . '/../Marzban.php';
 require_once __DIR__ . '/../function.php';
 require_once __DIR__ . '/../panels.php';
 require_once __DIR__ . '/../keyboard.php';
+require_once __DIR__ . '/../lib/PaymentConfirm.php';
 require __DIR__ . '/../vendor/autoload.php';
 use Endroid\QrCode\Builder\Builder;
 use Endroid\QrCode\Encoding\Encoding;
@@ -32,6 +33,26 @@ function tronado_log_event($type, $message, array $context = [])
 
 $ManagePanel = new ManagePanel();
 $rawBody = file_get_contents("php://input");
+
+$ipnSigningKey = trim((string) select("PaySetting", "*", "NamePay", "ipnsigningkeytronado", "select")['ValuePay']);
+$signatureHeader = $_SERVER['HTTP_X_TRONADO_SIG'] ?? '';
+if ($ipnSigningKey === '') {
+    tronado_log_event('TRONADO_SIGNING_KEY_MISSING', 'IpnSigningKey is not configured', [
+        'remote_ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+    ]);
+    http_response_code(500);
+    exit('Signing key not configured');
+}
+$expectedSignature = hash_hmac('sha512', (string) $rawBody, $ipnSigningKey);
+$signatureValid = is_string($signatureHeader) && $signatureHeader !== '' && hash_equals($expectedSignature, strtolower($signatureHeader));
+if (!$signatureValid) {
+    tronado_log_event('TRONADO_BAD_SIGNATURE', 'X-Tronado-Sig verification failed', [
+        'remote_ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
+    ]);
+    http_response_code(401);
+    exit('Invalid signature');
+}
+
 $data = json_decode($rawBody, true);
 if (!is_array($data)) {
     tronado_log_event('TRONADO_BAD_BODY', 'Callback body was not valid JSON', [
@@ -42,7 +63,7 @@ if (!is_array($data)) {
     exit('Invalid body');
 }
 
-$paymentId = $data['PaymentID'] ?? ($data['OrderId'] ?? ($data['Metadata']['PaymentID'] ?? null));
+$paymentId = $data['PaymentId'] ?? ($data['PaymentID'] ?? null);
 if ($paymentId === null) {
     tronado_log_event('TRONADO_NO_ID', 'Callback missing payment identifier', [
         'remote_ip' => $_SERVER['REMOTE_ADDR'] ?? 'unknown',
@@ -100,46 +121,64 @@ $datatextbot = array(
     'textaftertext' => '',
     'textmanual' => '',
     'textselectlocation' => '',
-    'text_wgdashboard' => '',
-    'textafterpayibsng' => ''
+    'text_wgdashboard' => ''
 );
 foreach ($datatxtbot as $item) {
     if (isset($datatextbot[$item['id_text']])) {
         $datatextbot[$item['id_text']] = $item['text'];
     }
 }
+    $orderStatusId = isset($data['OrderStatusID']) ? (int) $data['OrderStatusID'] : null;
+    $isPaid = ($orderStatusId === 30) || ($data['IsPaid'] ?? false);
+
+    $dedupeKey = $paymentId . '|' . ($orderStatusId ?? 'null');
+    $dedupeLookup = $connect->prepare("SELECT dec_not_confirmed FROM Payment_report WHERE id_order = ? LIMIT 1");
+    $dedupeLookup->bind_param('s', $paymentId);
+    $dedupeLookup->execute();
+    $dedupeRow = $dedupeLookup->get_result()->fetch_assoc();
+    $dedupeLookup->close();
+    if (is_array($dedupeRow) && ($dedupeRow['dec_not_confirmed'] ?? null) === $dedupeKey) {
+        tronado_log_event('TRONADO_DUPLICATE', 'Duplicate (PaymentId, OrderStatusID) callback ignored', [
+            'payment_id' => $paymentId,
+            'order_status_id' => $orderStatusId,
+        ]);
+        exit('Already processed');
+    }
+
     if($Payment_report['payment_Status'] != "paid"){
-        if($data['IsPaid']){
+        if($isPaid){
 
-
-            $reportedTronAmount = isset($data['TronAmount']) ? (float) $data['TronAmount'] : null;
-            $actualTronAmount = isset($data['ActualTronAmount']) ? (float) $data['ActualTronAmount'] : null;
-            if ($reportedTronAmount === null || $actualTronAmount === null) {
-                tronado_log_event('TRONADO_AMOUNT_MISSING', 'Callback lacks TRX amount fields', [
+            $userPaidTomanAmount = isset($data['UserPaidTomanAmount']) ? (float) $data['UserPaidTomanAmount'] : null;
+            $tomanAmountWithoutWage = isset($data['TomanAmountWithoutWage']) ? (float) $data['TomanAmountWithoutWage'] : null;
+            if ($userPaidTomanAmount === null || $tomanAmountWithoutWage === null) {
+                tronado_log_event('TRONADO_AMOUNT_MISSING', 'Callback lacks v5 Toman amount fields', [
                     'payment_id' => $paymentId,
                 ]);
                 http_response_code(400);
                 exit('Amount missing');
             }
-            if ($actualTronAmount + 1e-6 < $reportedTronAmount) {
-                tronado_log_event('TRONADO_SHORT_PAYMENT', 'ActualTronAmount below registered TronAmount', [
-                    'payment_id' => $paymentId,
-                    'reported' => $reportedTronAmount,
-                    'actual' => $actualTronAmount,
-                ]);
 
+            $wageFromBusinessPercentage = (int) select("PaySetting", "*", "NamePay", "wageFromBusinessPercentageTronado", "select")['ValuePay'];
+            $tronAmountDelivered = isset($data['TronAmount']) ? (float) $data['TronAmount'] : null;
+            $actualTronAmount = isset($data['ActualTronAmount']) ? (float) $data['ActualTronAmount'] : null;
 
-                exit('Short payment');
+            if ($wageFromBusinessPercentage <= 0) {
+                $creditAmount = $tomanAmountWithoutWage;
+            } elseif ($wageFromBusinessPercentage >= 100) {
+                $creditAmount = $userPaidTomanAmount;
+            } elseif ($actualTronAmount !== null && $actualTronAmount > 0 && $tronAmountDelivered !== null && $tronAmountDelivered > 0) {
+                $tronPriceToman = $tomanAmountWithoutWage / $tronAmountDelivered;
+                $creditAmount = $actualTronAmount * $tronPriceToman;
+            } else {
+                $creditAmount = $tomanAmountWithoutWage;
             }
-
 
             $atomic = $connect->prepare(
                 "UPDATE Payment_report SET payment_Status = ?, dec_not_confirmed = ? "
                 . "WHERE id_order = ? AND payment_Status <> 'paid'"
             );
             $statusPaid = 'paid';
-            $callbackJson = json_encode($data, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-            $atomic->bind_param('sss', $statusPaid, $callbackJson, $paymentId);
+            $atomic->bind_param('sss', $statusPaid, $dedupeKey, $paymentId);
             $atomic->execute();
             $affected = $atomic->affected_rows;
             $atomic->close();
@@ -168,7 +207,9 @@ foreach ($datatxtbot as $item) {
         ]);
         $Balance_id = ['id' => $Payment_report['id_user'] ?? '', 'username' => '—', 'Balance' => 0];
     }
-    if($pricecashback != "0"){
+    $cashbackEligible = !function_exists('rx_cashbackEligibleForKey')
+        || rx_cashbackEligibleForKey("chashbackiranpay2", $Balance_id['register'] ?? null, $Payment_report['id_invoice'] ?? null, $Balance_id['id'] ?? null, $Payment_report['id_order'] ?? null);
+    if($cashbackEligible && $pricecashback != "0"){
        $result = ($Payment_report['price'] * $pricecashback) / 100;
         $Balance_confrim = intval($Balance_id['Balance']) +$result ;
         update("user","Balance",$Balance_confrim, "id",$Balance_id['id']);
@@ -178,17 +219,16 @@ foreach ($datatxtbot as $item) {
     }
     $paymentreports = select("topicid","idreport","report","paymentreport","select")['idreport'];
     $balancelow = '';
-    if($data['TronAmount'] < $data['ActualTronAmount']){
+    if(isset($data['TronAmount'], $data['ActualTronAmount']) && (float) $data['TronAmount'] < (float) $data['ActualTronAmount']){
         $balancelow = "❌ کاربر کمتر از مبلغ تعیین شده واریز کرده است.";
     }
 $text_reportpayment = "💵 پرداخت جدید
 $balancelow
-- 👤 نام کاربری کاربر : @{$Balance_id['username']}
-- 🆔آیدی عددی کاربر : {$Balance_id['id']}
-- 💸 مبلغ تراکنش $price
-- 🔗 <a href = \"https://tronscan.org/#/transaction/{$data['Hash']}\">لینک پرداخت </a>
-- 📥 مبلغ واریز شده ترون. : {$data['TronAmount']}
-- 💳 روش پرداخت :  ترونادو";
+<blockquote>- 👤 نام کاربری کاربر : @{$Balance_id['username']}</blockquote>
+<blockquote>- 👤 آیدی عددی کاربر : <code>{$Balance_id['id']}</code></blockquote>
+<blockquote>- 💸 مبلغ تراکنش $price</blockquote>
+<blockquote>- 💰 مبلغ اعتباردهی : $creditAmount تومان</blockquote>
+<blockquote>- 💳 روش پرداخت :  ترونادو</blockquote>";
     if (strlen($setting['Channel_Report']) > 0) {
         telegram('sendmessage',[
         'chat_id' => $setting['Channel_Report'],
@@ -197,5 +237,17 @@ $balancelow
         'parse_mode' => "HTML"
         ]);
     }
+        } elseif ($orderStatusId === 40) {
+            $dedupeUpd = $connect->prepare("UPDATE Payment_report SET dec_not_confirmed = ? WHERE id_order = ?");
+            $dedupeUpd->bind_param('ss', $dedupeKey, $paymentId);
+            $dedupeUpd->execute();
+            $dedupeUpd->close();
+            payment_notify_user_failed($paymentId, 'رسید پرداخت شما توسط ترونادو رد شد');
+        } elseif ($orderStatusId === 200) {
+            $dedupeUpd = $connect->prepare("UPDATE Payment_report SET dec_not_confirmed = ? WHERE id_order = ?");
+            $dedupeUpd->bind_param('ss', $dedupeKey, $paymentId);
+            $dedupeUpd->execute();
+            $dedupeUpd->close();
+            payment_mark_expired($paymentId);
         }
     }

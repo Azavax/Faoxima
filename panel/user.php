@@ -144,6 +144,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['_action'])) {
         header("Location: user.php?id=" . urlencode($targetUid));
         exit;
     }
+    if ($act === 'user_set_discount' && $targetUid !== '') {
+        $pd = (int)($_POST['pricediscount'] ?? 0);
+        if ($pd < 0)   $pd = 0;
+        if ($pd > 100) $pd = 100;
+        update("user", "pricediscount", $pd, "id", $targetUid);
+        header("Location: user.php?id=" . urlencode($targetUid));
+        exit;
+    }
 }
 
 $userCodes = [];
@@ -162,7 +170,7 @@ try {
 
 if (isset($_GET['status']) and $_GET['status']) {
     if ($_GET['status'] == "block") {
-        $textblok = "کاربر با آیدی عددی {$_GET['id']} در ربات مسدود گردید \n\nادمین مسدود کننده : پنل تحت وب\nنام کاربری : {$_SESSION['user']}";
+        $textblok = "کاربر با آیدی عددی {$_GET['id']} در ربات مسدود گردید \n\n<blockquote>ادمین مسدود کننده : پنل تحت وب</blockquote>\n<blockquote>نام کاربری : {$_SESSION['user']}</blockquote>";
         if (strlen($setting['Channel_Report']) > 0) {
             telegram('sendmessage', [
                 'chat_id'           => $setting['Channel_Report'],
@@ -172,7 +180,7 @@ if (isset($_GET['status']) and $_GET['status']) {
             ]);
         }
     } else {
-        sendmessage($_GET['id'], "✳️ حساب کاربری شما از مسدودی خارج شد ✳️\nاکنون میتوانید از ربات استفاده کنید ", null, 'HTML');
+        sendmessage($_GET['id'], faoxima_textbot_get('dyn_panel_user_unblocked_notice', "✳️ حساب کاربری شما از مسدودی خارج شد ✳️\nاکنون میتوانید از ربات استفاده کنید "), null, 'HTML');
     }
     update("user", "User_Status", $_GET['status'], "id", $_GET['id']);
     header("Location: user.php?id={$_GET['id']}");
@@ -181,10 +189,10 @@ if (isset($_GET['status']) and $_GET['status']) {
 
 if (isset($_GET['priceadd']) and $_GET['priceadd']) {
     $priceadd = number_format($_GET['priceadd'], 0);
-    $textadd  = "💎 کاربر عزیز مبلغ {$priceadd} تومان به موجودی کیف پول تان اضافه گردید.";
+    $textadd  = faoxima_render_text(faoxima_textbot_get('dyn_panel_user_balance_added_tpl', '💎 کاربر عزیز مبلغ {amount} T به موجودی کیف پول تان اضافه گردید.'), ['amount' => $priceadd]);
     sendmessage($_GET['id'], $textadd, null, 'HTML');
     if (strlen($setting['Channel_Report']) > 0) {
-        $textaddbalance = "📌 یک ادمین موجودی کاربر را از پنل تحت وب افزایش داده است :\n\n🪪 ادمین : {$_SESSION['user']}\n👤 کاربر : {$_GET['id']}\nمبلغ : $priceadd";
+        $textaddbalance = "📌 یک ادمین موجودی کاربر را از پنل تحت وب افزایش داده است :\n\n<blockquote>🪪 ادمین : {$_SESSION['user']}</blockquote>\n<blockquote>👤 کاربر : {$_GET['id']}</blockquote>\n<blockquote>مبلغ : $priceadd</blockquote>";
         telegram('sendmessage', [
             'chat_id'           => $setting['Channel_Report'],
             'message_thread_id' => $paymentreports,
@@ -192,8 +200,15 @@ if (isset($_GET['priceadd']) and $_GET['priceadd']) {
             'parse_mode'        => "HTML"
         ]);
     }
-    $value = intval($user['Balance']) + intval($_GET['priceadd']);
-    update("user", "Balance", $value, "id", $_GET['id']);
+    if (function_exists('balance_atomic_credit')) {
+        balance_atomic_credit($_GET['id'], intval($_GET['priceadd']));
+    } else {
+        $value = intval($user['Balance']) + intval($_GET['priceadd']);
+        update("user", "Balance", $value, "id", $_GET['id']);
+    }
+    if (function_exists('wallet_ledger_record')) {
+        wallet_ledger_record($_GET['id'], 'credit', $_GET['priceadd'], 'admin_credit', 'افزایش موجودی از پنل تحت وب');
+    }
     header("Location: user.php?id={$_GET['id']}");
     exit;
 }
@@ -201,7 +216,7 @@ if (isset($_GET['priceadd']) and $_GET['priceadd']) {
 if (isset($_GET['pricelow']) and $_GET['pricelow']) {
     $pricelow = number_format($_GET['pricelow'], 0);
     if (strlen($setting['Channel_Report']) > 0) {
-        $textlowbalance = "📌 یک ادمین موجودی کاربر را از پنل تحت وب کسر کرده است :\n\n🪪 ادمین : {$_SESSION['user']}\n👤 کاربر : {$_GET['id']}\nمبلغ کسر شده : $pricelow";
+        $textlowbalance = "📌 یک ادمین موجودی کاربر را از پنل تحت وب کسر کرده است :\n\n<blockquote>🪪 ادمین : {$_SESSION['user']}</blockquote>\n<blockquote>👤 کاربر : {$_GET['id']}</blockquote>\n<blockquote>مبلغ کسر شده : $pricelow</blockquote>";
         telegram('sendmessage', [
             'chat_id'           => $setting['Channel_Report'],
             'message_thread_id' => $paymentreports,
@@ -209,8 +224,16 @@ if (isset($_GET['pricelow']) and $_GET['pricelow']) {
             'parse_mode'        => "HTML"
         ]);
     }
-    $value = intval($user['Balance']) - intval($_GET['pricelow']);
-    update("user", "Balance", $value, "id", $_GET['id']);
+    if (function_exists('balance_atomic_charge')) {
+        $__allowNeg = intval($_GET['pricelow']);
+        balance_atomic_charge($_GET['id'], intval($_GET['pricelow']), $__allowNeg);
+    } else {
+        $value = intval($user['Balance']) - intval($_GET['pricelow']);
+        update("user", "Balance", $value, "id", $_GET['id']);
+    }
+    if (function_exists('wallet_ledger_record')) {
+        wallet_ledger_record($_GET['id'], 'debit', $_GET['pricelow'], 'admin_debit', 'کاهش موجودی از پنل تحت وب');
+    }
     header("Location: user.php?id={$_GET['id']}");
     exit;
 }
@@ -222,10 +245,10 @@ if (isset($_GET['agent']) and $_GET['agent']) {
 }
 
 if (isset($_GET['textmessage']) and $_GET['textmessage']) {
-    $messagetext = "📥 یک پیام از مدیریت برای شما ارسال شد.\n\nمتن پیام : {$_GET['textmessage']}";
+    $messagetext = faoxima_render_text(faoxima_textbot_get('dyn_panel_user_admin_message_tpl', "📥 یک پیام از مدیریت برای شما ارسال شد.\n\nمتن پیام : {message}"), ['message' => $_GET['textmessage']]);
     sendmessage($_GET['id'], $messagetext, null, 'HTML');
     if (strlen($setting['Channel_Report']) > 0) {
-        $textmsg = "📌 پیام مدیریت ارسال شد\n\n🪪 ادمین : {$_SESSION['user']}\n👤 گیرنده : {$_GET['id']}\nمتن : {$_GET['textmessage']}";
+        $textmsg = "📌 پیام مدیریت ارسال شد\n\n<blockquote>🪪 ادمین : {$_SESSION['user']}</blockquote>\n<blockquote>👤 گیرنده : {$_GET['id']}</blockquote>\n<blockquote>متن : {$_GET['textmessage']}</blockquote>";
         telegram('sendmessage', [
             'chat_id'           => $setting['Channel_Report'],
             'message_thread_id' => $otherservice,
@@ -274,8 +297,9 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>مدیریت کاربر <?php echo htmlspecialchars($user['username'], ENT_QUOTES, 'UTF-8'); ?></title>
-    <link rel="stylesheet" href="css/theme.css">
-<script src="js/theme.js" defer>
+    <link rel="stylesheet" href="css/theme.css?v=flat47">
+<script src="js/money-input.js?v=fx1" defer></script>
+<script src="js/theme.js?v=flat5" defer>
 
 </script>
 </head>
@@ -326,7 +350,7 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
                     </div>
                     <div class="info-row">
                         <span class="info-label">موجودی کیف پول</span>
-                        <span class="info-value text-accent"><?php echo number_format($user['Balance']); ?> تومان</span>
+                        <span class="info-value text-accent"><?php echo number_format($user['Balance']); ?> T</span>
                     </div>
                     <div class="info-row">
                         <span class="info-label">شماره موبایل</span>
@@ -335,6 +359,10 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
                     <div class="info-row">
                         <span class="info-label">نوع کاربری</span>
                         <span class="info-value"><?php echo $agent_display; ?></span>
+                    </div>
+                    <div class="info-row">
+                        <span class="info-label">درصد تخفیف اختصاصی</span>
+                        <span class="info-value text-accent"><?php echo (int)($user['pricediscount'] ?? 0); ?>٪</span>
                     </div>
                 </div>
 
@@ -385,6 +413,10 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
                         <?php echo icon('user-tag', 'svg-icon'); ?> تغییر نوع کاربر
                     </button>
 
+                    <button onclick="openModal('modal-user-discount-percent')" class="btn btn-soft-purple btn-block">
+                        <?php echo icon('gift', 'svg-icon'); ?> درصد تخفیف اختصاصی
+                    </button>
+
                     <a href="user.php?id=<?php echo $user['id']; ?>&agent=f&_csrf=<?php echo htmlspecialchars($_csrf, ENT_QUOTES, 'UTF-8'); ?>" class="btn btn-soft-danger btn-block"
                        onclick="return confirm('آیا مطمئن هستید؟')">
                         <?php echo icon('user-xmark', 'svg-icon'); ?> حذف نمایندگی
@@ -423,7 +455,7 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
                                 if (!isset($__vtFa[$vt])) $vt = 'percent';
                                 $sec = $c['section'] ?? 'all';
                                 if (!isset($__sectionFa[$sec])) $sec = 'all';
-                                $val = $vt === 'free' ? 'رایگان' : ($vt === 'amount' ? number_format((int)$c['price']) . ' تومان' : ((string)$c['price'] . '٪'));
+                                $val = $vt === 'free' ? 'رایگان' : ($vt === 'amount' ? number_format((int)$c['price']) . ' T' : ((string)$c['price'] . '٪'));
                         ?>
                             <tr>
                                 <td data-label="کد"><code style="direction:ltr"><?php echo htmlspecialchars($c['codeDiscount'], ENT_QUOTES); ?></code></td>
@@ -457,7 +489,7 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
                             <tr>
                                 <td data-label="کد"><code style="direction:ltr"><?php echo htmlspecialchars((string)$g['code'], ENT_QUOTES); ?></code></td>
                                 <td data-label="نوع"><span class="badge badge-success">هدیه</span></td>
-                                <td data-label="مقدار"><?php echo number_format((int)($g['price'] ?? 0)); ?> تومان</td>
+                                <td data-label="مقدار"><?php echo number_format((int)($g['price'] ?? 0)); ?> T</td>
                                 <td data-label="بخش/کاربرد">شارژ کیف پول</td>
                                 <td data-label="عملیات">
                                     <div style="display:flex; gap:6px; justify-content:flex-end;">
@@ -505,9 +537,9 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
             </div>
             <div class="form-group">
                 <label class="form-label">نوع تخفیف</label>
-                <select name="value_type" class="form-control">
+                <select name="value_type" id="add_d_vt" class="form-control" onchange="faoximaToggleDiscountMoney('add_d_price', this.value)">
                     <option value="percent">درصدی</option>
-                    <option value="amount">مبلغی (تومان)</option>
+                    <option value="amount">مبلغی (T)</option>
                     <option value="free">رایگان</option>
                 </select>
             </div>
@@ -524,7 +556,7 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
             </div>
             <div class="form-group">
                 <label class="form-label">مقدار</label>
-                <input type="number" name="price" class="form-control" value="0" min="0">
+                <input type="text" name="price" id="add_d_price" class="form-control" value="0" min="0">
             </div>
             <div class="form-group">
                 <label class="form-label">سقف کل استفاده <small style="color:var(--text-muted)">(۰ = نامحدود)</small></label>
@@ -552,8 +584,8 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
                 <input type="text" name="code" class="form-control" style="direction:ltr;" required>
             </div>
             <div class="form-group">
-                <label class="form-label">مبلغ (تومان)</label>
-                <input type="number" name="gift_price" class="form-control" min="1" required>
+                <label class="form-label">مبلغ (T)</label>
+                <input type="text" name="gift_price" class="form-control" data-money min="1" required>
             </div>
             <div class="form-group">
                 <label class="form-label">سقف کل استفاده <small style="color:var(--text-muted)">(۰ = نامحدود)</small></label>
@@ -579,8 +611,8 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
             <input type="hidden" name="id" value="<?php echo htmlspecialchars($user['id'], ENT_QUOTES, 'UTF-8'); ?>">
             <input type="hidden" name="id" value="<?php echo $user['id']; ?>">
             <div class="form-group">
-                <label class="form-label">مبلغ (تومان)</label>
-                <input type="number" name="priceadd" class="form-control" placeholder="مثلا 50000" required>
+                <label class="form-label">مبلغ (T)</label>
+                <input type="text" name="priceadd" class="form-control" data-money placeholder="مثلا 50000" required>
             </div>
             <button type="submit" class="btn btn-primary btn-block">افزایش موجودی</button>
         </form>
@@ -598,8 +630,8 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
             <input type="hidden" name="id" value="<?php echo htmlspecialchars($user['id'], ENT_QUOTES, 'UTF-8'); ?>">
             <input type="hidden" name="id" value="<?php echo $user['id']; ?>">
             <div class="form-group">
-                <label class="form-label">مبلغ کسر (تومان)</label>
-                <input type="number" name="pricelow" class="form-control" placeholder="مثلا 10000" required>
+                <label class="form-label">مبلغ کسر (T)</label>
+                <input type="text" name="pricelow" class="form-control" data-money placeholder="مثلا 10000" required>
             </div>
             <button type="submit" class="btn btn-soft-warning btn-block">کسر موجودی</button>
         </form>
@@ -625,6 +657,25 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
                 </select>
             </div>
             <button type="submit" class="btn btn-soft-purple btn-block">تغییر سطح</button>
+        </form>
+    </div>
+</div>
+
+<div id="modal-user-discount-percent" class="modal-overlay">
+    <div class="modal-box">
+        <div class="modal-head">
+            <span class="modal-head__title">درصد تخفیف اختصاصی کاربر</span>
+            <button class="modal-close" onclick="closeModal('modal-user-discount-percent')">&times;</button>
+        </div>
+        <form method="POST" action="user.php?id=<?php echo urlencode((string)($user['id'] ?? '')); ?>">
+            <input type="hidden" name="_csrf" value="<?php echo htmlspecialchars($_csrf, ENT_QUOTES, 'UTF-8'); ?>">
+            <input type="hidden" name="_action" value="user_set_discount">
+            <div class="form-group">
+                <label class="form-label">درصد تخفیف (۰ تا ۱۰۰)</label>
+                <input type="number" name="pricediscount" min="0" max="100" value="<?php echo (int)($user['pricediscount'] ?? 0); ?>" class="form-control" style="direction:ltr" required>
+                <small style="opacity:.75">روی تمام خریدها و تمدیدهای کاربر اعمال می‌شود (به‌جز شارژ کیف پول). با مقدار بزرگ‌تر از صفر، کاربر نمی‌تواند از کد تخفیف استفاده کند.</small>
+            </div>
+            <button type="submit" class="btn btn-primary btn-block">ذخیره</button>
         </form>
     </div>
 </div>
@@ -664,9 +715,9 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
             </div>
             <div class="form-group">
                 <label class="form-label">نوع تخفیف</label>
-                <select name="value_type" id="eu_d_vt" class="form-control">
+                <select name="value_type" id="eu_d_vt" class="form-control" onchange="faoximaToggleDiscountMoney('eu_d_price', this.value)">
                     <option value="percent">درصدی</option>
-                    <option value="amount">مبلغی (تومان)</option>
+                    <option value="amount">مبلغی (T)</option>
                     <option value="free">رایگان</option>
                 </select>
             </div>
@@ -683,7 +734,7 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
             </div>
             <div class="form-group">
                 <label class="form-label">مقدار</label>
-                <input type="number" name="price" id="eu_d_price" class="form-control" min="0">
+                <input type="text" name="price" id="eu_d_price" class="form-control" min="0">
             </div>
             <div class="form-group">
                 <label class="form-label">سقف کل استفاده <small style="color:var(--text-muted)">(۰ = نامحدود)</small></label>
@@ -712,8 +763,8 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
                 <input type="text" name="code" id="eu_g_code" class="form-control" style="direction:ltr;" required>
             </div>
             <div class="form-group">
-                <label class="form-label">مبلغ (تومان)</label>
-                <input type="number" name="gift_price" id="eu_g_price" class="form-control" min="1" required>
+                <label class="form-label">مبلغ (T)</label>
+                <input type="text" name="gift_price" id="eu_g_price" class="form-control" data-money min="1" required>
             </div>
             <div class="form-group">
                 <label class="form-label">سقف کل استفاده <small style="color:var(--text-muted)">(۰ = نامحدود)</small></label>
@@ -727,6 +778,11 @@ $agent_display = isset($agent_types[$user['agent']]) ? $agent_types[$user['agent
     </div>
 </div>
 <script>
+function faoximaToggleDiscountMoney(inputId, type) {
+    if (window.FaoximaMoneyInput) {
+        window.FaoximaMoneyInput.setMode(document.getElementById(inputId), type === 'amount');
+    }
+}
 function editUserDiscount(btn) {
     document.getElementById('eu_d_id').value      = btn.getAttribute('data-id');
     document.getElementById('eu_d_code').value    = btn.getAttribute('data-code');
@@ -734,12 +790,13 @@ function editUserDiscount(btn) {
     document.getElementById('eu_d_section').value = btn.getAttribute('data-section');
     document.getElementById('eu_d_price').value   = btn.getAttribute('data-price');
     document.getElementById('eu_d_limit').value   = btn.getAttribute('data-limit');
+    faoximaToggleDiscountMoney('eu_d_price', btn.getAttribute('data-vt'));
     openModal('modal-user-discount-edit');
 }
 function editUserGift(btn) {
     document.getElementById('eu_g_id').value    = btn.getAttribute('data-id');
     document.getElementById('eu_g_code').value  = btn.getAttribute('data-code');
-    document.getElementById('eu_g_price').value = btn.getAttribute('data-price');
+    document.getElementById('eu_g_price').value = window.FaoximaMoneyInput ? window.FaoximaMoneyInput.format(btn.getAttribute('data-price')) : btn.getAttribute('data-price');
     document.getElementById('eu_g_limit').value = btn.getAttribute('data-limit');
     openModal('modal-user-gift-edit');
 }

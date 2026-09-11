@@ -35,6 +35,19 @@ if (isset($update['chat_member'])) {
 }
 if (!in_array($Chat_type, ["private", "supergroup"]))
     return;
+if ($Chat_type === "supergroup" && isset($update['message'])) {
+    $_rxGroupAdminStep = '';
+    if (function_exists('rx_isAdminChat') && rx_isAdminChat($from_id)) {
+        $_rxGroupAdminRow = select("user", "step", "id", $from_id, "select", ['cache' => false]);
+        $_rxGroupAdminStep = is_array($_rxGroupAdminRow) ? (string) ($_rxGroupAdminRow['step'] ?? '') : '';
+    }
+    if (!in_array($_rxGroupAdminStep, ['reject-dec'], true)) {
+        if (function_exists('rx_replyGroupIdCommand')) {
+            rx_replyGroupIdCommand($update, $from_id, $Chat_type);
+        }
+        return;
+    }
+}
 if (isset($chat_member))
     return;
 $first_name = sanitizeUserName($first_name);
@@ -64,31 +77,6 @@ if (intval($from_id) == 0)
 $user = select("user", "*", "id", $from_id, "select", ['cache' => false]);
 $isNewUser = !is_array($user);
 $otherreport = select("topicid", "idreport", "report", "otherreport", "select")['idreport'];
-$tronadoOldDomain = 'tronseller.storeddownloader.fun';
-$tronadoRecommendedUrl = (defined('TRONADO_ORDER_TOKEN_ENDPOINTS') && isset(TRONADO_ORDER_TOKEN_ENDPOINTS[0]))
-    ? TRONADO_ORDER_TOKEN_ENDPOINTS[0]
-    : 'https://bot.tronado.cloud/api/v1/Order/GetOrderToken';
-$tronadoWarningFlag = REFACTORED_LEGACY_ROOT . '/urlpaymenttron_warning.flag';
-if (!file_exists($tronadoWarningFlag)) {
-    $storedUrl = getPaySettingValue('urlpaymenttron');
-    if (is_string($storedUrl) && stripos($storedUrl, $tronadoOldDomain) !== false) {
-        $warningText = "⚠️ دامنه قدیمی ترنادو هنوز در تنظیمات استفاده می‌شود. لطفاً آدرس جدید را جایگزین کنید:\n{$tronadoRecommendedUrl}";
-        if (!empty($setting['Channel_Report'])) {
-            $payload = [
-                'chat_id' => $setting['Channel_Report'],
-                'text' => $warningText,
-                'parse_mode' => 'HTML'
-            ];
-            if (!empty($otherreport)) {
-                $payload['message_thread_id'] = $otherreport;
-            }
-            telegram('sendmessage', $payload);
-        } else {
-            error_log($warningText);
-        }
-        file_put_contents($tronadoWarningFlag, (string) time());
-    }
-}
 if ($isNewUser && $setting['statusnewuser'] == "onnewuser") {
     $Response = json_encode([
         'inline_keyboard' => [
@@ -171,6 +159,41 @@ if (!is_array($admin_ids)) {
 }
 $admin_ids_str = array_map('strval', $admin_ids);
 
+if (!function_exists('rx_forced_miniapp_active')) {
+    function rx_forced_miniapp_active($setting, $from_id, $admin_ids_str)
+    {
+        return is_array($setting)
+            && (string)($setting['forced_miniapp_mode'] ?? '0') === '1'
+            && !in_array((string)$from_id, $admin_ids_str, true);
+    }
+}
+if (!function_exists('rx_send_forced_miniapp_redirect')) {
+    function rx_send_forced_miniapp_redirect($from_id, $message_id, $user, $callback_query_id)
+    {
+        global $domainhosts;
+        $text = '📱 برای استفاده از خدمات ما، مینی‌اپ را باز کنید.';
+        $first = trim((string)($user['first_name'] ?? ''));
+        $text = str_replace('{first_name}', $first !== '' ? $first : 'کاربر', $text);
+        $host = isset($domainhosts) ? rtrim(preg_replace('#^https?://#', '', (string)$domainhosts), '/') : '';
+        $kb = ($host !== '') ? json_encode(['inline_keyboard' => [[['text' => '🚀 باز کردن مینی‌اپ', 'web_app' => ['url' => 'https://' . $host . '/app/']]]]], JSON_UNESCAPED_UNICODE) : null;
+        if (!empty($callback_query_id)) {
+            telegram('answerCallbackQuery', [
+                'callback_query_id' => $callback_query_id,
+                'cache_time' => 0,
+            ]);
+        }
+        if (intval($message_id) > 0) {
+            Editmessagetext($from_id, $message_id, $text, $kb, 'HTML');
+        } else {
+            sendmessage($from_id, $text, $kb, 'HTML');
+        }
+    }
+}
+if (rx_forced_miniapp_active($setting, $from_id, $admin_ids_str)) {
+    rx_send_forced_miniapp_redirect($from_id, $message_id, $user, $callback_query_id);
+    return;
+}
+
 if (
     isset($from_id)
     && intval($from_id) !== 0
@@ -200,7 +223,7 @@ if (
             try {
                 telegram('answerCallbackQuery', [
                     'callback_query_id' => $callback_query_id,
-                    'cache_time' => 1,
+                    'cache_time' => 0,
                 ]);
             } catch (\Throwable $rxAsAckErr) {  }
         }
@@ -215,7 +238,7 @@ $code_Discount = select("Discount", "code", null, null, "FETCH_COLUMN");
 $marzban_list = select("marzban_panel", "name_panel", null, null, "FETCH_COLUMN");
 $name_product = select("product", "name_product", null, null, "FETCH_COLUMN");
 $SellDiscount = select("DiscountSell", "codeDiscount", null, null, "FETCH_COLUMN");
-$channels_id = select("channels", "link", null, null, "FETCH_COLUMN");
+$channels_id = select("channels", "link", null, null, "FETCH_COLUMN", ['cache' => false]);
 $pricepayment = select("Payment_report", "price", null, null, "FETCH_COLUMN");
 $listcard = select("card_number", "cardnumber", null, null, "FETCH_COLUMN");
 $datatxtbot = array();
@@ -240,6 +263,8 @@ foreach ($topic_id as $topic) {
         $otherservice = $topic['idreport'];
     if ($topic['report'] == 'paymentreport')
         $paymentreports = $topic['idreport'];
+    if ($topic['report'] == 'receiptreport')
+        $receiptreport = $topic['idreport'];
 
 }
 if ($setting['statusnamecustom'] == 'onnamecustom')
@@ -286,6 +311,7 @@ createForumTopicIfMissing($porsantreport, 'porsantreport', $textbotlang['Admin']
 createForumTopicIfMissing($reportnight, 'reportnight', $textbotlang['Admin']['report']['reportnight'], $setting['Channel_Report']);
 createForumTopicIfMissing($reportcron, 'reportcron', $textbotlang['Admin']['report']['reportcron'], $setting['Channel_Report']);
 createForumTopicIfMissing($reportbackup, 'backupfile', "🤖 بکاپ ربات نماینده", $setting['Channel_Report']);
+createForumTopicIfMissing($receiptreport, 'receiptreport', $textbotlang['Admin']['report']['receiptreport'], $setting['Channel_Report']);
 foreach ($datatextbotget as $row) {
     $datatxtbot[] = array(
         'id_text' => $row['id_text'],
@@ -310,6 +336,133 @@ $datatextbot = array(
     'text_dec_Tariff_list' => '',
     'text_affiliates' => '',
     'text_pishinvoice' => '',
+    'text_account_info' => '',
+    'text_service_detail' => '',
+    'dyn_errors_verification_failed' => '',
+    'dyn_errors_restart_process' => '',
+    'dyn_errors_concurrency_insufficient_stock' => '',
+    'dyn_errors_panel_connection_error' => '',
+    'dyn_errors_button_disabled' => '',
+    'dyn_errors_feature_unavailable' => '',
+    'dyn_errors_feature_unavailable_short' => '',
+    'dyn_errors_feature_currently_unavailable_nodot' => '',
+    'dyn_errors_renewal_failed_restart' => '',
+    'dyn_errors_renewal_support_error' => '',
+    'dyn_errors_purchase_info_incomplete' => '',
+    'dyn_errors_panel_not_found' => '',
+    'dyn_errors_panel_unavailable_choose_other' => '',
+    'dyn_errors_extra_volume_purchase_error' => '',
+    'dyn_errors_location_change_limit_reached' => '',
+    'dyn_errors_min_max_deposit_amount' => '',
+    'dyn_errors_stock_depleted_no_charge' => '',
+    'dyn_errors_stock_extend_success' => '',
+    'dyn_errors_invalid_subscription_link' => '',
+    'dyn_errors_service_found_count' => '',
+    'dyn_errors_service_not_found' => '',
+    'dyn_errors_view_account_unavailable' => '',
+    'dyn_errors_qr_unavailable' => '',
+    'dyn_errors_service_deleted' => '',
+    'dyn_errors_config_read_error' => '',
+    'dyn_errors_panel_unavailable_dot' => '',
+    'dyn_errors_config_read_from_panel_error' => '',
+    'dyn_errors_usage_stats_failed' => '',
+    'dyn_errors_server_list_failed' => '',
+    'dyn_errors_not_connected_change_status' => '',
+    'dyn_errors_extend_unavailable_panel' => '',
+    'dyn_errors_not_connected_extend' => '',
+    'dyn_errors_extend_current_plan_unavailable' => '',
+    'dyn_errors_extend_restart_process' => '',
+    'dyn_errors_exclusive_discount_conflict' => '',
+    'dyn_errors_discount_expired' => '',
+    'dyn_errors_discount_applied' => '',
+    'dyn_errors_link_change_service_disabled' => '',
+    'dyn_errors_extra_volume_unavailable_panel' => '',
+    'dyn_errors_extra_volume_restart_process' => '',
+    'dyn_errors_purchase_failed_restart' => '',
+    'dyn_errors_location_change_unavailable' => '',
+    'dyn_errors_generic_restart_process' => '',
+    'dyn_errors_restart_buy_process_short' => '',
+    'dyn_errors_transfer_panel_unavailable' => '',
+    'dyn_errors_transfer_unused_config_only' => '',
+    'dyn_errors_removal_request_thanks' => '',
+    'dyn_errors_extra_time_unavailable_panel' => '',
+    'dyn_errors_extra_time_restart_process' => '',
+    'dyn_errors_service_removed' => '',
+    'dyn_errors_service_removal_unavailable' => '',
+    'dyn_errors_removal_reason_prompt' => '',
+    'dyn_errors_test_service_unavailable' => '',
+    'dyn_errors_min_bulk_purchase_balance' => '',
+    'dyn_errors_section_disabled' => '',
+    'dyn_errors_discount_code_not_applicable' => '',
+    'dyn_errors_stock_low_purchase_blocked' => '',
+    'dyn_referral_welcome_alert' => '',
+    'dyn_referral_inviter_reward_alert' => '',
+    'dyn_referral_commission_credited' => '',
+    'dyn_rewards_points_earned' => '',
+    'dyn_rewards_cashback_gift' => '',
+    'dyn_tickets_select_category' => '',
+    'dyn_tickets_select_department' => '',
+    'dyn_tickets_ask_subject' => '',
+    'dyn_tickets_operation_canceled' => '',
+    'dyn_tickets_invalid_subject_text' => '',
+    'dyn_tickets_ask_media_new' => '',
+    'dyn_tickets_ask_media_reply' => '',
+    'dyn_tickets_media_yes' => '',
+    'dyn_tickets_media_no' => '',
+    'dyn_tickets_cancel' => '',
+    'dyn_tickets_ask_media_count' => '',
+    'dyn_tickets_ask_media_upload' => '',
+    'dyn_tickets_invalid_media_choice' => '',
+    'dyn_tickets_invalid_media_type' => '',
+    'dyn_tickets_media_received' => '',
+    'dyn_tickets_ask_body_text' => '',
+    'dyn_tickets_ask_body_text_short' => '',
+    'dyn_tickets_not_available' => '',
+    'dyn_tickets_reply_recorded' => '',
+    'dyn_tickets_invalid_body_text' => '',
+    'dyn_tickets_created' => '',
+    'dyn_tickets_closed_locked' => '',
+    'dyn_tickets_no_media' => '',
+    'dyn_tickets_closed_confirm' => '',
+    'dyn_wallet_select_amount' => '',
+    'dyn_wallet_recheck_canceled' => '',
+    'dyn_wallet_amount_not_numeric' => '',
+    'dyn_wallet_rate_unavailable' => '',
+    'dyn_wallet_calculated_amount_invalid' => '',
+    'dyn_wallet_hash_not_found' => '',
+    'dyn_wallet_ask_receipt_photo' => '',
+    'dyn_wallet_incomplete_info' => '',
+    'dyn_wallet_hash_already_used' => '',
+    'dyn_wallet_internal_error_retry' => '',
+    'dyn_wallet_invalid_charge_amount' => '',
+    'dyn_wallet_discount_not_applicable_zero' => '',
+    'dyn_wallet_no_active_card' => '',
+    'dyn_wallet_select_verified_card' => '',
+    'dyn_wallet_card_auth_active_notice' => '',
+    'dyn_wallet_queue_too_busy' => '',
+    'dyn_wallet_hashchecker_not_loaded' => '',
+    'dyn_wallet_no_wallet_address_configured' => '',
+    'dyn_wallet_charge_amount_undetectable' => '',
+    'dyn_wallet_invoice_not_found' => '',
+    'dyn_wallet_invoice_not_pending' => '',
+    'dyn_affiliates_extra_section_disabled' => '',
+    'dyn_affiliates_extra_not_affiliate_of_anyone' => '',
+    'dyn_affiliates_extra_gift_already_received' => '',
+    'dyn_affiliates_extra_gift_credited_inviter' => '',
+    'dyn_affiliates_extra_gift_activated' => '',
+    'dyn_wheel_button_disabled_you' => '',
+    'dyn_wheel_no_purchase_users_only' => '',
+    'dyn_wheel_price_unavailable' => '',
+    'dyn_wallet_prompt_amount_prompt' => '',
+    'dyn_wallet_prompt_amount_out_of_range' => '',
+    'dyn_wallet_prompt_debt_must_pay_first' => '',
+    'dyn_wallet_prompt_has_discount_yes' => '',
+    'dyn_wallet_prompt_has_discount_no' => '',
+    'dyn_wallet_prompt_ask_has_discount' => '',
+    'dyn_wallet_prompt_auth_success' => '',
+    'dyn_group_setup_topic_not_active' => '',
+    'dyn_group_setup_insufficient_access' => '',
+    'dyn_group_setup_chat_id_received' => '',
     'accountwallet' => '',
     'textafterpay' => '',
     'textaftertext' => '',
@@ -320,8 +473,6 @@ $datatextbot = array(
     'textpanelagent' => '',
     'text_wheel_luck' => '',
     'text_cart' => '',
-    'text_cart_auto' => '',
-    'textafterpayibsng' => '',
     'text_request_agent_dec' => '',
     'carttocart' => '',
     'textnowpayment' => '',
@@ -329,14 +480,19 @@ $datatextbot = array(
     'iranpay1' => '',
     'iranpay2' => '',
     'iranpay3' => '',
-    'aqayepardakht' => '',
-    'zarinpey' => '',
+    'tonpay' => '',
+    'cubepay' => '',
+    'blupal' => '',
+    'atlaspay' => '',
+    'tetrapay' => '',
     'zarinpal' => '',
+    'textsnowpayment' => '',
     'textpaymentnotverify' => "",
     'text_star_telegram' => '',
     'text_extend' => '',
     'text_wgdashboard' => '',
     'text_Discount' => '',
+    'miniapp_suggest_1' => '',
 );
 foreach ($datatxtbot as $item) {
     if (isset($datatextbot[$item['id_text']])) {
@@ -395,6 +551,9 @@ if (
     }
 }
 
+if (class_exists('logNavigation')) {
+    logNavigation::button($from_id);
+}
 if ($user['username'] == "none" || $user['username'] == null || $user['username'] != $username) {
     update("user", "username", $username, "id", $from_id);
 }
@@ -425,6 +584,87 @@ if ($rxAntispamStatus === '1' && !in_array((string)$from_id, $admin_ids_str, tru
     if ($rxAsMuteSeconds > 86400) { $rxAsMuteSeconds = 86400; }
 
     $rxAsShouldDrop = false;
+    $rxAsHandledByRedis = false;
+
+    if (function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+        try {
+            $rxAsLuaScript = "local key = KEYS[1] "
+                . "local now = tonumber(ARGV[1]) "
+                . "local win_seconds = tonumber(ARGV[2]) "
+                . "local msg_count = tonumber(ARGV[3]) "
+                . "local mute_seconds = tonumber(ARGV[4]) "
+                . "local win_start = tonumber(redis.call('HGET', key, 'window_start') or '0') "
+                . "local win_count = tonumber(redis.call('HGET', key, 'window_count') or '0') "
+                . "local muted_until = tonumber(redis.call('HGET', key, 'muted_until') or '0') "
+                . "local should_drop = 0 "
+                . "local sync_needed = 0 "
+                . "if muted_until > 0 and now < muted_until then "
+                . "  should_drop = 1 "
+                . "elseif muted_until > 0 and now >= muted_until then "
+                . "  muted_until = 0 win_start = now win_count = 1 sync_needed = 1 "
+                . "elseif win_start == 0 or (now - win_start) >= win_seconds then "
+                . "  win_start = now win_count = 1 sync_needed = 1 "
+                . "else "
+                . "  win_count = win_count + 1 "
+                . "  if win_count > msg_count then "
+                . "    muted_until = now + mute_seconds should_drop = 1 sync_needed = 1 "
+                . "  end "
+                . "end "
+                . "redis.call('HSET', key, 'window_start', win_start, 'window_count', win_count, 'muted_until', muted_until) "
+                . "local ttl = win_seconds "
+                . "if mute_seconds > ttl then ttl = mute_seconds end "
+                . "redis.call('EXPIRE', key, ttl + 5) "
+                . "return {win_start, win_count, muted_until, should_drop, sync_needed}";
+
+            $rxAsRedisKey = 'faoxima:antispam:' . $from_id;
+            $rxAsRedisClient = getRedisConnection();
+            if ($rxAsRedisClient instanceof \Redis) {
+                $rxAsLuaResult = $rxAsRedisClient->eval($rxAsLuaScript, [$rxAsRedisKey, $timebot, $rxAsSeconds, $rxAsMsgCount, $rxAsMuteSeconds], 1);
+            } else {
+                $rxAsLuaResult = $rxAsRedisClient->eval($rxAsLuaScript, 1, $rxAsRedisKey, $timebot, $rxAsSeconds, $rxAsMsgCount, $rxAsMuteSeconds);
+            }
+
+            if (is_array($rxAsLuaResult) && count($rxAsLuaResult) === 5) {
+                $rxAsNewWinStart   = (int) $rxAsLuaResult[0];
+                $rxAsNewWinCount   = (int) $rxAsLuaResult[1];
+                $rxAsNewMutedUntil = (int) $rxAsLuaResult[2];
+                $rxAsShouldDrop    = ((int) $rxAsLuaResult[3]) === 1;
+                $rxAsSyncNeeded    = ((int) $rxAsLuaResult[4]) === 1;
+
+                $user['antispam_window_start'] = (string) $rxAsNewWinStart;
+                $user['antispam_window_count'] = (string) $rxAsNewWinCount;
+                $user['antispam_muted_until']  = (string) $rxAsNewMutedUntil;
+
+                if ($rxAsSyncNeeded) {
+                    try {
+                        $rxAsSyncStmt = $pdo->prepare(
+                            "UPDATE user SET "
+                            . "antispam_window_start = :ws, "
+                            . "antispam_window_count = :wc, "
+                            . "antispam_muted_until  = :mu "
+                            . "WHERE id = :id"
+                        );
+                        $rxAsSyncStmt->bindValue(':ws', (string) $rxAsNewWinStart,   PDO::PARAM_STR);
+                        $rxAsSyncStmt->bindValue(':wc', (string) $rxAsNewWinCount,   PDO::PARAM_STR);
+                        $rxAsSyncStmt->bindValue(':mu', (string) $rxAsNewMutedUntil, PDO::PARAM_STR);
+                        $rxAsSyncStmt->bindValue(':id', (string) $from_id,          PDO::PARAM_STR);
+                        $rxAsSyncStmt->execute();
+                        if (function_exists('clearSelectCacheRow')) {
+                            clearSelectCacheRow('user', 'id', (string) $from_id);
+                        }
+                    } catch (\Throwable $rxAsSyncErr) {
+                        error_log('antispam Redis->MySQL sync failed: ' . $rxAsSyncErr->getMessage());
+                    }
+                }
+
+                $rxAsHandledByRedis = true;
+            }
+        } catch (\Throwable $rxAsRedisErr) {
+            $rxAsHandledByRedis = false;
+        }
+    }
+
+    if (!$rxAsHandledByRedis) {
     $rxAsAtomicOk   = false;
     $rxAsTxOpened   = false;
     try {
@@ -542,6 +782,7 @@ if ($rxAntispamStatus === '1' && !in_array((string)$from_id, $admin_ids_str, tru
             }
         }
     }
+    }
 
     if ($rxAsShouldDrop) {
 
@@ -549,7 +790,7 @@ if ($rxAntispamStatus === '1' && !in_array((string)$from_id, $admin_ids_str, tru
             try {
                 telegram('answerCallbackQuery', [
                     'callback_query_id' => $callback_query_id,
-                    'cache_time' => 1,
+                    'cache_time' => 0,
                 ]);
             } catch (\Throwable $rxAsAckErr2) {  }
         }
@@ -614,21 +855,10 @@ if (strpos($text, "/start ") !== false && $user['step'] != "gettextSystemMessage
             }
             update("user", "affiliates", $affiliatesid, "id", $from_id);
             $useraffiliates = select("user", "*", 'id', $affiliatesid, "select");
-            sendmessage($from_id, "<b>🎉 خوش آمدی!</b>",
-"
-شما با دعوت <b>@{$useraffiliates['username']}</b> وارد ربات شدی و به عنوان زیرمجموعه ثبت شدی ✅
-
-برای دریافت هدیه عضویت:
-🔘 به منوی <b>زیرمجموعه‌گیری</b> برو
-🔘 دکمه <b>🎁 دریافت هدیه عضویت</b> را بزن
-
-با این کار، هم خودت و هم معرفت هدیه می‌گیرید! 💰",
- $keyboard, 'html');
-            sendmessage($affiliatesid, "<b>🎉 یک زیرمجموعه جدید!</b>",
-"
-کاربر <b>@$username</b> با لینک دعوت شما وارد ربات شد ✅
-
-با خریدهای این کاربر، <b>سهم هدیه شما</b> به حسابت واریز می‌شه 🔥", $keyboard, 'html');
+            $rxWelcomeAlertTpl = $datatextbot['dyn_referral_welcome_alert'] ?? "<b>🎉 خوش آمدی!</b>\n\nشما با دعوت <b>@%s</b> وارد ربات شدی و به عنوان زیرمجموعه ثبت شدی ✅\n\nبرای دریافت هدیه عضویت:\n🔘 به منوی <b>زیرمجموعه‌گیری</b> برو\n🔘 دکمه <b>🎁 هدیه عضویت</b> را بزن\n\nبا این کار، هم خودت و هم معرفت هدیه می‌گیرید! 💰";
+            sendmessage($from_id, sprintf($rxWelcomeAlertTpl, $useraffiliates['username']), $keyboard, 'html');
+            $rxInviterRewardTpl = $datatextbot['dyn_referral_inviter_reward_alert'] ?? "<b>🎉 یک زیرمجموعه جدید!</b>\n\nکاربر <b>@%s</b> با لینک دعوت شما وارد ربات شد ✅\n\nبا خریدهای این کاربر، <b>سهم هدیه شما</b> به حسابت واریز می‌شه 🔥";
+            sendmessage($affiliatesid, sprintf($rxInviterRewardTpl, $username), $keyboard, 'html');
             $addcountaffiliates = intval($useraffiliates['affiliatescount']) + 1;
             update("user", "affiliatescount", $addcountaffiliates, "id", $affiliatesid);
             $dateacc = date('Y/m/d H:i:s');
@@ -645,7 +875,7 @@ if (strpos($text, "/start ") !== false && $user['step'] != "gettextSystemMessage
                 clearSelectCache('reagent_report');
             }
         } else {
-            sendmessage($from_id, $datatextbot['text_start'], $keyboard, 'html');
+            rx_send_banner_message($from_id, 'start', $datatextbot['text_start'], $keyboard, 'html');
             update("user", "Processing_value", "0", "id", $from_id);
             update("user", "Processing_value_one", "0", "id", $from_id);
             update("user", "Processing_value_tow", "0", "id", $from_id);
@@ -681,31 +911,63 @@ if ($setting['Bot_Status'] == "botstatusoff" && !in_array($from_id, $admin_ids))
     return;
 }
 
-if ($user['joinchannel'] != "active") {
-    if (count($channels_id) != 0) {
+$isStartRequest = ($text == "/start" || $datain == "start" || $text == "start" || (is_string($text) && strpos($text, "/start ") === 0));
+$isConfirmChannel = ($datain == "confirmchannel");
+$shouldCheckChannel = ($isStartRequest || $isConfirmChannel || $user['joinchannel'] != "active");
+
+if ($shouldCheckChannel && !in_array($from_id, $admin_ids)) {
+    $channels_id = select("channels", "link", null, null, "FETCH_COLUMN", ['cache' => false]);
+    if (!empty($channels_id) && is_array($channels_id)) {
         $channels = channel($channels_id);
-        if ($datain == "confirmchannel") {
+        if ($isConfirmChannel) {
             if (count($channels) == 0) {
                 update("user", "joinchannel", "active", "id", $from_id);
+                $user['joinchannel'] = "active";
                 deletemessage($from_id, $message_id);
-                sendmessage($from_id, $datatextbot['text_start'], $keyboard, 'html');
+                rx_send_banner_message($from_id, 'start', $datatextbot['text_start'], $keyboard, 'html');
                 telegram('answerCallbackQuery', [
                     'callback_query_id' => $callback_query_id,
                     'text' => $textbotlang['users']['channel']['confirmed'],
                     'show_alert' => false,
                     'cache_time' => 5,
                 ]);
+                $partsaffiliates = explode("_", (string)($user['Processing_value_four'] ?? ''));
+                if ($partsaffiliates[0] == "affiliates") {
+                    $affiliatesid = $partsaffiliates[1] ?? '';
+                    if (!userExists($affiliatesid) || $affiliatesid == $from_id || intval($user['affiliates']) != 0) {
+                        update("user", "Processing_value_four", "none", "id", $from_id);
+                        return;
+                    }
+                    $marzbanDiscountaffiliates = select("affiliates", "*", null, null, "select");
+                    $useraffiliates = select("user", "*", 'id', $affiliatesid, "select");
+                    $stmtGiftGuard = $pdo->prepare("UPDATE user SET affiliates = :affiliatesid WHERE id = :from_id AND (affiliates IS NULL OR affiliates = 0 OR affiliates = '')");
+                    $stmtGiftGuard->execute([':affiliatesid' => $affiliatesid, ':from_id' => $from_id]);
+                    if (function_exists('clearSelectCache')) {
+                        clearSelectCache('user');
+                    }
+                    if ($stmtGiftGuard->rowCount() > 0) {
+                        if ($marzbanDiscountaffiliates['Discount'] == "onDiscountaffiliates") {
+                            $Balance_add_user = $useraffiliates['Balance'] + $marzbanDiscountaffiliates['price_Discount'];
+                            update("user", "Balance", $Balance_add_user, "id", $affiliatesid);
+                            $addbalancediscount = number_format($marzbanDiscountaffiliates['price_Discount'], 0);
+                            $rxCommissionCreditedTpl = $datatextbot['dyn_referral_commission_credited'] ?? "🎁 مبلغ %s به موجودی شما از طرف زیر مجموعه با شناسه کاربری %s اضافه گردید.";
+                            sendmessage($affiliatesid, sprintf($rxCommissionCreditedTpl, $addbalancediscount, $from_id), null, 'html');
+                        }
+                        $addcountaffiliates = intval($useraffiliates['affiliatescount']) + 1;
+                        update("user", "affiliatescount", $addcountaffiliates, "id", $affiliatesid);
+                    }
+                    update("user", "Processing_value_four", "none", "id", $from_id);
+                }
                 return;
             }
             $keyboardchannel = [
                 'inline_keyboard' => [],
             ];
             foreach ($channels as $channel) {
-                $channelremark = select("channels", "*", 'link', $channel, "select");
-                if ($channelremark['remark'] == null)
+                $channelremark = select("channels", "*", 'link', $channel, "select", ['cache' => false]);
+                if (empty($channelremark['remark']) || empty($channelremark['linkjoin'])) {
                     continue;
-                if ($channelremark['linkjoin'] == null)
-                    continue;
+                }
                 $keyboardchannel['inline_keyboard'][] = [
                     [
                         'text' => "{$channelremark['remark']}",
@@ -720,46 +982,30 @@ if ($user['joinchannel'] != "active") {
                 'callback_query_id' => $callback_query_id,
                 'text' => $textbotlang['users']['channel']['notconfirmed'],
                 'show_alert' => true,
-                'cache_time' => 5,
+                'cache_time' => 0,
             ]);
-            $partsaffiliates = explode("_", $user['Processing_value_four']);
-            if ($partsaffiliates[0] == "affiliates") {
-                $affiliatesid = $partsaffiliates[1];
-                if (!userExists($affiliatesid)) {
-                    sendmessage($from_id, $textbotlang['users']['affiliates']['affiliatesidyou'], null, 'html');
-                    return;
-                }
-                if ($affiliatesid == $from_id) {
-                    sendmessage($from_id, $textbotlang['users']['affiliates']['invalidaffiliates'], null, 'html');
-                    return;
-                }
-                $marzbanDiscountaffiliates = select("affiliates", "*", null, null, "select");
-                $useraffiliates = select("user", "*", 'id', $affiliatesid, "select");
-                if ($marzbanDiscountaffiliates['Discount'] == "onDiscountaffiliates") {
-                    $marzbanDiscountaffiliates = select("affiliates", "*", null, null, "select");
-                    $Balance_add_user = $useraffiliates['Balance'] + $marzbanDiscountaffiliates['price_Discount'];
-                    update("user", "Balance", $Balance_add_user, "id", $affiliatesid);
-                    $addbalancediscount = number_format($marzbanDiscountaffiliates['price_Discount'], 0);
-                    sendmessage($affiliatesid, "🎁 مبلغ $addbalancediscount به موجودی شما از طرف زیر مجموعه با شناسه کاربری $from_id اضافه گردید.", null, 'html');
-                }
-                sendmessage($from_id, $datatextbot['text_start'], $keyboard, 'html');
-                $addcountaffiliates = intval($useraffiliates['affiliatescount']) + 1;
-                update("user", "affiliates", $affiliatesid, "id", $from_id);
-                update("user", "Processing_value_four", "none", "id", $from_id);
-                update("user", "affiliatescount", $addcountaffiliates, "id", $affiliatesid);
-            }
             return;
         }
-        if (count($channels) != 0 && !in_array($from_id, $admin_ids)) {
+
+        if (count($channels) != 0) {
+            if ($user['joinchannel'] == "active") {
+                update("user", "joinchannel", "0", "id", $from_id);
+                $user['joinchannel'] = "0";
+            }
+            if (is_string($text) && strpos($text, "/start ") === 0) {
+                $startParts = explode(" ", $text, 2);
+                if (!empty($startParts[1])) {
+                    update("user", "Processing_value_four", "affiliates_" . trim($startParts[1]), "id", $from_id);
+                }
+            }
             $keyboardchannel = [
                 'inline_keyboard' => [],
             ];
             foreach ($channels as $channel) {
-                $channelremark = select("channels", "*", 'link', $channel, "select");
-                if ($channelremark['remark'] == null)
+                $channelremark = select("channels", "*", 'link', $channel, "select", ['cache' => false]);
+                if (empty($channelremark['remark']) || empty($channelremark['linkjoin'])) {
                     continue;
-                if ($channelremark['linkjoin'] == null)
-                    continue;
+                }
                 $keyboardchannel['inline_keyboard'][] = [
                     [
                         'text' => "{$channelremark['remark']}",
@@ -771,21 +1017,26 @@ if ($user['joinchannel'] != "active") {
             $keyboardchannel = json_encode($keyboardchannel);
             sendmessage($from_id, $datatextbot['text_channel'], $keyboardchannel, 'html');
             return;
+        } else {
+            if ($user['joinchannel'] != "active") {
+                update("user", "joinchannel", "active", "id", $from_id);
+                $user['joinchannel'] = "active";
+            }
         }
     }
 }
 if ($text == "/start" || $datain == "start" || $text == "start") {
-    sendmessage($from_id, $datatextbot['text_start'], $keyboard, "html");
     update("user", "Processing_value", "0", "id", $from_id);
     update("user", "Processing_value_one", "0", "id", $from_id);
     update("user", "Processing_value_tow", "0", "id", $from_id);
     update("user", "Processing_value_four", "0", "id", $from_id);
     step('home', $from_id);
+    rx_send_banner_message($from_id, 'start', $datatextbot['text_start'], $keyboard, "html");
     return;
 } elseif ($text == "version") {
     sendmessage($from_id, $version, null, 'html');
-} elseif ($text == $textbotlang['users']['backbtn'] || $datain == "backuser") {
-    if ($datain == "backuser")
+} elseif ($text == $textbotlang['users']['backbtn'] || $datain == "backuser" || $datain == "admin_back") {
+    if ($datain == "backuser" || $datain == "admin_back")
         deletemessage($from_id, $message_id);
     $message_id = sendmessage($from_id, $textbotlang['users']['back'], $keyboard, 'html');
     step('home', $from_id);
@@ -793,8 +1044,14 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     update("user", "Processing_value_one", "0", "id", $from_id);
     update("user", "Processing_value_tow", "0", "id", $from_id);
     update("user", "Processing_value_four", "0", "id", $from_id);
+    $_bk_id  = (string) $from_id;
+    $_bk_del = $connect->prepare("DELETE FROM Payment_report WHERE id_user = ? AND payment_Status IN ('Unpaid','pending','waiting') AND Payment_Method = 'cart to cart' AND (dec_not_confirmed IS NULL OR dec_not_confirmed = '')");
+    $_bk_del->bind_param("s", $_bk_id);
+    $_bk_del->execute();
+    $_bk_del->close();
     return;
-} elseif ($user['step'] == 'get_number') {
+} elseif ($user['step'] == 'get_number' && in_array($from_id, $admin_ids)) {
+} elseif ($user['step'] == 'get_number' && !in_array($from_id, $admin_ids)) {
     if (empty($user_phone)) {
         sendmessage($from_id, $textbotlang['users']['number']['false'], $request_contact, 'html');
         return;
@@ -808,13 +1065,13 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         return;
     }
     sendmessage($from_id, $textbotlang['users']['number']['active'], json_encode(['inline_keyboard' => [], 'remove_keyboard' => true]), 'html');
-    sendmessage($from_id, $datatextbot['text_start'], $keyboard, 'html');
+    rx_send_banner_message($from_id, 'start', $datatextbot['text_start'], $keyboard, 'html');
     update("user", "number", $user_phone, "id", $from_id);
     if ($setting['verifystart'] == "onverify") {
         update("user", "verify", "1", "id", $from_id);
     }
     step('home', $from_id);
-} elseif ($text == $datatextbot['text_Purchased_services'] || $datain == "backorder" || $text == "/services") {
+} elseif (($text !== '' && $text == $datatextbot['text_Purchased_services']) || $datain == "backorder" || $text == "/services") {
     $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = :id_user AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold')");
     $stmt->bindParam(':id_user', $from_id);
     $stmt->execute();
@@ -864,11 +1121,9 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         ],
         ['text' => $textbotlang['users']['search']['title'], 'callback_data' => 'searchservice']
     ];
+    $_rx_nav_s = (isset($_rx_nav_styles) && is_array($_rx_nav_styles)) ? $_rx_nav_styles : [];
     $backuser = [
-        [
-            'text' => "🔙 بازگشت به منوی اصلی",
-            'callback_data' => 'backuser'
-        ]
+        rx_kb_style(['text' => "🔙 بازگشت به منوی اصلی", 'callback_data' => 'backuser'], 'backuser', $_rx_nav_s)
     ];
     if ($setting['NotUser'] == "onnotuser") {
         $keyboardlists['inline_keyboard'][] = [['text' => $textbotlang['users']['page']['notusernameme'], 'callback_data' => 'notusernameme']];
@@ -932,11 +1187,9 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             'callback_data' => 'previous_page'
         ]
     ];
+    $_rx_nav_s = (isset($_rx_nav_styles) && is_array($_rx_nav_styles)) ? $_rx_nav_styles : [];
     $backuser = [
-        [
-            'text' => "🔙 بازگشت به منوی اصلی",
-            'callback_data' => 'backuser'
-        ]
+        rx_kb_style(['text' => "🔙 بازگشت به منوی اصلی", 'callback_data' => 'backuser'], 'backuser', $_rx_nav_s)
     ];
     $keyboardlists['inline_keyboard'][] = [['text' => $textbotlang['users']['search']['title'], 'callback_data' => 'searchservice']];
     if ($setting['NotUser'] == "onnotuser") {
@@ -997,11 +1250,9 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             'callback_data' => 'previous_page'
         ]
     ];
+    $_rx_nav_s = (isset($_rx_nav_styles) && is_array($_rx_nav_styles)) ? $_rx_nav_styles : [];
     $backuser = [
-        [
-            'text' => "🔙 بازگشت به منوی اصلی",
-            'callback_data' => 'backuser'
-        ]
+        rx_kb_style(['text' => "🔙 بازگشت به منوی اصلی", 'callback_data' => 'backuser'], 'backuser', $_rx_nav_s)
     ];
     $keyboardlists['inline_keyboard'][] = [['text' => $textbotlang['users']['search']['title'], 'callback_data' => 'searchservice']];
     if ($setting['NotUser'] == "onnotuser") {
@@ -1017,22 +1268,23 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     sendmessage($from_id, $textbotlang['users']['stateus']['SendUsername'], $backuser, 'html');
     step('getusernameinfo', $from_id);
 } elseif ($user['step'] == "getusernameinfo") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (empty($text))
         return;
     $usernameconfig = "";
     if (strlen($text) > 32) {
         if (!filter_var($text, FILTER_VALIDATE_URL)) {
-            sendmessage($from_id, "❌ لینک اشتراک نامعتبر است", $backuser, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_invalid_subscription_link'] ?? "❌ لینک اشتراک نامعتبر است", $backuser, 'HTML');
             return;
         }
         $date = outputlunksub($text);
         if (!isset($date)) {
-            sendmessage($from_id, "❌ لینک اشتراک نامعتبر است", $backuser, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_invalid_subscription_link'] ?? "❌ لینک اشتراک نامعتبر است", $backuser, 'HTML');
             return;
         }
         $date = json_decode($date, true);
         if (!isset($date['username'])) {
-            sendmessage($from_id, "❌ لینک اشتراک نامعتبر است", $backuser, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_invalid_subscription_link'] ?? "❌ لینک اشتراک نامعتبر است", $backuser, 'HTML');
             return;
         }
         $usernameconfig = $date['username'];
@@ -1062,17 +1314,31 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     }
 
     $status = $DataUserOut['status'];
-    $status_var = [
+    $bExp = is_numeric($DataUserOut['expire'] ?? null) ? (int)$DataUserOut['expire'] : 0;
+    $bDl = is_numeric($DataUserOut['data_limit'] ?? null) ? (float)$DataUserOut['data_limit'] : 0.0;
+    $bUt = is_numeric($DataUserOut['used_traffic'] ?? null) ? (float)$DataUserOut['used_traffic'] : 0.0;
+    if ($bExp > 0 && $bExp <= time()) {
+        $status = 'expired';
+    } elseif ($bDl > 0.0 && $bUt >= $bDl) {
+        $status = 'limited';
+    }
+    $status_map = [
         'active' => $textbotlang['users']['stateus']['active'],
         'limited' => $textbotlang['users']['stateus']['limited'],
+        'end_of_volume' => $textbotlang['users']['stateus']['limited'],
         'disabled' => $textbotlang['users']['stateus']['disabled'],
         'deactivev' => $textbotlang['users']['stateus']['disabled'],
         'expired' => $textbotlang['users']['stateus']['expired'],
+        'end_of_time' => $textbotlang['users']['stateus']['expired'],
         'on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'send_on_hold' => $textbotlang['users']['stateus']['on_hold'],
         'Unknown' => $textbotlang['users']['stateus']['Unknown']
-    ][$status];
+    ];
+    $status_var = $status_map[$status] ?? ($textbotlang['users']['stateus']['active'] ?? 'فعال');
 
-    $expirationDate = $DataUserOut['expire'] ? jdate('Y/m/d', $DataUserOut['expire']) : $textbotlang['users']['stateus']['Unlimited'];
+    $expirationDate = $DataUserOut['expire']
+        ? jdate('Y/m/d', $DataUserOut['expire'])
+        : (($DataUserOut['status'] ?? '') === 'on_hold' ? $textbotlang['users']['stateus']['PendingFirstConnection'] : $textbotlang['users']['stateus']['Unlimited']);
 
     $LastTraffic = $DataUserOut['data_limit'] ? formatBytes($DataUserOut['data_limit']) : $textbotlang['users']['stateus']['Unlimited'];
 
@@ -1091,8 +1357,8 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
                 ['text' => $textbotlang['users']['stateus']['username'], 'callback_data' => 'username'],
             ],
             [
-                ['text' => $status_var, 'callback_data' => 'status_var'],
-                ['text' => $textbotlang['users']['stateus']['stateus'], 'callback_data' => 'status_var'],
+                ['text' => $status_var, 'callback_data' => 'status_var', '_rxsk' => 'Status'],
+                ['text' => $textbotlang['users']['stateus']['stateus'], 'callback_data' => 'status_var', '_rxsk' => 'Status'],
             ],
             [
                 ['text' => $expirationDate, 'callback_data' => 'expirationDate'],
@@ -1100,16 +1366,16 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             ],
             [],
             [
-                ['text' => $day, 'callback_data' => 'روز'],
-                ['text' => $textbotlang['users']['stateus']['daysleft'], 'callback_data' => 'day'],
+                ['text' => $day, 'callback_data' => 'روز', '_rxsk' => 'daysleft'],
+                ['text' => $textbotlang['users']['stateus']['daysleft'], 'callback_data' => 'day', '_rxsk' => 'daysleft'],
             ],
             [
                 ['text' => $LastTraffic, 'callback_data' => 'LastTraffic'],
                 ['text' => $textbotlang['users']['stateus']['LastTraffic'], 'callback_data' => 'LastTraffic'],
             ],
             [
-                ['text' => $usedTrafficGb, 'callback_data' => 'expirationDate'],
-                ['text' => $textbotlang['users']['stateus']['usedTrafficGb'], 'callback_data' => 'expirationDate'],
+                ['text' => $usedTrafficGb, 'callback_data' => 'expirationDate', '_rxsk' => 'usedtraffic'],
+                ['text' => $textbotlang['users']['stateus']['usedTrafficGb'], 'callback_data' => 'expirationDate', '_rxsk' => 'usedtraffic'],
             ],
             [
                 ['text' => $RemainingVolume, 'callback_data' => 'RemainingVolume'],
@@ -1117,7 +1383,7 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             ]
         ]
     ];
-    $marzbanstatusextra = select("shopSetting", "*", "Namevalue", "statusextra", "select")['value'];
+    $marzbanstatusextra = panel_feature_enabled($marzban_list_get, 'extravolume') ? "onextra" : "offextra";
     if ($marzbanstatusextra == "onextra") {
         $keyboardinfo['inline_keyboard'][] = [
             ['text' => $textbotlang['users']['extend']['title'], 'callback_data' => 'extends_' . $DataUserOut['username'] . "_" . $dataget[1]],
@@ -1145,7 +1411,13 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             }
             return;
         }
-        if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc_qv)) {
+        if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, null, $nameloc_qv)) {
+            if (isset($callback_query_id)) telegram('answerCallbackQuery', ['callback_query_id' => $callback_query_id, 'cache_time' => 1]);
+            step('home', $from_id);
+            return;
+        }
+        if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc_qv, $from_id, null)) {
+            if (isset($callback_query_id)) telegram('answerCallbackQuery', ['callback_query_id' => $callback_query_id, 'cache_time' => 1]);
             step('home', $from_id);
             return;
         }
@@ -1158,12 +1430,13 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             $note_qv = isset($nameloc_qv['note']) && $nameloc_qv['note'] !== '' ? ' | ' . $nameloc_qv['note'] : '';
             $caption_qv = '✨ <b>' . htmlspecialchars((string)$nameloc_qv['username'], ENT_QUOTES, 'UTF-8') . '</b>'
                         . htmlspecialchars($note_qv, ENT_QUOTES, 'UTF-8');
+            $__qvRow = [['text' => '🔧 مدیریت سرویس', 'callback_data' => 'product_' . $nameloc_qv['id_invoice']]];
+            if (!(function_exists('isQrDisabled') && isQrDisabled())) {
+                $__qvRow[] = ['text' => '📷 دریافت QR Code', 'callback_data' => 'infocard_qr_' . $nameloc_qv['id_invoice']];
+            }
             $kb_qv = json_encode([
                 'inline_keyboard' => [
-                    [
-                        ['text' => '🔧 مدیریت سرویس', 'callback_data' => 'product_' . $nameloc_qv['id_invoice']],
-                        ['text' => '📷 دریافت QR Code', 'callback_data' => 'infocard_qr_' . $nameloc_qv['id_invoice']],
-                    ],
+                    $__qvRow,
                     [
                         ['text' => $textbotlang['users']['stateus']['backlist'] ?? '🔙 بازگشت', 'callback_data' => 'backorder'],
                     ],
@@ -1216,7 +1489,7 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             'callback_query_id' => $callback_query_id,
             'text' => "♻️ اطلاعات بروز شد",
             'show_alert' => false,
-            'cache_time' => 5,
+            'cache_time' => 0,
         ));
     } else {
         $username = $dataget[1];
@@ -1258,34 +1531,29 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
                 ];
             }
         }
+        $_rx_nav_s = (isset($_rx_nav_styles) && is_array($_rx_nav_styles)) ? $_rx_nav_styles : [];
         $backuser = [
-            [
-                'text' => "🔙 بازگشت به منوی اصلی",
-                'callback_data' => 'backuser'
-            ]
+            rx_kb_style(['text' => "🔙 بازگشت به منوی اصلی", 'callback_data' => 'backuser'], 'backuser', $_rx_nav_s)
         ];
         if ($setting['NotUser'] == "onnotuser") {
             $keyboardlists['inline_keyboard'][] = [['text' => $textbotlang['users']['page']['notusernameme'], 'callback_data' => 'notusernameme']];
         }
         $keyboardlists['inline_keyboard'][] = $backuser;
         $keyboard_json = json_encode($keyboardlists);
-        sendmessage($from_id, "🛍 $countservice عدد سرویس یافت برای مشاهده و مدیریت سرویس روی یکی از سرویس ها کلیک کنید", $keyboard_json, 'html');
+        $rxSvcFoundTpl = $datatextbot['dyn_errors_service_found_count'] ?? "🛍 %s عدد سرویس یافت برای مشاهده و مدیریت سرویس روی یکی از سرویس ها کلیک کنید";
+        sendmessage($from_id, sprintf($rxSvcFoundTpl, $countservice), $keyboard_json, 'html');
         step("home", $from_id);
         return;
     }
     $nameloc = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!is_array($nameloc)) {
-        sendmessage($from_id, "❌ سرویس مورد نظر پیدا نشد.", $keyboard, 'html');
-        step('home', $from_id);
-        return;
-    }
-    if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc)) {
+        sendmessage($from_id, $datatextbot['dyn_errors_service_not_found'] ?? "❌ سرویس مورد نظر پیدا نشد.", $keyboard, 'html');
         step('home', $from_id);
         return;
     }
     $username = $nameloc['id_invoice'];
     if (!in_array($nameloc['Status'], ['active', 'end_of_time', 'end_of_volume', 'sendedwarn', 'send_on_hold'])) {
-        sendmessage($from_id, "❌ امکان مشاهده اطلاعات اکانت درحال حاضر وجود ندارد", $keyboard, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_view_account_unavailable'] ?? "❌ امکان مشاهده اطلاعات اکانت درحال حاضر وجود ندارد", $keyboard, 'html');
         step('home', $from_id);
         return;
     }
@@ -1294,7 +1562,30 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         update("user", "Processing_value_four", $marzban['name_panel'], "id", $from_id);
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
+    if (is_array($DataUserOut) && isset($DataUserOut['status']) && $DataUserOut['status'] !== 'Unsuccessful') {
+        try {
+            update("invoice", "user_info", json_encode($DataUserOut, JSON_UNESCAPED_UNICODE), "id_invoice", $nameloc['id_invoice']);
+        } catch (Throwable $e) {
+        }
+        $bSt = strtolower((string)$DataUserOut['status']);
+        if ($bSt === 'expired' && $nameloc['Status'] !== 'end_of_time') {
+            update("invoice", "Status", "end_of_time", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'end_of_time';
+        } elseif ($bSt === 'limited' && $nameloc['Status'] !== 'end_of_volume') {
+            update("invoice", "Status", "end_of_volume", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'end_of_volume';
+        } elseif ($bSt === 'on_hold' && $nameloc['Status'] !== 'send_on_hold') {
+            update("invoice", "Status", "send_on_hold", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'send_on_hold';
+        } elseif ($bSt === 'active' && !in_array($nameloc['Status'], ['active', 'sendedwarn'], true)) {
+            update("invoice", "Status", "active", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'active';
+        }
+    }
     if (isset($DataUserOut['msg']) && $DataUserOut['msg'] == "User not found") {
+        if (empty($nameloc['invalidated_at'])) {
+            update("invoice", "invalidated_at", time(), "id_invoice", $nameloc['id_invoice']);
+        }
         update("invoice", "Status", "disabledn", "id_invoice", $nameloc['id_invoice']);
         $keyboard_remove = [
             'inline_keyboard' => [
@@ -1313,6 +1604,12 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         return;
     }
     if ($DataUserOut['status'] == "Unsuccessful") {
+        if (isset($DataUserOut['msg']) && $DataUserOut['msg'] == "Panel Not Found") {
+            if (empty($nameloc['invalidated_at'])) {
+                update("invoice", "invalidated_at", time(), "id_invoice", $nameloc['id_invoice']);
+            }
+            update("invoice", "Status", "Unsuccessful", "id_invoice", $nameloc['id_invoice']);
+        }
         $keyboard_remove = [
             'inline_keyboard' => [
                 [
@@ -1329,42 +1626,34 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         step('home', $from_id);
         return;
     }
-    if (isset($nameloc) && is_array($nameloc) && function_exists('nmServicePanelAccessBlocked') && nmServicePanelAccessBlocked($nameloc)) {
-        $nmBlockedKeyboard = function_exists('nmRestrictedServiceKeyboard')
-            ? nmRestrictedServiceKeyboard($nameloc)
-            : json_encode([
-                'inline_keyboard' => [
-                    [
-                        ['text' => '🛒 خرید سرویس اینترنت ملی', 'callback_data' => 'nm_buy_service_' . ($nameloc['id_invoice'] ?? '')],
-                    ],
-                    [
-                        ['text' => $textbotlang['users']['stateus']['backlist'] ?? '🏠 بازگشت به لیست سرویس ها', 'callback_data' => 'backorder'],
-                    ],
-                ],
-            ], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $nmBlockedText = function_exists('nmServiceRestrictedNotice') ? nmServiceRestrictedNotice() : 'این سرویس در حال حاضر به دلیل شرایط اینترنت ملی در دسترس نیست !';
-        if (isset($message_id) && (!isset($user['step']) || $user['step'] !== 'getuseragnetservice')) {
-            Editmessagetext($from_id, $message_id, $nmBlockedText, $nmBlockedKeyboard);
-        } else {
-            sendmessage($from_id, $nmBlockedText, $nmBlockedKeyboard, 'HTML');
-        }
-        step('home', $from_id);
-        return;
-    }
     $lastonline = formatOnlineAtLabel($DataUserOut['online_at'] ?? null, $DataUserOut['is_online'] ?? null);
 
     $status = $DataUserOut['status'];
-    $status_var = [
+    $bExp2 = is_numeric($DataUserOut['expire'] ?? null) ? (int)$DataUserOut['expire'] : 0;
+    $bDl2 = is_numeric($DataUserOut['data_limit'] ?? null) ? (float)$DataUserOut['data_limit'] : 0.0;
+    $bUt2 = is_numeric($DataUserOut['used_traffic'] ?? null) ? (float)$DataUserOut['used_traffic'] : 0.0;
+    if ($bExp2 > 0 && $bExp2 <= time()) {
+        $status = 'expired';
+    } elseif ($bDl2 > 0.0 && $bUt2 >= $bDl2) {
+        $status = 'limited';
+    }
+    $status_map2 = [
         'active' => $textbotlang['users']['stateus']['active'],
         'limited' => $textbotlang['users']['stateus']['limited'],
+        'end_of_volume' => $textbotlang['users']['stateus']['limited'],
         'disabled' => $textbotlang['users']['stateus']['disabled'],
-        'expired' => $textbotlang['users']['stateus']['expired'],
-        'on_hold' => $textbotlang['users']['stateus']['on_hold'],
-        'Unknown' => $textbotlang['users']['stateus']['Unknown'],
         'deactivev' => $textbotlang['users']['stateus']['disabled'],
-    ][$status];
+        'expired' => $textbotlang['users']['stateus']['expired'],
+        'end_of_time' => $textbotlang['users']['stateus']['expired'],
+        'on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'send_on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'Unknown' => $textbotlang['users']['stateus']['Unknown']
+    ];
+    $status_var = $status_map2[$status] ?? ($textbotlang['users']['stateus']['active'] ?? 'فعال');
 
-    $expirationDate = $DataUserOut['expire'] ? jdate('Y/m/d', $DataUserOut['expire']) : $textbotlang['users']['stateus']['Unlimited'];
+    $expirationDate = $DataUserOut['expire']
+        ? jdate('Y/m/d', $DataUserOut['expire'])
+        : (($DataUserOut['status'] ?? '') === 'on_hold' ? $textbotlang['users']['stateus']['PendingFirstConnection'] : $textbotlang['users']['stateus']['Unlimited']);
 
     $LastTraffic = $DataUserOut['data_limit'] ? formatBytes($DataUserOut['data_limit']) : $textbotlang['users']['stateus']['Unlimited'];
 
@@ -1424,26 +1713,59 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
             ]
         ]
     ]);
-    if ($marzban['type'] == "ibsng" || $marzban['type'] == "mikrotik") {
-        $userpassword = "🔑 رمز عبور سرویس شما : <code>{$DataUserOut['subscription_url']}</code>";
-    } else {
-        $userpassword = "";
-    }
+    $userpassword = "";
     if ($marzban['type'] == "Manualsale") {
-        $userinfo = select("manualsell", "*", "username", $nameloc['username'], "select");
+        $manualDelivery = rxManualsaleDelivery($nameloc['username']);
+        $manualFileItems = rxManualsaleFileItems($manualDelivery['items'] ?? []);
+        $manualHasConfig = !empty($manualFileItems);
+        if (!$manualHasConfig) {
+            foreach ($manualDelivery['configs'] as $manualCfgItem) {
+                if (is_string($manualCfgItem) && trim($manualCfgItem) !== '') {
+                    $manualHasConfig = true;
+                    break;
+                }
+            }
+        }
+        $manualHasSub = trim((string) $manualDelivery['sub']) !== '';
         $textinfo = "وضعیت سرویس : <b>$status_var</b>
 نام کاربری سرویس : {$DataUserOut['username']}
 📎 کد پیگیری سرویس : {$nameloc['id_invoice']}
 
-📌 اطلاعات سرویس :
-{$userinfo['contentrecord']}";
+📅 تاریخ اتمام : $expirationDate ($day)";
+        $manualStatusExtend  = ($marzban['status_extend'] ?? 'on_extend') != "off_extend";
+        $manualRefundEnabled = panel_feature_enabled($nameloc['Service_location'], 'refund');
+        $manualRows = [];
+        if ($manualHasConfig) {
+            $manualRows[] = [
+                ['text' => "🔐 دریافت کانفیگ", 'callback_data' => 'config_' . $nameloc['id_invoice']],
+            ];
+        }
+        if ($manualHasSub) {
+            $manualRows[] = [
+                ['text' => "🔗 دریافت لینک اشتراک", 'callback_data' => 'subscriptionurl_' . $nameloc['id_invoice']],
+            ];
+        }
+        if ($manualStatusExtend) {
+            $manualRows[] = [
+                ['text' => $textbotlang['users']['extend']['title'], 'callback_data' => 'extend_' . $nameloc['id_invoice']],
+            ];
+        }
+        if ($manualRefundEnabled) {
+            $manualRows[] = [
+                ['text' => $textbotlang['users']['stateus']['removeservice'], 'callback_data' => 'removeserviceuser_' . $nameloc['id_invoice']],
+            ];
+        }
+        $manualRows[] = [
+            ['text' => $textbotlang['users']['stateus']['backlist'], 'callback_data' => 'backorder'],
+        ];
+        $keyboardsettingManual = json_encode(['inline_keyboard' => $manualRows], JSON_UNESCAPED_UNICODE);
         if ($user['step'] == "getuseragnetservice") {
-            sendmessage($from_id, $textinfo, $keyboardsetting, 'html');
+            sendmessage($from_id, $textinfo, $keyboardsettingManual, 'html');
         } elseif ($datain == "productcheckdata") {
             deletemessage($from_id, $message_id);
-            sendmessage($from_id, $textinfo, $keyboardsetting, 'html');
+            sendmessage($from_id, $textinfo, $keyboardsettingManual, 'html');
         } else {
-            Editmessagetext($from_id, $message_id, $textinfo, $keyboardsetting);
+            Editmessagetext($from_id, $message_id, $textinfo, $keyboardsettingManual);
         }
         return;
     }
@@ -1468,12 +1790,12 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
         }
     }
 
-    $statustimeextra = select("shopSetting", "*", "Namevalue", "statustimeextra", "select")['value'];
-    $marzbanstatusextra = select("shopSetting", "*", "Namevalue", "statusextra", "select")['value'];
-    $statusdisorder = select("shopSetting", "*", "Namevalue", "statusdisorder", "select")['value'];
-    $statuschangeservice = select("shopSetting", "*", "Namevalue", "statuschangeservice", "select")['value'];
-    $statusshowconfig = select("shopSetting", "*", "Namevalue", "configshow", "select")['value'];
-    $statusremoveserveice = select("shopSetting", "*", "Namevalue", "backserviecstatus", "select")['value'];
+    $statustimeextra = panel_feature_enabled($nameloc['Service_location'], 'timeextra') ? "ontimeextraa" : "offtimeextraa";
+    $marzbanstatusextra = panel_feature_enabled($nameloc['Service_location'], 'extravolume') ? "onextra" : "offextra";
+    $statusdisorder = panel_feature_enabled($nameloc['Service_location'], 'disorder') ? "ondisorder" : "offdisorder";
+    $statuschangeservice = panel_feature_enabled($nameloc['Service_location'], 'changeservice') ? "onstatus" : "offstatus";
+    $statusshowconfig = panel_feature_enabled($nameloc['Service_location'], 'configbtn') ? "onconfig" : "offconfig";
+    $statusremoveserveice = panel_feature_enabled($nameloc['Service_location'], 'refund') ? "on" : "off";
     if (!in_array($status, ["active", "on_hold", "disabled", "Unknown"])) {
         $textinfo = "وضعیت سرویس : <b>$status_var</b>
 👤 نام کاربری سرویس : <code>{$DataUserOut['username']}</code>
@@ -1505,10 +1827,6 @@ $nameconfig";
                 ]
             ]
         ];
-        if ($marzban['type'] == "ibsng" || $marzban['type'] == "mikrotik") {
-            unset($keyboardsetting['inline_keyboard'][1][1]);
-            unset($keyboardsetting['inline_keyboard'][0]);
-        }
         if ($statustimeextra == "offtimeextraa")
             unset($keyboardsetting['inline_keyboard'][1][1]);
         if ($marzbanstatusextra == "offextra")
@@ -1581,16 +1899,6 @@ $nameconfig";
             unset($keyboarddate['Extra_time']);
             unset($keyboarddate['removeservice']);
         }
-        if ($marzban['type'] == "ibsng" || $marzban['type'] == "mikrotik") {
-            unset($keyboarddate['linksub']);
-            unset($keyboarddate['config']);
-            unset($keyboarddate['extend']);
-            unset($keyboarddate['changestatus']);
-            unset($keyboarddate['change-location']);
-            unset($keyboarddate['changelink']);
-            unset($keyboarddate['Extra_volume']);
-            unset($keyboarddate['Extra_time']);
-        }
         if ($marzban['type'] == "eylanpanel") {
             unset($keyboarddate['config']);
             unset($keyboarddate['changelink']);
@@ -1601,6 +1909,27 @@ $nameconfig";
             unset($keyboarddate['change-location']);
             unset($keyboarddate['changelink']);
         }
+        if ($marzban['type'] == "remnawave") {
+            if (($marzban['remna_revoke'] ?? 'off') !== "on") {
+                unset($keyboarddate['changelink']);
+            }
+            unset($keyboarddate['transfor']);
+            if (($marzban['changeloc'] ?? '') !== "onchangeloc") {
+                unset($keyboarddate['change-location']);
+            }
+            if (($marzban['sublink'] ?? '') !== "onsublink") {
+                unset($keyboarddate['linksub']);
+            }
+            if (($marzban['config'] ?? '') !== "onconfig") {
+                unset($keyboarddate['config']);
+            }
+            if (($marzban['remna_usage_btn'] ?? 'on') === "on") {
+                $keyboarddate['remna_usage'] = ['text' => '📊 مصرف به‌تفکیک سرور', 'callback_data' => 'remnausage_'];
+            }
+            if (($marzban['remna_server_picker'] ?? 'off') === "on") {
+                $keyboarddate['remna_picker'] = ['text' => '🌍 انتخاب سرور', 'callback_data' => 'remnapicker_'];
+            }
+        }
         if ($marzban['status_extend'] == "off_extend") {
             unset($keyboarddate['Extra_time']);
             unset($keyboarddate['Extra_volume']);
@@ -1610,11 +1939,6 @@ $nameconfig";
             unset($keyboarddate['removeservice']);
         if ($statusshowconfig == "offconfig")
             unset($keyboarddate['config']);
-        if ($marzban['type'] == "hiddify") {
-            unset($keyboarddate['changelink']);
-            unset($keyboarddate['changestatus']);
-            unset($keyboarddate['config']);
-        }
         if ($statusdisorder == "offdisorder")
             unset($keyboarddate['ekhtelal']);
         if ($nameloc['Service_time'] == "0")
@@ -1677,22 +2001,177 @@ $nameconfig";
         } else {
             $textconnect = "📶 اخرین زمان اتصال شما : $lastonline";
         }
-        $textinfo = "📊وضعیت سرویس : $status_var
-👤 نام سرویس : <code>{$DataUserOut['username']}</code>
-$userpassword
-$nameconfig
-🌍 موقعیت سرویس :{$nameloc['Service_location']}
-🗂 نام محصول :{$nameloc['name_product']}
+        $rwChangelinkHint = (($marzban['type'] ?? '') != "remnawave") ? "💡 برای قطع دسترسی دیگران کافیست روی گزینه \"تغییر لینک\" کلیک کنید." : "";
+        $textinfo_tpl = $datatextbot['text_service_detail'] ?? "📊وضعیت سرویس : {status}
+👤 نام سرویس : <code>{username}</code>
+🌍 موقعیت سرویس :{location}
+🗂 نام محصول :{product}
 
-🔋 ترافیک : $LastTraffic
-📥 حجم مصرفی : $usedTrafficGb
-💢 حجم باقی مانده : $RemainingVolume ($Percent%)
+🔋 ترافیک : {traffic}
+📥 حجم مصرفی : {used}
+💢 حجم باقی مانده : {remaining} ({percent}%)
 
-📅 تاریخ اتمام : $expirationDate ($day)
-
-$textconnect
-
-💡 برای قطع دسترسی دیگران کافیست روی گزینه \"تغییر لینک\" کلیک کنید.";
+📅 تاریخ اتمام : {expire_date} ({days_left})";
+        $textinfo_replacements = [
+            '{status}' => $status_var,
+            '{username}' => $DataUserOut['username'],
+            '{location}' => $nameloc['Service_location'],
+            '{product}' => $nameloc['name_product'],
+            '{traffic}' => $LastTraffic,
+            '{used}' => $usedTrafficGb,
+            '{remaining}' => $RemainingVolume,
+            '{percent}' => $Percent,
+            '{expire_date}' => $expirationDate,
+            '{days_left}' => $day,
+        ];
+        $textinfo = strtr($textinfo_tpl, $textinfo_replacements);
+        $textinfo = "$textinfo\n$userpassword\n$nameconfig\n\n$textconnect\n\n$rwChangelinkHint";
+    }
+    if (($marzban['type'] ?? '') == "remnawave") {
+        $rwLight = !empty($DataUserOut['is_online']) ? '🟢 آنلاین' : '🔴 آفلاین';
+        $textinfo .= "\n📶 وضعیت اتصال: $rwLight";
+        if (!empty($DataUserOut['node_name'])) {
+            $textinfo .= "\n🌍 سرور فعال: " . $DataUserOut['node_name'];
+        }
+    }
+    $symbolicLimitLabel = faoxima_symbolic_limit_label($nameloc);
+    if ($symbolicLimitLabel !== null) {
+        $textinfo .= "\n👥 تعداد کاربر مجاز: $symbolicLimitLabel";
+    } elseif (($marzban['type'] ?? '') == "x-ui_single") {
+        $xuiIpGuardActive = (($marzban['ip_limit_guard'] ?? '') === 'onipguard');
+        if ($xuiIpGuardActive) {
+            $xuiIpLimitConfigured = intval($nameloc['ip_limit'] ?? 0);
+            $xuiIpLimitText = $xuiIpLimitConfigured > 0 ? "{$xuiIpLimitConfigured} کاربر" : 'نامحدود';
+            $textinfo .= "\n👥 تعداد کاربر مجاز: $xuiIpLimitText";
+        }
+        if (function_exists('xui_panel_uses_token') && xui_panel_uses_token($marzban)) {
+            $xuiOnlineCheck = xui_client_is_online($marzban, $DataUserOut['username'] ?? '');
+            if (!empty($xuiOnlineCheck['status'])) {
+                $textinfo .= "\n📶 وضعیت اتصال: " . (!empty($xuiOnlineCheck['online']) ? '🟢 آنلاین' : '⚪ آفلاین');
+            }
+            if ($xuiIpGuardActive) {
+                $xuiIpSummary = xui_client_ip_summary($marzban, $DataUserOut['username'] ?? '');
+                if (!empty($xuiIpSummary['status']) && function_exists('faoxima_cap_ip_summary')) {
+                    $xuiIpSummary = faoxima_cap_ip_summary($xuiIpSummary, $xuiIpLimitConfigured);
+                }
+                if (!empty($xuiIpSummary['status'])) {
+                    $textinfo .= "\n🌐 تعداد IP مشاهده‌شده: " . intval($xuiIpSummary['count']);
+                    if (!empty($xuiIpSummary['raw'])) {
+                        foreach (array_slice($xuiIpSummary['raw'], 0, 5) as $xuiRawIp) {
+                            $textinfo .= "\n📍 IP متصل: " . htmlspecialchars($xuiRawIp, ENT_QUOTES, 'UTF-8');
+                        }
+                    }
+                } else {
+                    $textinfo .= "\n🌐 اطلاعات IP متصل در حال حاضر در دسترس نیست.";
+                }
+            }
+            $xuiHwidLimitConfigured = intval($nameloc['hwid_limit'] ?? 0);
+            if ($xuiHwidLimitConfigured > 0 && function_exists('xui_client_hwid_devices')) {
+                $xuiHwidResponse = xui_client_hwid_devices($marzban, $DataUserOut['username'] ?? '');
+                if (!empty($xuiHwidResponse['status'])) {
+                    $xuiHwidList = is_array($xuiHwidResponse['devices'] ?? null) ? $xuiHwidResponse['devices'] : [];
+                    $textinfo .= "\n👥 دستگاه‌های متصل: " . count($xuiHwidList) . " از {$xuiHwidLimitConfigured} دستگاه";
+                    foreach (array_slice($xuiHwidList, 0, 5) as $xuiHwidEntry) {
+                        $xuiDeviceOs = (string) ($xuiHwidEntry['deviceOs'] ?? '');
+                        $xuiDeviceModel = (string) ($xuiHwidEntry['deviceModel'] ?? '');
+                        $xuiDeviceLabel = $xuiDeviceOs !== '' ? ($xuiDeviceModel !== '' ? "{$xuiDeviceOs} ({$xuiDeviceModel})" : $xuiDeviceOs) : 'نامشخص';
+                        $xuiLastSeenRaw = intval($xuiHwidEntry['lastSeen'] ?? 0);
+                        $xuiLastSeenText = '';
+                        if ($xuiLastSeenRaw > 0) {
+                            try {
+                                $xuiLastSeenDt = new DateTime('@' . intval($xuiLastSeenRaw / 1000));
+                                $xuiLastSeenDt->setTimezone(new DateTimeZone('Asia/Tehran'));
+                                $xuiLastSeenText = ' — آخرین اتصال: ' . jdate('Y/m/d H:i:s', $xuiLastSeenDt->getTimestamp());
+                            } catch (Throwable $e) {
+                            }
+                        }
+                        $textinfo .= "\n📱 دستگاه: {$xuiDeviceLabel}{$xuiLastSeenText}";
+                    }
+                } else {
+                    $textinfo .= "\n👥 دستگاه‌های متصل: 0 از {$xuiHwidLimitConfigured} دستگاه";
+                }
+            }
+        }
+    } elseif (($marzban['type'] ?? '') == "rebecca") {
+        $rebeccaIpGuardActive = (($marzban['ip_limit_guard'] ?? '') === 'onipguard');
+        if ($rebeccaIpGuardActive) {
+            $rebeccaIpLimitConfigured = intval($nameloc['ip_limit'] ?? 0);
+            $rebeccaIpLimitText = $rebeccaIpLimitConfigured > 0 ? "{$rebeccaIpLimitConfigured} کاربر" : 'نامحدود';
+            $textinfo .= "\n👥 تعداد کاربر مجاز: $rebeccaIpLimitText";
+            $rebeccaInsightsAllowed = !function_exists('rebeccaAccessInsightsPermissionStatus')
+                || (rebeccaAccessInsightsPermissionStatus($marzban['name_panel'])['status'] ?? false) === true;
+            if ($rebeccaInsightsAllowed && function_exists('rebeccaClientIpSummary')) {
+                $rebeccaIpSummary = rebeccaClientIpSummary($marzban['name_panel'], $DataUserOut['username'] ?? '');
+                if (!empty($rebeccaIpSummary['status']) && function_exists('faoxima_cap_ip_summary')) {
+                    $rebeccaIpSummary = faoxima_cap_ip_summary($rebeccaIpSummary, $rebeccaIpLimitConfigured);
+                }
+                if (!empty($rebeccaIpSummary['status'])) {
+                    $textinfo .= "\n🌐 تعداد IP مشاهده‌شده: " . intval($rebeccaIpSummary['count']);
+                    if (!empty($rebeccaIpSummary['raw'])) {
+                        foreach (array_slice($rebeccaIpSummary['raw'], 0, 5) as $rebeccaRawIp) {
+                            $textinfo .= "\n📍 IP متصل: " . htmlspecialchars($rebeccaRawIp, ENT_QUOTES, 'UTF-8');
+                        }
+                    }
+                } else {
+                    $textinfo .= "\n🌐 اطلاعات IP متصل در حال حاضر در دسترس نیست.";
+                }
+            }
+        }
+    } elseif (($marzban['type'] ?? '') == "pasarguard") {
+        $pasarguardHwidLimitConfigured = intval($DataUserOut['hwid_limit'] ?? 0);
+        if ($pasarguardHwidLimitConfigured > 0 && function_exists('pasarguardGetUserHwids')) {
+            $pasarguardHwidResponse = pasarguardGetUserHwids($DataUserOut['username'] ?? $nameloc['username'], $marzban['name_panel']);
+            if (empty($pasarguardHwidResponse['error']) && !empty($pasarguardHwidResponse['body'])) {
+                $pasarguardHwidData = json_decode($pasarguardHwidResponse['body'], true);
+                $pasarguardHwidList = is_array($pasarguardHwidData['hwids'] ?? null) ? $pasarguardHwidData['hwids'] : [];
+                $textinfo .= "\n👥 دستگاه‌های متصل: " . count($pasarguardHwidList) . " از {$pasarguardHwidLimitConfigured} دستگاه";
+                foreach (array_slice($pasarguardHwidList, 0, 5) as $pasarguardHwidEntry) {
+                    $pasarguardDeviceOs = (string) ($pasarguardHwidEntry['device_os'] ?? '');
+                    $pasarguardDeviceModel = (string) ($pasarguardHwidEntry['device_model'] ?? '');
+                    $pasarguardDeviceLabel = $pasarguardDeviceOs !== '' ? ($pasarguardDeviceModel !== '' ? "{$pasarguardDeviceOs} ({$pasarguardDeviceModel})" : $pasarguardDeviceOs) : 'نامشخص';
+                    $pasarguardLastUsedRaw = (string) ($pasarguardHwidEntry['last_used_at'] ?? '');
+                    $pasarguardLastSeenText = '';
+                    if ($pasarguardLastUsedRaw !== '') {
+                        try {
+                            $pasarguardLastSeenDt = new DateTime($pasarguardLastUsedRaw, new DateTimeZone('UTC'));
+                            $pasarguardLastSeenDt->setTimezone(new DateTimeZone('Asia/Tehran'));
+                            $pasarguardLastSeenText = ' — آخرین اتصال: ' . jdate('Y/m/d H:i:s', $pasarguardLastSeenDt->getTimestamp());
+                        } catch (Throwable $e) {
+                        }
+                    }
+                    $textinfo .= "\n📱 دستگاه: {$pasarguardDeviceLabel}{$pasarguardLastSeenText}";
+                }
+            } else {
+                $textinfo .= "\n👥 دستگاه‌های متصل: 0 از {$pasarguardHwidLimitConfigured} دستگاه";
+            }
+        }
+    } elseif (($marzban['type'] ?? '') == "remnawave") {
+        $remnaHwidLimitConfigured = intval($DataUserOut['hwid_limit'] ?? 0);
+        if ($remnaHwidLimitConfigured > 0 && function_exists('remnawave_get_user_hwid_devices')) {
+            $remnaHwidResponse = remnawave_get_user_hwid_devices($marzban['name_panel'], $DataUserOut['username'] ?? $nameloc['username']);
+            if (($remnaHwidResponse['status'] ?? '') === 'successful') {
+                $remnaHwidList = is_array($remnaHwidResponse['devices'] ?? null) ? $remnaHwidResponse['devices'] : [];
+                $textinfo .= "\n👥 دستگاه‌های متصل: " . count($remnaHwidList) . " از {$remnaHwidLimitConfigured} دستگاه";
+                foreach (array_slice($remnaHwidList, 0, 5) as $remnaHwidEntry) {
+                    $remnaDevicePlatform = (string) ($remnaHwidEntry['platform'] ?? '');
+                    $remnaDeviceModel = (string) ($remnaHwidEntry['deviceModel'] ?? '');
+                    $remnaDeviceLabel = $remnaDevicePlatform !== '' ? ($remnaDeviceModel !== '' ? "{$remnaDevicePlatform} ({$remnaDeviceModel})" : $remnaDevicePlatform) : 'نامشخص';
+                    $remnaLastUsedRaw = (string) ($remnaHwidEntry['updatedAt'] ?? '');
+                    $remnaLastSeenText = '';
+                    if ($remnaLastUsedRaw !== '') {
+                        try {
+                            $remnaLastSeenDt = new DateTime($remnaLastUsedRaw, new DateTimeZone('UTC'));
+                            $remnaLastSeenDt->setTimezone(new DateTimeZone('Asia/Tehran'));
+                            $remnaLastSeenText = ' — آخرین اتصال: ' . jdate('Y/m/d H:i:s', $remnaLastSeenDt->getTimestamp());
+                        } catch (Throwable $e) {
+                        }
+                    }
+                    $textinfo .= "\n📱 دستگاه: {$remnaDeviceLabel}{$remnaLastSeenText}";
+                }
+            } else {
+                $textinfo .= "\n👥 دستگاه‌های متصل: 0 از {$remnaHwidLimitConfigured} دستگاه";
+            }
+        }
     }
     if ($user['step'] == "getuseragnetservice") {
         sendmessage($from_id, $textinfo, $keyboardsetting, 'html');
@@ -1704,79 +2183,14 @@ $textconnect
     }
     step('home', $from_id);
     return;
-} elseif (preg_match('/^nm_buy_service_(\w+)/', $datain, $dataget)) {
-    $oldInvoiceId = $dataget[1];
-    $oldInvoice = select("invoice", "*", "id_invoice", $oldInvoiceId, "select");
-    if (!$oldInvoice || (string)($oldInvoice['id_user'] ?? '') !== (string)$from_id) {
-        telegram('answerCallbackQuery', [
-            'callback_query_id' => $callback_query_id,
-            'text' => '❌ سرویس مورد نظر پیدا نشد.',
-            'show_alert' => true,
-            'cache_time' => 3,
-        ]);
-        return;
-    }
-    $freshUser = select("user", "*", "id", $from_id, "select");
-    if (!$freshUser) $freshUser = $user;
-    $panelKeyboard = function_exists('nmNationalBuyPanelKeyboard') ? nmNationalBuyPanelKeyboard($oldInvoice, $freshUser) : false;
-    if (!$panelKeyboard) {
-        telegram('answerCallbackQuery', [
-            'callback_query_id' => $callback_query_id,
-            'text' => '❌ موقعیت سرویس قابل انتخاب پیدا نشد.',
-            'show_alert' => true,
-            'cache_time' => 3,
-        ]);
-        return;
-    }
-    $msg = "📍 موقعیت سرویس اینترنت ملی را انتخاب کنید.";
-    if (isset($message_id)) {
-        Editmessagetext($from_id, $message_id, $msg, $panelKeyboard);
-    } else {
-        sendmessage($from_id, $msg, $panelKeyboard, 'HTML');
-    }
-    step('home', $from_id);
-    return;
-} elseif (preg_match('/^nm_buy_panel_(\w+)_(\w+)/', $datain, $dataget)) {
-    $oldInvoiceId = $dataget[1];
-    $selectedPanelId = $dataget[2];
-    $oldInvoice = select("invoice", "*", "id_invoice", $oldInvoiceId, "select");
-    if (!$oldInvoice || (string)($oldInvoice['id_user'] ?? '') !== (string)$from_id) {
-        telegram('answerCallbackQuery', [
-            'callback_query_id' => $callback_query_id,
-            'text' => '❌ سرویس مورد نظر پیدا نشد.',
-            'show_alert' => true,
-            'cache_time' => 3,
-        ]);
-        return;
-    }
-    $selectedPanel = function_exists('nmPanelById') ? nmPanelById($selectedPanelId) : select("marzban_panel", "*", "id", $selectedPanelId, "select");
-    if (!$selectedPanel) {
-        telegram('answerCallbackQuery', [
-            'callback_query_id' => $callback_query_id,
-            'text' => '❌ پنل انتخاب شده پیدا نشد.',
-            'show_alert' => true,
-            'cache_time' => 3,
-        ]);
-        return;
-    }
-    $freshUser = select("user", "*", "id", $from_id, "select");
-    if (!$freshUser) $freshUser = $user;
-    $result = function_exists('nmCreateNationalServiceFromInvoice')
-        ? nmCreateNationalServiceFromInvoice($oldInvoice, $freshUser, $selectedPanel)
-        : ['status' => false, 'message' => '❌ تابع خرید سرویس اینترنت ملی در دسترس نیست.'];
-    $backKeyboard = json_encode(['inline_keyboard' => [
-        [['text' => $textbotlang['users']['stateus']['backlist'] ?? '🏠 بازگشت به لیست سرویس ها', 'callback_data' => 'backorder']],
-    ]], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    $msg = $result['message'] ?? '❌ عملیات خرید سرویس اینترنت ملی انجام نشد.';
-    if (isset($message_id)) {
-        Editmessagetext($from_id, $message_id, $msg, $backKeyboard);
-    } else {
-        sendmessage($from_id, $msg, $backKeyboard, 'HTML');
-    }
-    step('home', $from_id);
-    return;
 } elseif (preg_match('/^infocard_qr_(\w+)$/', $datain, $dataget)) {
 
+    if (function_exists('isQrDisabled') && isQrDisabled()) {
+        if (isset($callback_query_id)) {
+            telegram('answerCallbackQuery', ['callback_query_id' => $callback_query_id, 'cache_time' => 1]);
+        }
+        return;
+    }
     $id_invoice = $dataget[1];
     $nameloc = select("invoice", "*", "id_invoice", $id_invoice, "select");
     if (is_array($nameloc) && (string)($nameloc['id_user'] ?? '') !== (string)$from_id) {
@@ -1791,32 +2205,41 @@ $textconnect
         sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
         return;
     }
-    if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     if ($DataUserOut['status'] == "Unsuccessful" || empty($DataUserOut['subscription_url'])) {
-        sendmessage($from_id, "❌ امکان دریافت QR Code در حال حاضر وجود ندارد.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_qr_unavailable'] ?? "❌ امکان دریافت QR Code در حال حاضر وجود ندارد.", null, 'html');
         return;
     }
     $subscriptionurl = $DataUserOut['subscription_url'];
     $randomString = bin2hex(random_bytes(3));
     $urlimage = "$from_id$randomString.png";
     $qrCode = createqrcode($subscriptionurl);
+    if ($qrCode === null) {
+        sendmessage($from_id, $datatextbot['dyn_errors_qr_too_long'] ?? "❌ ساخت QR کد برای این لینک ممکن نیست — محتوای آن طولانی‌تر از ظرفیت QR کد است. از دکمهٔ کپی/متن بالا استفاده کنید.", null, 'HTML');
+        sendmessage($from_id, "<code>{$subscriptionurl}</code>", rx_copy_button_keyboard($subscriptionurl, '📋 کپی لینک اشتراک'), 'HTML');
+        return;
+    }
     file_put_contents($urlimage, $qrCode->getString());
     addBackgroundImage($urlimage, $qrCode, 'images.jpg');
-    telegram('sendphoto', [
+    $subQrPayload = [
         'chat_id' => $from_id,
         'photo' => new CURLFile($urlimage),
         'caption' => "<code>{$subscriptionurl}</code>",
         'parse_mode' => "HTML",
-    ]);
+    ];
+    $subQrCopyKb = rx_copy_button_keyboard($subscriptionurl, '📋 کپی لینک اشتراک');
+    if ($subQrCopyKb !== null) {
+        $subQrPayload['reply_markup'] = $subQrCopyKb;
+    }
+    telegram('sendphoto', $subQrPayload);
     unlink($urlimage);
     if (isset($callback_query_id)) {
         telegram('answerCallbackQuery', [
             'callback_query_id' => $callback_query_id,
             'text' => '✅ QR Code ارسال شد',
             'show_alert' => false,
-            'cache_time' => 5,
+            'cache_time' => 0,
         ]);
     }
 } elseif (preg_match('/subscriptionurl_(\w+)/', $datain, $dataget) || (is_string($text) && strpos($text, "/sub ") !== false)) {
@@ -1832,25 +2255,39 @@ $textconnect
     }
     if ($nameloc == false)
         return;
+    if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc)) { step('home', $from_id); return; }
     if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
+    $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    if (($marzban_list_get['type'] ?? '') == "Manualsale") {
+        $manualDelivery = rxManualsaleDelivery($nameloc['username']);
+        if (trim((string) $manualDelivery['sub']) === '') {
+            sendmessage($from_id, $datatextbot['dyn_errors_config_read_error'] ?? "❌  خطا در خواندن اطلاعات کانفیگ با پشتیبانی در ارتباط باشید.", null, 'html');
+            return;
+        }
+        $manualBackRow = [[
+            'text' => $textbotlang['users']['stateus']['backinfo'],
+            'callback_data' => "productcheckdata",
+        ]];
+        $bakinfos = rx_copy_button_keyboard($manualDelivery['sub'], '📋 کپی لینک اشتراک', [$manualBackRow]);
+        if ($bakinfos === null) {
+            $bakinfos = json_encode(['inline_keyboard' => [$manualBackRow]]);
+        }
+        update("user", "Processing_value", $nameloc['username'], "id", $from_id);
+        sendmessage($from_id, "
+{$textbotlang['users']['stateus']['linksub']}
 
-    if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc)) {
-        step('home', $from_id);
+<code>{$manualDelivery['sub']}</code>", $bakinfos, 'HTML');
         return;
     }
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     $Check_token = token_panel($marzban_list_get['url_panel'], $marzban_list_get['username_panel'], $marzban_list_get['password_panel']);
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     if ($DataUserOut['status'] == "Unsuccessful") {
         $offlinePanel = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
         $offlineKeyboard = json_encode(['inline_keyboard' => [
-            [['text' => '📦 دریافت اشتراک از انبار پشتیبان', 'callback_data' => 'configget_' . $nameloc['id_invoice'] . '_sub']],
             [['text' => '♻️ تمدید سرویس', 'callback_data' => 'extend_' . $nameloc['id_invoice']], ['text' => '🛒 خرید سرویس جدید', 'callback_data' => 'buy_service']],
             [['text' => $textbotlang['users']['stateus']['backlist'], 'callback_data' => 'backorder']]
         ]]);
-        sendmessage($from_id, "❌ سامانه استعلام سرویس مورد نظر درحال حاضر در دسترس نیست.
-
-🚨 اگر پنل اضطراری روشن باشد، امکان تمدید مستقیم کانفیگ قبلی پنل اصلی محدود است؛ برای ادامه می‌توانید «تمدید سرویس» را از مسیر اضطراری/انبار انجام دهید یا سرویس جدید تهیه کنید.", $offlineKeyboard, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_panel_connection_error'] ?? "❌ سامانه استعلام سرویس مورد نظر درحال حاضر در دسترس نیست.", $offlineKeyboard, 'html');
         return;
     }
     $subscriptionurl = $DataUserOut['subscription_url'];
@@ -1872,44 +2309,43 @@ $textconnect
     update("user", "Processing_value", $nameloc['username'], "id", $from_id);
     $subscriptionurl = $DataUserOut['subscription_url'];
     $randomString = bin2hex(random_bytes(3));
-
-    $infoCardDelivered = false;
-    if (function_exists('getInfoCardStatus') && getInfoCardStatus() && function_exists('nm_renderInfoCardForInvoice')) {
-        $cardPath = nm_renderInfoCardForInvoice($marzban_list_get, $nameloc['username'], $nameloc['id_invoice'], $from_id);
-        if ($cardPath !== null) {
-            $cardKeyboard = function_exists('nm_appendInfoCardQrButton')
-                ? nm_appendInfoCardQrButton($bakinfos, $nameloc['id_invoice'])
-                : $bakinfos;
-            telegram('sendphoto', [
-                'chat_id' => $from_id,
-                'photo' => new CURLFile($cardPath),
-                'reply_markup' => $cardKeyboard,
-                'caption' => $textsub,
-                'parse_mode' => "HTML",
-            ]);
-            @unlink($cardPath);
-            $infoCardDelivered = true;
-        }
+    $subBackRow = [[
+        'text' => $textbotlang['users']['stateus']['backinfo'],
+        'callback_data' => "productcheckdata",
+    ]];
+    $subCopyKb = rx_copy_button_keyboard($subscriptionurl, '📋 کپی لینک اشتراک', [$subBackRow]);
+    if ($subCopyKb !== null) {
+        $bakinfos = $subCopyKb;
     }
-    if (!$infoCardDelivered) {
-        $urlimage = "$from_id$randomString.png";
+
+    if ($marzban_list_get['type'] == "WGDashboard") {
+        sendmessage($from_id, $textsub, $bakinfos, 'HTML');
+        $urlimage = "{$marzban_list_get['inboundid']}_{$nameloc['username']}.conf";
+        file_put_contents($urlimage, $DataUserOut['subscription_url']);
+        sendDocument($from_id, $urlimage, "⚙️ کانفیگ شما");
+        unlink($urlimage);
+    } elseif ((!function_exists('isQrDisabled') || !isQrDisabled())
+        && !(function_exists('nmPanelNationalEnabled') && nmPanelNationalEnabled($marzban_list_get))
+        && trim((string) $subscriptionurl) !== '') {
         $qrCode = createqrcode($subscriptionurl);
+        if ($qrCode === null) {
+            sendmessage($from_id, $textsub, $bakinfos, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_qr_too_long'] ?? "❌ ساخت QR کد برای این لینک ممکن نیست — محتوای آن طولانی‌تر از ظرفیت QR کد است. از متن بالا کپی کنید.", null, 'HTML');
+            return;
+        }
+        $urlimage = "{$from_id}{$randomString}.png";
         file_put_contents($urlimage, $qrCode->getString());
         addBackgroundImage($urlimage, $qrCode, 'images.jpg');
         telegram('sendphoto', [
             'chat_id' => $from_id,
             'photo' => new CURLFile($urlimage),
-            'reply_markup' => $bakinfos,
             'caption' => $textsub,
             'parse_mode' => "HTML",
+            'reply_markup' => $bakinfos,
         ]);
         unlink($urlimage);
-    }
-    if ($marzban_list_get['type'] == "WGDashboard") {
-        $urlimage = "{$marzban_list_get['inboundid']}_{$nameloc['username']}.conf";
-        file_put_contents($urlimage, $DataUserOut['subscription_url']);
-        sendDocument($from_id, $urlimage, "⚙️ کانفیگ شما");
-        unlink($urlimage);
+    } else {
+        sendmessage($from_id, $textsub, $bakinfos, 'HTML');
     }
 } elseif (preg_match('/removeauto-(\w+)/', $datain, $dataget)) {
     $id_invoice = $dataget[1];
@@ -1923,7 +2359,6 @@ $textconnect
         }
         return;
     }
-    if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     $ManagePanel->RemoveUser($nameloc['Service_location'], $nameloc['username']);
     update('invoice', 'status', 'removebyuser', 'id_invoice', $id_invoice);
@@ -1937,7 +2372,37 @@ $textconnect
             'parse_mode' => "HTML"
         ]);
     }
-    sendmessage($from_id, "📌 سرویس با موفقیت حذف شد", null, 'html');
+    sendmessage($from_id, $datatextbot['dyn_errors_service_deleted'] ?? "📌 سرویس با موفقیت حذف شد", null, 'html');
+} elseif (preg_match('/^configpage_(.*)_(\d+)$/', $datain, $dataget)) {
+    $id_invoice = $dataget[1];
+    $page = (int) $dataget[2];
+    $nameloc = select("invoice", "*", "id_invoice", $id_invoice, "select");
+
+    if (is_array($nameloc) && (string)($nameloc['id_user'] ?? '') !== (string)$from_id) {
+        if (function_exists('rx_log_event')) {
+            rx_log_event('INVOICE_OWNERSHIP_DENIED', 'Handler configpage on non-owned invoice', [
+                'from_id' => $from_id, 'invoice' => $id_invoice, 'handler' => 'configpage',
+            ]);
+        }
+        $nameloc = false;
+    }
+    if ($nameloc == false) {
+        sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
+        return;
+    }
+    $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
+    if ($DataUserOut['status'] == "Unsuccessful" || !is_array($DataUserOut['links'] ?? null)) {
+        sendmessage($from_id, $datatextbot['dyn_errors_panel_unavailable_dot'] ?? "❌ پنل در دسترس نیست.", null, 'html');
+        return;
+    }
+    $_remnaPanelChk = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    if (is_array($_remnaPanelChk) && ($_remnaPanelChk['type'] ?? '') === "remnawave" && function_exists('remnawave_get_configs')) {
+        $remnaConfigs = remnawave_get_configs($nameloc['Service_location'], $nameloc['username']);
+        if (($remnaConfigs['status'] ?? '') === 'successful' && !empty($remnaConfigs['links'])) {
+            $DataUserOut['links'] = $remnaConfigs['links'];
+        }
+    }
+    Editmessagetext($from_id, $message_id, "📌 از لیست زیر یک کانفیگ را انتخاب استفاده نمایید.", keyboard_config($DataUserOut['links'], $id_invoice, true, $page));
 } elseif (preg_match('/config_(\w+)/', $datain, $dataget) || (is_string($text) && strpos($text, "/link ") !== false)) {
     $textCommand = is_string($text) ? $text : '';
     if ($textCommand !== '' && $textCommand[0] === "/") {
@@ -1968,27 +2433,52 @@ $textconnect
         sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
         return;
     }
+    if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc)) { step('home', $from_id); return; }
     if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
-    if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc)) {
-        step('home', $from_id);
+    $_configPanelChk = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    if (is_array($_configPanelChk) && ($_configPanelChk['type'] ?? '') === "Manualsale") {
+        $manualDelivery = rxManualsaleDelivery($nameloc['username']);
+        $manualFileItems = rxManualsaleFileItems($manualDelivery['items'] ?? []);
+        if (!empty($manualFileItems)) {
+            $manualBackKb = json_encode(['inline_keyboard' => [[
+                ['text' => $textbotlang['users']['stateus']['backinfo'], 'callback_data' => "product_{$nameloc['id_invoice']}"],
+            ]]], JSON_UNESCAPED_UNICODE);
+            $sentFiles = rxManualsaleSendFileItems($from_id, $nameloc['username'], $manualFileItems, '', $manualBackKb);
+            if (!$sentFiles) {
+                sendmessage($from_id, $datatextbot['dyn_errors_config_read_error'] ?? "❌  خطا در خواندن اطلاعات کانفیگ با پشتیبانی در ارتباط باشید.", null, 'html');
+            }
+            return;
+        }
+        $manualConfigs = array_values(array_filter($manualDelivery['configs'], function ($item) {
+            return is_string($item) && trim($item) !== '';
+        }));
+        if (empty($manualConfigs)) {
+            sendmessage($from_id, $datatextbot['dyn_errors_config_read_error'] ?? "❌  خطا در خواندن اطلاعات کانفیگ با پشتیبانی در ارتباط باشید.", null, 'html');
+            return;
+        }
+        Editmessagetext($from_id, $message_id, "📌 از لیست زیر یک کانفیگ را انتخاب استفاده نمایید.", keyboard_config($manualConfigs, $nameloc['id_invoice']));
         return;
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     if ($DataUserOut['status'] == "Unsuccessful") {
         $offlinePanel = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
         $offlineKeyboard = json_encode(['inline_keyboard' => [
-            [['text' => '📦 دریافت اشتراک از انبار پشتیبان', 'callback_data' => 'configget_' . $nameloc['id_invoice'] . '_sub']],
             [['text' => '♻️ تمدید سرویس', 'callback_data' => 'extend_' . $nameloc['id_invoice']], ['text' => '🛒 خرید سرویس جدید', 'callback_data' => 'buy_service']],
             [['text' => $textbotlang['users']['stateus']['backlist'], 'callback_data' => 'backorder']]
         ]]);
-        sendmessage($from_id, "❌ سامانه استعلام سرویس مورد نظر درحال حاضر در دسترس نیست.
-
-🚨 اگر پنل اضطراری روشن باشد، امکان تمدید مستقیم کانفیگ قبلی پنل اصلی محدود است؛ برای ادامه می‌توانید «تمدید سرویس» را از مسیر اضطراری/انبار انجام دهید یا سرویس جدید تهیه کنید.", $offlineKeyboard, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_panel_connection_error'] ?? "❌ سامانه استعلام سرویس مورد نظر درحال حاضر در دسترس نیست.", $offlineKeyboard, 'html');
         return;
     }
     if (!is_array($DataUserOut['links'])) {
-        sendmessage($from_id, "❌  خطا در خواندن اطلاعات کانفیگ با پشتیبانی در ارتباط باشید.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_config_read_error'] ?? "❌  خطا در خواندن اطلاعات کانفیگ با پشتیبانی در ارتباط باشید.", null, 'html');
         return;
+    }
+    $_remnaPanelChk = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    if (is_array($_remnaPanelChk) && ($_remnaPanelChk['type'] ?? '') === "remnawave" && function_exists('remnawave_get_configs')) {
+        $remnaConfigs = remnawave_get_configs($nameloc['Service_location'], $nameloc['username']);
+        if (($remnaConfigs['status'] ?? '') === 'successful' && !empty($remnaConfigs['links'])) {
+            $DataUserOut['links'] = $remnaConfigs['links'];
+        }
     }
     Editmessagetext($from_id, $message_id, "📌 از لیست زیر یک کانفیگ را انتخاب استفاده نمایید.", keyboard_config($DataUserOut['links'], $nameloc['id_invoice']));
 } elseif (preg_match('/configget_(.*)_(.*)/', $datain, $dataget)) {
@@ -2007,9 +2497,35 @@ $textconnect
         sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
         return;
     }
-    if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
-    if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc)) {
-        step('home', $from_id);
+    $_configgetPanelChk = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    if (is_array($_configgetPanelChk) && ($_configgetPanelChk['type'] ?? '') === "Manualsale") {
+        $manualDelivery = rxManualsaleDelivery($nameloc['username']);
+        $manualFileItems = rxManualsaleFileItems($manualDelivery['items'] ?? []);
+        if (!empty($manualFileItems)) {
+            $sentFiles = rxManualsaleSendFileItems($from_id, $nameloc['username'], $manualFileItems, '', null);
+            if (!$sentFiles) {
+                sendmessage($from_id, $datatextbot['dyn_errors_config_read_from_panel_error'] ?? "❌ خطا در خواندن کانفیگ از پنل.", null, 'html');
+            }
+            return;
+        }
+        $manualConfigs = array_values(array_filter($manualDelivery['configs'], function ($item) {
+            return is_string($item) && trim($item) !== '';
+        }));
+        if (empty($manualConfigs)) {
+            sendmessage($from_id, $datatextbot['dyn_errors_config_read_from_panel_error'] ?? "❌ خطا در خواندن کانفیگ از پنل.", null, 'html');
+            return;
+        }
+        if ($dataget[2] == "1520") {
+            for ($i = 0; $i < count($manualConfigs); ++$i) {
+                sendmessage($from_id, "<code>" . htmlspecialchars($manualConfigs[$i], ENT_QUOTES, 'UTF-8') . "</code>", rx_copy_button_keyboard($manualConfigs[$i], '📋 کپی کانفیگ'), 'HTML');
+            }
+            return;
+        }
+        if (!isset($manualConfigs[$dataget[2]])) {
+            sendmessage($from_id, $datatextbot['dyn_errors_config_read_from_panel_error'] ?? "❌ خطا در خواندن کانفیگ از پنل.", null, 'html');
+            return;
+        }
+        sendmessage($from_id, "<code>" . htmlspecialchars($manualConfigs[$dataget[2]], ENT_QUOTES, 'UTF-8') . "</code>", rx_copy_button_keyboard($manualConfigs[$dataget[2]], '📋 کپی کانفیگ'), 'HTML');
         return;
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
@@ -2021,55 +2537,195 @@ $textconnect
         ]
     ]);
     if ($DataUserOut['status'] == "Unsuccessful") {
-        $product = nmStockProductForInvoice($nameloc);
-        if (nmStockFallbackForInvoice($nameloc, $product, 'config_button')) {
-            return;
-        }
-        sendmessage($from_id, "❌ پنل در دسترس نیست و موجودی جایگزین متناسب با حجم این سرویس در انبار شبکه‌ملی پیدا نشد.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_panel_unavailable_dot'] ?? "❌ پنل در دسترس نیست.", null, 'html');
         return;
+    }
+    $_remnaPanelChk = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    if (is_array($_remnaPanelChk) && ($_remnaPanelChk['type'] ?? '') === "remnawave" && function_exists('remnawave_get_configs')) {
+        $remnaConfigs = remnawave_get_configs($nameloc['Service_location'], $nameloc['username']);
+        if (($remnaConfigs['status'] ?? '') === 'successful' && !empty($remnaConfigs['links'])) {
+            $DataUserOut['links'] = $remnaConfigs['links'];
+        }
     }
     if (!isset($DataUserOut['links']) || !is_array($DataUserOut['links']) || count($DataUserOut['links']) === 0) {
-        $product = nmStockProductForInvoice($nameloc);
-        if (nmStockFallbackForInvoice($nameloc, $product, 'config_button')) {
-            return;
-        }
-        sendmessage($from_id, "❌ خطا در خواندن کانفیگ از پنل و موجودی جایگزین هم برای این حجم موجود نیست.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_config_read_from_panel_error'] ?? "❌ خطا در خواندن کانفیگ از پنل.", null, 'html');
         return;
     }
+    $rwCgSel = $DataUserOut['links'][$dataget[2]] ?? '';
     $config = "";
     if ($dataget[2] == "1520") {
         for ($i = 0; $i < count($DataUserOut['links']); ++$i) {
-            $randomString = bin2hex(random_bytes(3));
-            $urlimage = "$from_id$randomString.png";
-            $qrCode = createqrcode($DataUserOut['links'][$i]);
-            file_put_contents($urlimage, $qrCode->getString());
-            addBackgroundImage($urlimage, $qrCode, 'images.jpg');
-            telegram('sendphoto', [
-                'chat_id' => $from_id,
-                'photo' => new CURLFile($urlimage),
-                'caption' => "<code>{$DataUserOut['links'][$i]}</code>",
-                'parse_mode' => "HTML",
-            ]);
-            unlink($urlimage);
+            if ($i === 0 && !empty($DataUserOut['single_config_file']) && is_array($DataUserOut['single_config_file'])) {
+                continue;
+            }
+            $allConfigItem = (string) $DataUserOut['links'][$i];
+            if (function_exists('xui_wg_conf_from_link')) {
+                $allWgConf = xui_wg_conf_from_link($allConfigItem);
+                if (is_array($allWgConf)) {
+                    $allWgName = xui_wg_conf_filename($allConfigItem, $allWgConf['protocol'], $i);
+                    $allWgDest = "{$from_id}_" . bin2hex(random_bytes(3)) . '_' . $allWgName;
+                    file_put_contents($allWgDest, $allWgConf['conf']);
+                    $allWgLabel = $allWgConf['protocol'] === 'amneziawg' ? 'AmneziaWG' : 'WireGuard';
+                    telegram('sendDocument', [
+                        'chat_id' => $from_id,
+                        'document' => new CURLFile($allWgDest),
+                        'caption' => "⚙️ کانفیگ شما ({$allWgLabel})",
+                        'parse_mode' => 'HTML',
+                    ]);
+                    unlink($allWgDest);
+                    continue;
+                }
+            }
+            if (preg_match('/^https?:\/\//i', $allConfigItem)) {
+                $allConfigItem = strtok($allConfigItem, '#');
+            }
+            sendmessage($from_id, "<code>{$allConfigItem}</code>", rx_copy_button_keyboard($allConfigItem, '📋 کپی کانفیگ'), 'HTML');
         }
         return;
     }
-    $randomString = bin2hex(random_bytes(3));
-    $urlimage = "$from_id$randomString.png";
-    $qrCode = createqrcode($DataUserOut['links'][$dataget[2]]);
-    file_put_contents($urlimage, $qrCode->getString());
-    addBackgroundImage($urlimage, $qrCode, 'images.jpg');
-    telegram('sendphoto', [
-        'chat_id' => $from_id,
-        'photo' => new CURLFile($urlimage),
-        'caption' => "<code>{$DataUserOut['links'][$dataget[2]]}</code>",
-        'parse_mode' => "HTML",
-    ]);
-    unlink($urlimage);
+    $selectedConfig = (string) $DataUserOut['links'][$dataget[2]];
+    if ((int) $dataget[2] === 0 && !empty($DataUserOut['single_config_file']) && is_array($DataUserOut['single_config_file'])) {
+        $singleConfigFile = $DataUserOut['single_config_file'];
+        $xuiFileDest = "{$from_id}_" . bin2hex(random_bytes(3)) . '_' . $singleConfigFile['filename'];
+        file_put_contents($xuiFileDest, $singleConfigFile['value']);
+        telegram('sendDocument', [
+            'chat_id' => $from_id,
+            'document' => new CURLFile($xuiFileDest),
+            'caption' => "⚙️ کانفیگ شما",
+            'parse_mode' => 'HTML',
+        ]);
+        unlink($xuiFileDest);
+        return;
+    }
+    if (function_exists('xui_wg_conf_from_link')) {
+        $xuiWgConf = xui_wg_conf_from_link($selectedConfig);
+        if (is_array($xuiWgConf)) {
+            $xuiWgName = xui_wg_conf_filename($selectedConfig, $xuiWgConf['protocol'], (int) $dataget[2]);
+            $xuiWgDest = "{$from_id}_" . bin2hex(random_bytes(3)) . '_' . $xuiWgName;
+            file_put_contents($xuiWgDest, $xuiWgConf['conf']);
+            $xuiWgLabel = $xuiWgConf['protocol'] === 'amneziawg' ? 'AmneziaWG' : 'WireGuard';
+            telegram('sendDocument', [
+                'chat_id' => $from_id,
+                'document' => new CURLFile($xuiWgDest),
+                'caption' => "⚙️ کانفیگ شما ({$xuiWgLabel})",
+                'parse_mode' => 'HTML',
+            ]);
+            unlink($xuiWgDest);
+            return;
+        }
+    }
+    if (function_exists('rebeccaConfigDownloadInfo')) {
+        $rebeccaDownloadInfo = rebeccaConfigDownloadInfo($selectedConfig);
+        if ($rebeccaDownloadInfo !== null) {
+            $rebeccaDownloadDest = "{$from_id}_" . bin2hex(random_bytes(3)) . '_' . $rebeccaDownloadInfo['filename'];
+            if (rebeccaDownloadConfigFile($rebeccaDownloadInfo['url'], $rebeccaDownloadDest)) {
+                sendDocument($from_id, $rebeccaDownloadDest, "⚙️ کانفیگ شما");
+                unlink($rebeccaDownloadDest);
+            } else {
+                sendmessage($from_id, $datatextbot['dyn_errors_config_read_from_panel_error'] ?? "❌ خطا در خواندن کانفیگ از پنل.", null, 'html');
+            }
+            return;
+        }
+    }
+    if (preg_match('/^https?:\/\//i', $selectedConfig)) {
+        $selectedConfig = strtok($selectedConfig, '#');
+    }
+    $isStructuredConnectionInfo = strpos($selectedConfig, "\n") !== false && !preg_match('/^[a-zA-Z][a-zA-Z0-9+.\-]*:\/\//', $selectedConfig);
+    $qrWantedForConfig = (!function_exists('isQrDisabled') || !isQrDisabled())
+        && !(function_exists('nmPanelNationalEnabled') && nmPanelNationalEnabled($_configgetPanelChk))
+        && !$isStructuredConnectionInfo
+        && !preg_match('#^(tg|tg-proxy|proxy|wireguard|wg|vpn|awg|amneziawg)://#i', trim($selectedConfig))
+        && trim($selectedConfig) !== '';
+    $selectedConfigCopyKb = rx_copy_button_keyboard($selectedConfig, '📋 کپی کانفیگ');
+    if ($qrWantedForConfig) {
+        $qrCode = createqrcode($selectedConfig);
+        if ($qrCode === null) {
+            sendmessage($from_id, "<code>{$selectedConfig}</code>", $selectedConfigCopyKb, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_qr_too_long'] ?? "❌ ساخت QR کد برای این کانفیگ ممکن نیست — محتوای آن طولانی‌تر از ظرفیت QR کد است. از متن بالا کپی کنید.", null, 'HTML');
+            return;
+        }
+        $urlimage = "{$from_id}" . bin2hex(random_bytes(3)) . ".png";
+        file_put_contents($urlimage, $qrCode->getString());
+        addBackgroundImage($urlimage, $qrCode, 'images.jpg');
+        $photoPayload = [
+            'chat_id' => $from_id,
+            'photo' => new CURLFile($urlimage),
+            'caption' => "<code>{$selectedConfig}</code>",
+            'parse_mode' => "HTML",
+        ];
+        if ($selectedConfigCopyKb !== null) {
+            $photoPayload['reply_markup'] = $selectedConfigCopyKb;
+        }
+        telegram('sendphoto', $photoPayload);
+        unlink($urlimage);
+    } else {
+        sendmessage($from_id, "<code>{$selectedConfig}</code>", $selectedConfigCopyKb, 'HTML');
+    }
+} elseif (preg_match('/^remnausage_(.+)$/', $datain, $rwm)) {
+    $rwId = $rwm[1];
+    $rwInv = select("invoice", "*", "id_invoice", $rwId, "select");
+    if (!is_array($rwInv) || (string)($rwInv['id_user'] ?? '') !== (string)$from_id) {
+        sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
+        return;
+    }
+    $rwBw = function_exists('remnawave_user_bandwidth') ? remnawave_user_bandwidth($rwInv['Service_location'], $rwInv['username']) : ['status' => 'Unsuccessful', 'text' => ''];
+    if (($rwBw['status'] ?? '') !== 'successful') {
+        sendmessage($from_id, $datatextbot['dyn_errors_usage_stats_failed'] ?? "❌ دریافت آمار مصرف ناموفق بود.", null, 'html');
+        return;
+    }
+    $rwBack = json_encode(['inline_keyboard' => [[['text' => $textbotlang['users']['stateus']['backinfo'], 'callback_data' => "product_{$rwInv['id_invoice']}"]]]]);
+    sendmessage($from_id, "📊 مصرف ۳۰ روز اخیر به‌تفکیک سرور:\n\n" . $rwBw['text'], $rwBack, 'HTML');
+    return;
+} elseif (preg_match('/^remnasetsquad_(.+)_([0-9a-fA-F-]{36})$/', $datain, $rwm)) {
+    $rwId = $rwm[1];
+    $rwSquad = $rwm[2];
+    $rwInv = select("invoice", "*", "id_invoice", $rwId, "select");
+    if (!is_array($rwInv) || (string)($rwInv['id_user'] ?? '') !== (string)$from_id) {
+        sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
+        return;
+    }
+    $rwPanel = select("marzban_panel", "*", "name_panel", $rwInv['Service_location'], "select");
+    if (!is_array($rwPanel) || ($rwPanel['remna_server_picker'] ?? 'off') !== 'on') {
+        sendmessage($from_id, $datatextbot['dyn_errors_feature_unavailable_short'] ?? "❌ این قابلیت در دسترس نیست.", null, 'html');
+        return;
+    }
+    $rwSet = function_exists('remnawave_set_squads') ? remnawave_set_squads($rwInv['Service_location'], $rwInv['username'], [$rwSquad]) : ['status' => 'Unsuccessful'];
+    $rwBack = json_encode(['inline_keyboard' => [[['text' => $textbotlang['users']['stateus']['backinfo'], 'callback_data' => "product_{$rwInv['id_invoice']}"]]]]);
+    sendmessage($from_id, ($rwSet['status'] ?? '') === 'successful' ? "✅ سرور با موفقیت تغییر کرد." : "❌ تغییر سرور ناموفق بود.", $rwBack, 'HTML');
+    return;
+} elseif (preg_match('/^remnapicker_(.+)$/', $datain, $rwm)) {
+    $rwId = $rwm[1];
+    $rwInv = select("invoice", "*", "id_invoice", $rwId, "select");
+    if (!is_array($rwInv) || (string)($rwInv['id_user'] ?? '') !== (string)$from_id) {
+        sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
+        return;
+    }
+    $rwPanel = select("marzban_panel", "*", "name_panel", $rwInv['Service_location'], "select");
+    if (!is_array($rwPanel) || ($rwPanel['remna_server_picker'] ?? 'off') !== 'on') {
+        sendmessage($from_id, $datatextbot['dyn_errors_feature_unavailable_short'] ?? "❌ این قابلیت در دسترس نیست.", null, 'html');
+        return;
+    }
+    $rwMgr = function_exists('remnawave_manager_for') ? remnawave_manager_for($rwInv['Service_location']) : null;
+    $rwSq = $rwMgr ? $rwMgr->getInternalSquads($pdo) : ['ok' => false];
+    if (empty($rwSq['ok']) || !is_array($rwSq['data'])) {
+        sendmessage($from_id, $datatextbot['dyn_errors_server_list_failed'] ?? "❌ دریافت لیست سرورها ناموفق بود.", null, 'html');
+        return;
+    }
+    $rwList = is_array($rwSq['data']['internalSquads'] ?? null) ? $rwSq['data']['internalSquads'] : (isset($rwSq['data'][0]) ? $rwSq['data'] : []);
+    $rwKb = ['inline_keyboard' => []];
+    foreach ($rwList as $sq) {
+        if (!is_array($sq) || empty($sq['uuid'])) {
+            continue;
+        }
+        $rwKb['inline_keyboard'][] = [['text' => "🌍 " . (string)($sq['name'] ?? $sq['uuid']), 'callback_data' => "remnasetsquad_{$rwInv['id_invoice']}_{$sq['uuid']}"]];
+    }
+    $rwKb['inline_keyboard'][] = [['text' => $textbotlang['users']['stateus']['backinfo'], 'callback_data' => "product_{$rwInv['id_invoice']}"]];
+    Editmessagetext($from_id, $message_id, "🌍 یک سرور (Squad) انتخاب کنید:", json_encode($rwKb));
+    return;
 } elseif (preg_match('/changestatus_(\w+)/', $datain, $dataget)) {
-    $statuschangeservice = select("shopSetting", "*", "Namevalue", "statuschangeservice", "select")['value'];
-    if ($statuschangeservice == "offstatus") {
-        sendmessage($from_id, "❌ این قابلیت درحال حاضر در دسترس نیست", null, 'html');
+    $rxChangeStatusInvoice = select("invoice", "*", "id_invoice", $dataget[1], "select");
+    if (is_array($rxChangeStatusInvoice) && !panel_feature_enabled($rxChangeStatusInvoice['Service_location'], 'changeservice')) {
+        sendmessage($from_id, $datatextbot['dyn_errors_feature_currently_unavailable_nodot'] ?? "❌ این قابلیت درحال حاضر در دسترس نیست", null, 'html');
         return;
     }
     $id_invoice = $dataget[1];
@@ -2083,38 +2739,32 @@ $textconnect
         }
         return;
     }
-    if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
     if ($nameloc['Status'] == "disablebyadmin") {
-        sendmessage($from_id, "❌ این قابلیت درحال حاضر در دسترس نیست", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_feature_currently_unavailable_nodot'] ?? "❌ این قابلیت درحال حاضر در دسترس نیست", null, 'html');
         return;
     }
+    if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc)) { step('home', $from_id); return; }
+    if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
 
-    if (function_exists('nmStockForInvoice') && nmStockForInvoice($nameloc)) {
-        sendmessage($from_id, "❌ این سرویس از انبار شبکه‌ملی تحویل شده است و امکان روشن/خاموش کردن آن از پنل اصلی وجود ندارد.", null, 'html');
-        return;
-    }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     if ($DataUserOut['status'] == "on_hold") {
-        sendmessage($from_id, "❌ هنوز به کانفیگ متصل نشده اید و امکان تغییر وضعیت سرویس وجود ندارد. بعد از متصل شدن به کانفیگ می توانید از این قابلیت استفاده نمایید.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_not_connected_change_status'] ?? "❌ هنوز به کانفیگ متصل نشده اید و امکان تغییر وضعیت سرویس وجود ندارد. بعد از متصل شدن به کانفیگ می توانید از این قابلیت استفاده نمایید.", null, 'html');
         return;
     }
     if ($DataUserOut['status'] == "Unsuccessful") {
         $offlinePanel = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
         $offlineKeyboard = json_encode(['inline_keyboard' => [
-            [['text' => '📦 دریافت اشتراک از انبار پشتیبان', 'callback_data' => 'configget_' . $nameloc['id_invoice'] . '_sub']],
             [['text' => '♻️ تمدید سرویس', 'callback_data' => 'extend_' . $nameloc['id_invoice']], ['text' => '🛒 خرید سرویس جدید', 'callback_data' => 'buy_service']],
             [['text' => $textbotlang['users']['stateus']['backlist'], 'callback_data' => 'backorder']]
         ]]);
-        sendmessage($from_id, "❌ سامانه استعلام سرویس مورد نظر درحال حاضر در دسترس نیست.
-
-🚨 اگر پنل اضطراری روشن باشد، امکان تمدید مستقیم کانفیگ قبلی پنل اصلی محدود است؛ برای ادامه می‌توانید «تمدید سرویس» را از مسیر اضطراری/انبار انجام دهید یا سرویس جدید تهیه کنید.", $offlineKeyboard, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_panel_connection_error'] ?? "❌ سامانه استعلام سرویس مورد نظر درحال حاضر در دسترس نیست.", $offlineKeyboard, 'html');
         return;
     }
     if ($DataUserOut['status'] == "active") {
         $confirmdisableaccount = json_encode([
             'inline_keyboard' => [
                 [
-                    ['text' => '✅ تایید و غیرفعال کردن کانفیگ', 'callback_data' => "confirmaccountdisable_" . $id_invoice],
+                    ['text' => '✅ تایید و غیرفعال کانفیگ', 'callback_data' => "confirmaccountdisable_" . $id_invoice],
                 ],
                 [
                     ['text' => $textbotlang['users']['stateus']['backinfo'], 'callback_data' => "product_" . $nameloc['id_invoice']],
@@ -2127,7 +2777,7 @@ $textconnect
         $confirmdisableaccount = json_encode([
             'inline_keyboard' => [
                 [
-                    ['text' => '✅ تایید و فعال کردن کانفیگ', 'callback_data' => "confirmaccountdisable_" . $id_invoice],
+                    ['text' => '✅ تایید و فعال کانفیگ', 'callback_data' => "confirmaccountdisable_" . $id_invoice],
                 ],
                 [
                     ['text' => $textbotlang['users']['stateus']['backinfo'], 'callback_data' => "product_" . $nameloc['id_invoice']],
@@ -2184,33 +2834,25 @@ $textconnect
         sendmessage($from_id, "❌ تمدید با خطا مواجه گردید مراحل تمدید را مجددا انجام دهید.", null, 'HTML');
         return;
     }
+    if (function_exists('nmMaybeShowStockInvoiceDetails') && nmMaybeShowStockInvoiceDetails($from_id, $message_id ?? null, $nameloc)) { step('home', $from_id); return; }
     if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     if ($marzban_list_get['status_extend'] == "off_extend") {
-        sendmessage($from_id, "❌ امکان تمدید در این پنل وجود ندارد", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_extend_unavailable_panel'] ?? "❌ امکان تمدید در این پنل وجود ندارد", null, 'html');
         return;
     }
 
-    if (function_exists('nmStockForInvoice') && nmStockForInvoice($nameloc)) {
-        if (function_exists('nmMaybeHandleStockCallback')) {
-            nmMaybeHandleStockCallback('nmstockextend_' . $nameloc['id_invoice'], $from_id, $message_id ?? null, $callback_query_id ?? null);
-            return;
-        }
-    }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
-    if ($DataUserOut['status'] == "Unsuccessful" && !(function_exists('nmPanelEmergencyEnabled') && (nmPanelEmergencyEnabled($marzban_list_get) || nmPanelNationalEnabled($marzban_list_get)))) {
+    if ($DataUserOut['status'] == "Unsuccessful") {
         $offlineKeyboard = json_encode(['inline_keyboard' => [
-            [['text' => '📦 دریافت اشتراک از انبار پشتیبان', 'callback_data' => 'configget_' . $nameloc['id_invoice'] . '_sub']],
             [['text' => '🛒 خرید سرویس جدید', 'callback_data' => 'buy_service']],
             [['text' => $textbotlang['users']['stateus']['backlist'], 'callback_data' => 'backorder']]
         ]]);
-        sendmessage($from_id, "❌ سامانه استعلام سرویس مورد نظر درحال حاضر در دسترس نیست.
-
-🚨 حالت اضطراری/نت ملی فعال است؛ تمدید از مسیر پشتیبان انجام می‌شود و در صورت نیاز می‌توانید سرویس جدید تهیه کنید.", $offlineKeyboard, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_panel_connection_error'] ?? "❌ سامانه استعلام سرویس مورد نظر درحال حاضر در دسترس نیست.", $offlineKeyboard, 'html');
         return;
     }
     if ($DataUserOut['status'] == "on_hold") {
-        sendmessage($from_id, "❌ هنوز به سرویس متصل نشده اید برای تمدید سرویس ابتدا به سرویس متصل شوید سپس اقدام به تمدید کنید", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_not_connected_extend'] ?? "❌ هنوز به سرویس متصل نشده اید برای تمدید سرویس ابتدا به سرویس متصل شوید سپس اقدام به تمدید کنید", null, 'html');
         return;
     }
     $eextraprice = json_decode($marzban_list_get['pricecustomvolume'], true);
@@ -2219,7 +2861,7 @@ $textconnect
     $mainvolume = $mainvolume[$user['agent']];
     $maxvolume = json_decode($marzban_list_get['maxvolume'], true);
     $maxvolume = $maxvolume[$user['agent']];
-    $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND (agent = :agent OR agent = 'all')");
+    $stmt = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:service_location, Location) > 0 OR Location = '/all') AND (agent = :agent OR agent = 'all')");
     $stmt->execute([
         ':service_location' => $marzban_list_get['name_panel'],
         ':agent' => $user['agent'],
@@ -2244,14 +2886,14 @@ $textconnect
         step('gettimecustomvolomforextend', $from_id);
         return;
     }
-    if ($setting['statuscategory'] == "offcategory") {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND (agent = :agent OR agent = 'all')");
+    if (!panel_feature_enabled($nameloc['Service_location'], 'categorytime')) {
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:service_location, Location) > 0 OR Location = '/all') AND (agent = :agent OR agent = 'all')");
         $stmt->execute([
             ':service_location' => $nameloc['Service_location'],
             ':agent' => $user['agent'],
         ]);
         $productextend = ['inline_keyboard' => []];
-        $statusshowprice = select("shopSetting", "*", "Namevalue", "statusshowprice", "select")['value'];
+        $statusshowprice = panel_feature_enabled($nameloc['Service_location'], 'showprice') ? "onshowprice" : "offshowprice";
         while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
             $hide_panel = json_decode($result['hide_panel'], true);
             if (is_array($hide_panel) && in_array($nameloc['Service_location'], $hide_panel)) {
@@ -2279,7 +2921,10 @@ $textconnect
         ];
 
         $json_list_product_lists = json_encode($productextend);
-        Editmessagetext($from_id, $message_id, $textbotlang['users']['extend']['selectservice'], $json_list_product_lists);
+        $textselectservice = function_exists('faoxima_render_text')
+            ? faoxima_render_text($textbotlang['users']['extend']['selectservice'], ['panel' => $nameloc['Service_location']])
+            : $textbotlang['users']['extend']['selectservice'];
+        Editmessagetext($from_id, $message_id, $textselectservice, $json_list_product_lists);
     } else {
         $monthkeyboard = keyboardTimeCategory($nameloc['Service_location'], $user['agent'], "productextendmonths_", "product_$id_invoice", false, true);
         Editmessagetext($from_id, $message_id, $textbotlang['Admin']['month']['title'], $monthkeyboard);
@@ -2317,7 +2962,7 @@ $textconnect
     $monthenumber = $dataget[1];
     $userdate = json_decode($user['Processing_value'], true);
     $nameloc = select("invoice", "*", "id_invoice", $userdate['id_invoice'], "select");
-    $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND Service_time = :monthe AND (agent = :agent OR agent = 'all')");
+    $stmt = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:service_location, Location) > 0 OR Location = '/all') AND Service_time = :monthe AND (agent = :agent OR agent = 'all')");
     $stmt->execute([
         ':service_location' => $nameloc['Service_location'],
         'monthe' => $monthenumber,
@@ -2325,7 +2970,7 @@ $textconnect
     ]);
     $productextend = ['inline_keyboard' => []];
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
-    $statusshowprice = select("shopSetting", "*", "Namevalue", "statusshowprice", "select")['value'];
+    $statusshowprice = panel_feature_enabled($marzban_list_get, 'showprice') ? "onshowprice" : "offshowprice";
     while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
         if (intval($user['pricediscount']) != 0) {
             $resultper = ($result['price_product'] * $user['pricediscount']) / 100;
@@ -2351,7 +2996,10 @@ $textconnect
     ];
 
     $json_list_product_lists = json_encode($productextend);
-    Editmessagetext($from_id, $message_id, $textbotlang['users']['extend']['selectservice'], $json_list_product_lists);
+    $textselectservice = function_exists('faoxima_render_text')
+        ? faoxima_render_text($textbotlang['users']['extend']['selectservice'], ['panel' => $nameloc['Service_location']])
+        : $textbotlang['users']['extend']['selectservice'];
+    Editmessagetext($from_id, $message_id, $textselectservice, $json_list_product_lists);
 } elseif (preg_match('/^serviceextendselect_(.*)/', $datain, $dataget) || $user['step'] == "getvolumecustomuserforextend" || $datain == "exntedagei") {
     $userdate = json_decode($user['Processing_value'], true);
     $nameloc = select("invoice", "*", "id_invoice", $userdate['id_invoice'], "select");
@@ -2380,14 +3028,14 @@ $textconnect
         } else {
             $service_other = $stmt->fetch(PDO::FETCH_ASSOC);
             if ($service_other == false || !(is_string($service_other['value']) && is_array(json_decode($service_other['value'], true)))) {
-                sendmessage($from_id, "❌ امکان تمدید با پلن فعلی وجود ندارد  مراحل را از اول طی کرده و یک پلن دیگر انتخاب نمایید.", $keyboard, 'HTML');
+                sendmessage($from_id, $datatextbot['dyn_errors_extend_current_plan_unavailable'] ?? "❌ امکان تمدید با پلن فعلی وجود ندارد  مراحل را از اول طی کرده و یک پلن دیگر انتخاب نمایید.", $keyboard, 'HTML');
                 return;
             }
             $service_other = json_decode($service_other['value'], true);
             $codeproduct = select("product", "code_product", "code_product", $service_other['code_product'], "select");
         }
         if ($codeproduct == false) {
-            sendmessage($from_id, "❌ امکان تمدید با پلن فعلی وجود ندارد  مراحل را از اول طی کرده و یک پلن دیگر انتخاب نمایید.", $keyboard, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_extend_current_plan_unavailable'] ?? "❌ امکان تمدید با پلن فعلی وجود ندارد  مراحل را از اول طی کرده و یک پلن دیگر انتخاب نمایید.", $keyboard, 'HTML');
             return;
         }
         $codeproduct = $codeproduct['code_product'];
@@ -2408,7 +3056,7 @@ $textconnect
         $product['Volume_constraint'] = $userdate['volume'];
         step("home", $from_id);
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND code_product = :code_product AND (agent = :agent OR agent = 'all')");
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:service_location, Location) > 0 OR Location = '/all') AND code_product = :code_product AND (agent = :agent OR agent = 'all')");
         $stmt->execute([
             ':service_location' => $nameloc['Service_location'],
             ':code_product' => $codeproduct,
@@ -2417,19 +3065,21 @@ $textconnect
         $product = $stmt->fetch(PDO::FETCH_ASSOC);
     }
     if ($product == false) {
-        sendmessage($from_id, "❌ خطایی رخ داده است مراحل تمدید را از اول انجام دهید.", $keyboard, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_extend_restart_process'] ?? "❌ خطایی رخ داده است مراحل تمدید را از اول انجام دهید.", $keyboard, 'HTML');
         return;
     }
     savedata("save", "time", $product['Service_time']);
     savedata("save", "data_limit", $product['Volume_constraint']);
     savedata("save", "price_product", $product['price_product']);
     savedata("save", "code_product", $product['code_product']);
+    $__discEligibleExtend = MiniDiscount::hasEligible('extend', (string)($product['code_product'] ?? ''), (string)($marzban_list_get['code_panel'] ?? ''), (string)($product['category'] ?? ''), $user);
+    $__extendConfirmRow = [['text' => $textbotlang['users']['extend']['confirm'], 'callback_data' => "confirmserivce"]];
+    if ($__discEligibleExtend) {
+        $__extendConfirmRow[] = ['text' => $textbotlang['users']['extend']['discount'], 'callback_data' => "discountextend"];
+    }
     $keyboardextend = json_encode([
         'inline_keyboard' => [
-            [
-                ['text' => $textbotlang['users']['extend']['confirm'], 'callback_data' => "confirmserivce"],
-                ['text' => $textbotlang['users']['extend']['discount'], 'callback_data' => "discountextend"],
-            ],
+            $__extendConfirmRow,
             [
                 ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]
             ]
@@ -2441,12 +3091,13 @@ $textconnect
     } else {
         $pricelastextend = $product['price_product'];
     }
+    $volumeextend = intval($product['Volume_constraint']) == 0 ? $textbotlang['users']['stateus']['Unlimited'] : $product['Volume_constraint'] . ' گیگ';
     $textextend = "📜 فاکتور تمدید شما برای نام کاربری {$nameloc['username']} ایجاد شد.
 
 🛍 نام محصول :{$product['name_product']}
 💸 مبلغ تمدید : $pricelastextend تومان
 ⏱ مدت زمان تمدید :{$product['Service_time']} روز
-🔋 حجم تمدید :{$product['Volume_constraint']} گیگ
+🔋 حجم تمدید :$volumeextend
 ✍️ توضیحات : {$product['note']}
 💸 موجودی کیف پول : {$user['Balance']}
 ✅ برای تایید و تمدید سرویس روی دکمه زیر کلیک کنید";
@@ -2460,6 +3111,7 @@ $textconnect
     step('getcodesellDiscountextend', $from_id);
     deletemessage($from_id, $message_id);
 } elseif ($user['step'] == "getcodesellDiscountextend") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $userdate = json_decode($user['Processing_value'], true);
     $nameloc = select("invoice", "*", "id_invoice", $userdate['id_invoice'], "select");
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
@@ -2468,52 +3120,21 @@ $textconnect
         return;
     }
     if (intval($user['pricediscount']) != 0) {
-        sendmessage($from_id, "❌ شما تخفیف اختصاصی دارید و امکان استفاده از کد تخفیف وجود ندارد.", $backuser, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_exclusive_discount_conflict'] ?? "❌ شما تخفیف اختصاصی دارید و امکان استفاده از کد تخفیف وجود ندارد.", $backuser, 'HTML');
         return;
     }
-    $stmt = $pdo->prepare("SELECT * FROM DiscountSell WHERE (code_product = :code_product OR code_product = 'all') AND (code_panel = :code_panel OR code_panel = '/all') AND codeDiscount = :codeDiscount AND (agent = :agent OR agent = 'allusers' OR agent = 'all') AND (type = 'all' OR type = 'extend') AND (status IS NULL OR status = '' OR status = 'active') AND (target_user IS NULL OR target_user = '' OR target_user = :uid)");
-    $stmt->bindParam(':code_product', $userdate['code_product'], PDO::PARAM_STR);
-    $stmt->bindParam(':code_panel', $marzban_list_get['code_panel'], PDO::PARAM_STR);
-    $stmt->bindParam(':agent', $user['agent'], PDO::PARAM_STR);
-    $stmt->bindParam(':codeDiscount', $text, PDO::PARAM_STR);
-    $stmt->bindParam(':uid', $from_id, PDO::PARAM_STR);
-    $stmt->execute();
-    $SellDiscountlimit = $stmt->fetch(PDO::FETCH_ASSOC);
-    $stmt = $pdo->prepare("SELECT * FROM Giftcodeconsumed WHERE id_user = :from_id AND code = :code");
-    $stmt->bindParam(':from_id', $from_id, PDO::PARAM_STR);
-    $stmt->bindParam(':code', $text, PDO::PARAM_STR);
-    $stmt->execute();
-    $Checkcodesql = $stmt->rowCount();
-    if (intval($SellDiscountlimit['time']) != 0 and time() >= intval($SellDiscountlimit['time'])) {
-        sendmessage($from_id, "❌ زمان کد تخفیف به پایان رسیده است.", null, 'HTML');
+    $__extendProductRow = select("product", "*", "code_product", $userdate['code_product'] ?? '', "select");
+    $__extendCategory = is_array($__extendProductRow) ? (string)($__extendProductRow['category'] ?? '') : '';
+    $__dv = MiniDiscount::validateSell($text, 'extend', (string)($userdate['code_product'] ?? ''), (string)($marzban_list_get['code_panel'] ?? ''), $__extendCategory, $user);
+    if (empty($__dv['ok'])) {
+        sendmessage($from_id, (string)($__dv['reason'] ?? $textbotlang['Admin']['Discount']['invalidcodedis']), null, 'HTML');
         return;
     }
-    if ($SellDiscountlimit == 0) {
-        sendmessage($from_id, $textbotlang['Admin']['Discount']['invalidcodedis'], null, 'HTML');
-        return;
-    }
-    if (intval($SellDiscountlimit['limitDiscount']) > 0 && intval($SellDiscountlimit['usedDiscount']) >= intval($SellDiscountlimit['limitDiscount'])) {
-        sendmessage($from_id, $textbotlang['users']['Discount']['erorrlimit'], null, 'HTML');
-        return;
-    }
-    if (intval($SellDiscountlimit['useuser']) > 0 && intval($Checkcodesql) >= intval($SellDiscountlimit['useuser'])) {
-        $textoncode = "⭕️ این کد تنها {$SellDiscountlimit['useuser']}  بار قابل استفاده است";
-        sendmessage($from_id, $textoncode, $keyboard, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    if ($SellDiscountlimit['usefirst'] == "1") {
-        $countinvoice = select("invoice", "*", "id_user", $from_id, "count");
-        if ($countinvoice != 0) {
-            sendmessage($from_id, $textbotlang['users']['Discount']['firstdiscount'], null, 'HTML');
-            return;
-        }
-    }
-    $__dvt = strtolower(trim((string)($SellDiscountlimit['value_type'] ?? '')));
-    if (!in_array($__dvt, ['percent', 'amount', 'free'], true)) $__dvt = 'percent';
-    $__dval = (float)$SellDiscountlimit['price'];
-    $__dlabel = $__dvt === 'free' ? 'رایگان' : ($__dvt === 'amount' ? number_format($__dval) . ' تومان' : $SellDiscountlimit['price'] . ' درصد');
-    sendmessage($from_id, "🤩 کد تخفیف شما درست بود و تخفیف {$__dlabel} روی فاکتور شما اعمال شد.", $keyboard, 'HTML');
+    $__dvt = $__dv['value_type'];
+    $__dval = (float)$__dv['value'];
+    $__dlabel = $__dv['label'];
+    $rxDiscountAppliedTpl = $datatextbot['dyn_errors_discount_applied'] ?? "🤩 کد تخفیف شما درست بود و تخفیف %s روی فاکتور شما اعمال شد.";
+    sendmessage($from_id, sprintf($rxDiscountAppliedTpl, $__dlabel), $keyboard, 'HTML');
     $eextraprice = json_decode($marzban_list_get['pricecustomvolume'], true);
     $custompricevalue = $eextraprice[$user['agent']];
     $eextraprice = json_decode($marzban_list_get['pricecustomtime'], true);
@@ -2525,7 +3146,7 @@ $textconnect
         $info_product['Service_time'] = $userdate['time'];
         $info_product['Volume_constraint'] = $userdate['data_limit'];
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE code_product = :code_product AND (Location = :Location or Location = '/all') AND (agent = :agent OR agent = 'all') LIMIT 1");
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE code_product = :code_product AND (FIND_IN_SET(:Location, Location) > 0 or Location = '/all') AND (agent = :agent OR agent = 'all') LIMIT 1");
         $stmt->bindParam(':code_product', $userdate['code_product'], PDO::PARAM_STR);
         $stmt->bindParam(':Location', $marzban_list_get['name_panel'], PDO::PARAM_STR);
         $stmt->bindParam(':agent', $user['agent'], PDO::PARAM_STR);
@@ -2543,6 +3164,8 @@ $textconnect
     $info_product['price_product'] = round($info_product['price_product']);
     if (intval($info_product['Service_time']) == 0)
         $info_product['Service_time'] = $textbotlang['users']['stateus']['Unlimited'];
+    if (intval($info_product['Volume_constraint']) == 0)
+        $info_product['Volume_constraint'] = $textbotlang['users']['stateus']['Unlimited'];
     if ($info_product['price_product'] < 0)
         $info_product['price_product'] = 0;
     $textextend = "📜 فاکتور تمدید شما برای نام کاربری {$nameloc['username']} ایجاد شد.
@@ -2578,7 +3201,7 @@ $textconnect
     }
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     if ($marzban_list_get['status_extend'] == "off_extend") {
-        sendmessage($from_id, "❌ امکان تمدید در این پنل وجود ندارد", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_extend_unavailable_panel'] ?? "❌ امکان تمدید در این پنل وجود ندارد", null, 'html');
         return;
     }
     $eextraprice = json_decode($marzban_list_get['pricecustomvolume'], true);
@@ -2594,7 +3217,7 @@ $textconnect
         $prodcut['Volume_constraint'] = $userdata['data_limit'];
         $prodcut['inbounds'] = $marzban_list_get['inboundid'];
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND code_product = :code_product AND (agent = :agent OR agent = 'all')");
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:service_location, Location) > 0 OR Location = '/all') AND code_product = :code_product AND (agent = :agent OR agent = 'all')");
         $stmt->execute([
             ':service_location' => $nameloc['Service_location'],
             ':code_product' => $userdata['code_product'],
@@ -2620,7 +3243,7 @@ $textconnect
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     if ($user['Balance'] < $pricelastextend && $user['agent'] != "n2" && intval($pricelastextend) != 0) {
-        $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
+        $marzbandirectpay = panel_feature_enabled($nameloc['Service_location'], 'directbuy') ? "ondirectbuy" : "offdirectbuy";
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']];
             $maxbalance = json_decode(select("PaySetting", "*", "NamePay", "maxbalance", "select")['ValuePay'], true)[$user['agent']];
@@ -2662,23 +3285,13 @@ $textconnect
             return;
         }
     }
+    $rxExtendDiscountRow = false;
     if ($datain == "confirmserdiscount") {
-        $SellDiscountlimit = select("DiscountSell", "*", "codeDiscount", $partsdic[1], "select");
-        if ($SellDiscountlimit != false) {
-            $value = intval($SellDiscountlimit['usedDiscount']) + 1;
-            update("DiscountSell", "usedDiscount", $value, "codeDiscount", $partsdic[1]);
-            $stmt = $connect->prepare("INSERT INTO Giftcodeconsumed (id_user,code) VALUES (?,?)");
-            $stmt->bind_param("ss", $from_id, $partsdic[1]);
-            $stmt->execute();
-            $text_report = "⭕️ یک کاربر با نام کاربری @$username  و آیدی عددی $from_id از کد تخفیف {$partsdic[1]} استفاده کرد. و سرویس خود را تمدید کررد.";
-            if (strlen($setting['Channel_Report'] ?? '') > 0) {
-                telegram('sendmessage', [
-                    'chat_id' => $setting['Channel_Report'],
-                    'message_thread_id' => $otherreport,
-                    'text' => $text_report,
-                    'parse_mode' => "HTML"
-                ]);
-            }
+        $rxExtendDiscountRow = select("DiscountSell", "*", "codeDiscount", $partsdic[1], "select");
+        if ($rxExtendDiscountRow != false) {
+            update('invoice', 'discount_code', $partsdic[1], 'id_invoice', $nameloc['id_invoice']);
+            update('invoice', 'discount_amount', (string)((float)($prodcut['price_product'] ?? 0) - (float)$pricelastextend), 'id_invoice', $nameloc['id_invoice']);
+            update('invoice', 'price_before_discount', (string)($prodcut['price_product'] ?? 0), 'id_invoice', $nameloc['id_invoice']);
         }
     }
     if (intval($user['maxbuyagent']) != 0 and $user['agent'] == "n2") {
@@ -2693,15 +3306,20 @@ $textconnect
     }
     $extend = $ManagePanel->extend($marzban_list_get['Methodextend'], $prodcut['Volume_constraint'], $prodcut['Service_time'], $nameloc['username'], $prodcut['code_product'], $marzban_list_get['code_panel']);
     if ($extend['status'] == false) {
-        if (nmStockCompleteExtendFallback($from_id, $user, $nameloc, $prodcut, $pricelastextend, 'wallet_extend_panel_fallback')) {
-            return;
-        }
+        $rxStockEmpty = ($extend['code'] ?? '') === 'manual_stock_empty';
+        $rxQueuedExists = ($extend['code'] ?? '') === 'queued_renewal_exists';
         $extend['msg'] = json_encode($extend['msg']);
         $textreports = "خطای تمدید سرویس
-نام پنل : {$marzban_list_get['name_panel']}
-نام کاربری سرویس : {$nameloc['username']}
-دلیل خطا : {$extend['msg']}";
-        sendmessage($from_id, "❌خطایی در تمدید سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
+<blockquote>نام پنل : {$marzban_list_get['name_panel']}</blockquote>
+<blockquote>نام کاربری سرویس : {$nameloc['username']}</blockquote>
+<blockquote>دلیل خطا : {$extend['msg']}</blockquote>";
+        if ($rxStockEmpty) {
+            sendmessage($from_id, $datatextbot['dyn_errors_renewal_stock_empty'] ?? "❌ موجودی انبار برای این محصول تمام شده است. مبلغی از حساب شما کسر نشد.", null, 'HTML');
+        } elseif ($rxQueuedExists) {
+            sendmessage($from_id, $datatextbot['dyn_errors_queued_renewal_exists'] ?? "❌ یک رزرو اشتراک برای این سرویس در انتظار فعال‌سازی است. مبلغی از حساب شما کسر نشد.", null, 'HTML');
+        } else {
+            sendmessage($from_id, $datatextbot['dyn_errors_renewal_support_error'] ?? "❌خطایی در تمدید سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
+        }
         if (strlen($setting['Channel_Report'] ?? '') > 0) {
             telegram('sendmessage', [
                 'chat_id' => $setting['Channel_Report'],
@@ -2717,11 +3335,13 @@ $textconnect
     } else {
         $valurcashbackextend = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent", "select")['value'], true)[$user['agent']];
     }
-    if (intval($valurcashbackextend) != 0 and intval($pricelastextend) != 0) {
+    $renewCashbackEligible = !function_exists('rx_shopCashbackEligible')
+        || rx_shopCashbackEligible("chashbackextend", $user['register'] ?? null, "getextenduser");
+    if ($renewCashbackEligible && intval($valurcashbackextend) != 0 and intval($pricelastextend) != 0) {
         $result = ($prodcut['price_product'] * $valurcashbackextend) / 100;
         $pricelastextend = $pricelastextend - $result;
-        sendmessage($from_id, "تبریک 🎉
-📌 به عنوان هدیه تمدید مبلغ $result تومان حساب شما شارژ گردید", null, 'HTML');
+        $rxCashbackGiftTpl = $datatextbot['dyn_rewards_cashback_gift'] ?? "تبریک 🎉\n📌 به عنوان هدیه تمدید مبلغ %s تومان حساب شما شارژ گردید";
+        sendmessage($from_id, sprintf($rxCashbackGiftTpl, $result), null, 'HTML');
     }
     $Balance_Low_user = $user['Balance'] - $pricelastextend;
 
@@ -2763,8 +3383,18 @@ $textconnect
     $stmt->execute();
     $stmt->close();
     update("invoice", "Status", "active", "id_invoice", $id_invoice);
+    MiniDiscount::logSale([
+        'id_user' => $from_id,
+        'id_invoice' => $id_invoice,
+        'Service_location' => $nameloc['Service_location'],
+        'kind' => 'renewal',
+        'name_product' => $prodcut['name_product'],
+        'amount' => $pricelastextend,
+        'source' => 'bot',
+    ]);
     if (intval($setting['scorestatus']) == 1 and !in_array($from_id, $admin_ids)) {
-        sendmessage($from_id, "📌شما 2 امتیاز جدید کسب کردید.", null, 'html');
+        $rxPointsEarnedTpl = $datatextbot['dyn_rewards_points_earned'] ?? "📌شما %s امتیاز جدید کسب کردید.";
+        sendmessage($from_id, sprintf($rxPointsEarnedTpl, 2), null, 'html');
         $scorenew = $user['score'] + 2;
         update("user", "score", $scorenew, "id", $from_id);
     }
@@ -2781,12 +3411,22 @@ $textconnect
     $priceproductformat = number_format($pricelastextend);
     $balanceformatsell = number_format(select("user", "Balance", "id", $from_id, "select")['Balance'], 0);
     $balanceformatsellbefore = number_format($user['Balance'], 0);
-    $textextend = "✅ تمدید برای سرویس شما با موفقیت صورت گرفت
+    if (!empty($extend['queued'])) {
+        $rxQueuedSuccessTpl = $datatextbot['dyn_renewconfirm_queued_success'] ?? '✅ سرویس خریداری شده رزرو شد و به محض پایان سرویس فعلی فعال می‌گردد.';
+        $textextend = "$rxQueuedSuccessTpl
 
 ▫️نام سرویس : {$nameloc['username']}
 ▫️نام محصول : {$prodcut['name_product']}
 ▫️مبلغ تمدید $priceproductformat تومان
 ";
+    } else {
+        $textextend = "✅ تمدید برای سرویس شما با موفقیت صورت گرفت
+
+▫️نام سرویس : {$nameloc['username']}
+▫️نام محصول : {$prodcut['name_product']}
+▫️مبلغ تمدید $priceproductformat تومان
+";
+    }
     sendmessage($from_id, $textextend, $keyboardextendfnished, 'HTML');
     $timejalali = jdate('Y/m/d H:i:s');
     $Response = json_encode([
@@ -2798,18 +3438,18 @@ $textconnect
     ]);
     $text_report = "📣 جزئیات تمدید اکانت در ربات شما ثبت شد .
 
-▫️آیدی عددی کاربر : <code>$from_id</code>
-▫️نام کاربری کاربر :@$username
-▫️نام کاربری کانفیگ :{$nameloc['username']}
-▫️نام کاربر : $first_name
-▫️موقعیت سرویس سرویس : {$nameloc['Service_location']}
-▫️نام محصول : {$prodcut['name_product']}
-▫️حجم محصول : {$prodcut['Volume_constraint']}
-▫️زمان محصول : {$prodcut['Service_time']}
-▫️مبلغ تمدید : {$prodcut['price_product']} تومان
-▫️موجودی قبل از خرید : $balanceformatsellbefore تومان
-▫️موجودی بعد از خرید : $balanceformatsell تومان
-▫️زمان خرید : $timejalali";
+<blockquote>▫️آیدی عددی کاربر : <code>$from_id</code></blockquote>
+<blockquote>▫️نام کاربری کاربر :@$username</blockquote>
+<blockquote>▫️نام کاربری کانفیگ :{$nameloc['username']}</blockquote>
+<blockquote>▫️نام کاربر : $first_name</blockquote>
+<blockquote>▫️موقعیت سرویس سرویس : {$nameloc['Service_location']}</blockquote>
+<blockquote>▫️نام محصول : {$prodcut['name_product']}</blockquote>
+<blockquote>▫️حجم محصول : {$prodcut['Volume_constraint']}</blockquote>
+<blockquote>▫️زمان محصول : {$prodcut['Service_time']}</blockquote>
+<blockquote>▫️مبلغ تمدید : {$prodcut['price_product']} تومان</blockquote>
+<blockquote>▫️موجودی قبل از خرید : $balanceformatsellbefore تومان</blockquote>
+<blockquote>▫️موجودی بعد از خرید : $balanceformatsell تومان</blockquote>
+<blockquote>▫️زمان خرید : $timejalali</blockquote>";
     if (strlen($setting['Channel_Report'] ?? '') > 0) {
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
@@ -2818,6 +3458,15 @@ $textconnect
             'parse_mode' => "HTML",
             'reply_markup' => $Response
         ]);
+    }
+    if (function_exists('faoxima_public_purchase_log_event')) {
+        faoxima_public_purchase_log_event('renewal', [
+            'user_id'    => $from_id,
+            'amount'     => $prodcut['name_product'],
+            'price'      => $priceproductformat,
+            'panel_name' => $nameloc['Service_location'] ?? '',
+            'category'   => $prodcut['category'] ?? '',
+        ], $setting);
     }
 } elseif (preg_match('/changelink_(\w+)/', $datain, $dataget)) {
     $id_invoice = $dataget[1];
@@ -2838,7 +3487,7 @@ $textconnect
         return;
     }
     if ($DataUserOut['status'] == "disabled" || $DataUserOut['status'] == "on_hold") {
-        sendmessage($from_id, "❌ سرویس غیرفعال است و امکان تعویض لینک برای سرویس وجود ندارد.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_link_change_service_disabled'] ?? "❌ سرویس غیرفعال است و امکان تعویض لینک برای سرویس وجود ندارد.", null, 'html');
         return;
     }
     $keyboardextend = json_encode([
@@ -2889,13 +3538,13 @@ $textconnect
     }
     $timejalali = jdate('Y/m/d H:i:s');
     $text_report = "📣 جزئیات تغییر لینک در ربات شما ثبت شد .
-▫️آیدی عددی کاربر : <code>$from_id</code>
-▫️نام کاربری کاربر :@$username
-▫️نام کاربری کانفیگ :{$nameloc['username']}
-▫️نام کاربر : $first_name
-▫️موقعیت سرویس : {$marzban_list_get['name_panel']}
-▫️نوع کاربر : {$user['agent']}
-▫️زمان تغییر لینک : $timejalali";
+<blockquote>▫️آیدی عددی کاربر : <code>$from_id</code></blockquote>
+<blockquote>▫️نام کاربری کاربر :@$username</blockquote>
+<blockquote>▫️نام کاربری کانفیگ :{$nameloc['username']}</blockquote>
+<blockquote>▫️نام کاربر : $first_name</blockquote>
+<blockquote>▫️موقعیت سرویس : {$marzban_list_get['name_panel']}</blockquote>
+<blockquote>▫️نوع کاربر : {$user['agent']}</blockquote>
+<blockquote>▫️زمان تغییر لینک : $timejalali</blockquote>";
     if (strlen($setting['Channel_Report'] ?? '') > 0) {
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
@@ -2916,10 +3565,9 @@ $textconnect
         }
         return;
     }
-    if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     if ($marzban_list_get['status_extend'] == "off_extend") {
-        sendmessage($from_id, "❌ امکان خرید حجم اضافه در این پنل وجود ندارد", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_extra_volume_unavailable_panel'] ?? "❌ امکان خرید حجم اضافه در این پنل وجود ندارد", null, 'html');
         return;
     }
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
@@ -2953,21 +3601,24 @@ $textconnect
         return;
     }
     $nameloc = select("invoice", "*", "id_invoice", $user['Processing_value'], "select");
-    if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) { step('home', $from_id); return; }
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     $eextraprice = json_decode($marzban_list_get['priceextravolume'], true);
     $extrapricevalue = $eextraprice[$user['agent']];
     $priceextra = $extrapricevalue * $text;
-    $keyboardsetting = json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => $textbotlang['users']['Extra_volume']['extracheck'], 'callback_data' => 'confirmaextra-' . $extrapricevalue * $text],
-            ],
-            [
-                ['text' => "🎁 ثبت کد تخفیف", 'callback_data' => 'discountvolume-' . $extrapricevalue * $text],
-            ]
-        ]
-    ]);
+    $__volSourceProduct = select("product", "*", "name_product", $nameloc['name_product'] ?? '', "select");
+    $__volCategory = is_array($__volSourceProduct) ? (string)($__volSourceProduct['category'] ?? '') : '';
+    $__discEligibleVolume = MiniDiscount::hasEligible('volume', '', (string)($marzban_list_get['code_panel'] ?? ''), $__volCategory, $user);
+    $__volumeRows = [
+        [
+            ['text' => $textbotlang['users']['Extra_volume']['extracheck'], 'callback_data' => 'confirmaextra-' . $extrapricevalue * $text],
+        ],
+    ];
+    if ($__discEligibleVolume) {
+        $__volumeRows[] = [
+            ['text' => "🎁 ثبت کد تخفیف", 'callback_data' => 'discountvolume-' . $extrapricevalue * $text],
+        ];
+    }
+    $keyboardsetting = json_encode(['inline_keyboard' => $__volumeRows]);
     $priceextra = number_format($priceextra, 0);
     $extrapricevalues = number_format($extrapricevalue, 0);
     $textextra = "📜 فاکتور خرید حجم اضافه برای شما ایجاد شد.
@@ -2987,7 +3638,7 @@ $textconnect
 } elseif ($user['step'] == "getcodesellDiscountvolume") {
     $nameloc = select("invoice", "*", "id_invoice", $user['Processing_value'], "select");
     if (!is_array($nameloc) || (string)($nameloc['id_user'] ?? '') !== (string)$from_id) {
-        sendmessage($from_id, "❌ مراحل خرید حجم اضافه را مجددا انجام دهید", $keyboard, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_extra_volume_restart_process'] ?? "❌ مراحل خرید حجم اضافه را مجددا انجام دهید", $keyboard, 'HTML');
         step('home', $from_id);
         return;
     }
@@ -2995,7 +3646,7 @@ $textconnect
     $__pv4 = (string)$user['Processing_value_four'];
     $__baseVol = (strpos($__pv4, 'prevol_') === 0) ? intval(substr($__pv4, 7)) : 0;
     if ($__baseVol <= 0) {
-        sendmessage($from_id, "❌ مراحل خرید حجم اضافه را مجددا انجام دهید", $keyboard, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_extra_volume_restart_process'] ?? "❌ مراحل خرید حجم اضافه را مجددا انجام دهید", $keyboard, 'HTML');
         step('home', $from_id);
         return;
     }
@@ -3003,12 +3654,14 @@ $textconnect
         sendmessage($from_id, $textbotlang['users']['Discount']['notcode'], $backuser, 'HTML');
         return;
     }
-    $dv = nm_validateSellDiscount($text, 'volume', '', $marzban_list_get['code_panel'], $user, $from_id);
+    $__volSourceProduct2 = select("product", "*", "name_product", $nameloc['name_product'] ?? '', "select");
+    $__volCategory2 = is_array($__volSourceProduct2) ? (string)($__volSourceProduct2['category'] ?? '') : '';
+    $dv = MiniDiscount::validateSell($text, 'volume', '', (string)($marzban_list_get['code_panel'] ?? ''), $__volCategory2, $user);
     if (empty($dv['ok'])) {
         sendmessage($from_id, $dv['reason'], $backuser, 'HTML');
         return;
     }
-    $__discounted = (int)round(nm_applySellDiscountToPrice($dv['row'], $__baseVol));
+    $__discounted = (int)round(MiniDiscount::applyToPrice($dv['row'], $__baseVol));
     if ($__discounted < 0) $__discounted = 0;
     update("user", "Processing_value_four", "disv_" . $text . "_" . $__baseVol . "_" . $__discounted, "id", $from_id);
     $__basefmt = number_format($__baseVol, 0);
@@ -3049,7 +3702,7 @@ $textconnect
     $eextraprice = json_decode($marzban_list_get['priceextravolume'], true);
     $extrapricevalue = $eextraprice[$user['agent']];
     if ($user['Balance'] < $__volCharge && $user['agent'] != "n2") {
-        $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
+        $marzbandirectpay = panel_feature_enabled($marzban_list_get, 'directbuy') ? "ondirectbuy" : "offdirectbuy";
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
             $maxbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "maxbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -3077,8 +3730,7 @@ $textconnect
             update("user", "Processing_value_one", "{$nameloc['username']}%{$valuevolume}", "id", $from_id);
             update("user", "Processing_value_tow", "getextravolumeuser", "id", $from_id);
             if ($__volDiscountCode !== '') {
-                nm_markSellDiscountUsed($__volDiscountCode, $from_id, $username, 'volume');
-                update("user", "Processing_value_four", "", "id", $from_id);
+                update("user", "Processing_value_four", "dvol|" . $__volDiscountCode . "|" . $volume, "id", $from_id);
             }
             return;
         }
@@ -3100,16 +3752,12 @@ $textconnect
     if ($volumepricelast > 0) {
         $__chargeVx = function_exists('balance_atomic_charge') ? balance_atomic_charge($from_id, $volumepricelast, $__allowNegVx) : ['ok' => false];
         if (empty($__chargeVx['ok'])) {
-            sendmessage($from_id, "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", null, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_concurrency_insufficient_stock'] ?? "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", null, 'HTML');
             return;
         }
         $Balance_Low_user = $__chargeVx['new_balance'];
     } else {
         $Balance_Low_user = $user['Balance'];
-    }
-    if ($__volDiscountCode !== '') {
-        nm_markSellDiscountUsed($__volDiscountCode, $from_id, $username, 'volume');
-        update("user", "Processing_value_four", "", "id", $from_id);
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     $data_for_database = json_encode(array(
@@ -3123,10 +3771,10 @@ $textconnect
     if ($extra_volume['status'] == false) {
         $extra_volume['msg'] = json_encode($extra_volume['msg']);
         $textreports = "خطای خرید حجم اضافه
-نام پنل : {$marzban_list_get['name_panel']}
-نام کاربری سرویس : {$nameloc['username']}
-دلیل خطا : {$extra_volume['msg']}";
-        sendmessage($from_id, "❌خطایی در خرید حجم اضافه سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
+<blockquote>نام پنل : {$marzban_list_get['name_panel']}</blockquote>
+<blockquote>نام کاربری سرویس : {$nameloc['username']}</blockquote>
+<blockquote>دلیل خطا : {$extra_volume['msg']}</blockquote>";
+        sendmessage($from_id, $datatextbot['dyn_errors_extra_volume_purchase_error'] ?? "❌خطایی در خرید حجم اضافه سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
         if (strlen($setting['Channel_Report'] ?? '') > 0) {
             telegram('sendmessage', [
                 'chat_id' => $setting['Channel_Report'],
@@ -3136,6 +3784,29 @@ $textconnect
             ]);
         }
         return;
+    }
+    MiniDiscount::logSale([
+        'id_user' => $from_id,
+        'id_invoice' => $nameloc['id_invoice'] ?? null,
+        'Service_location' => $nameloc['Service_location'],
+        'kind' => 'volume',
+        'name_product' => $nameloc['name_product'] ?? null,
+        'amount' => $volumepricelast,
+        'source' => 'bot',
+    ]);
+    if ($__volDiscountCode !== '') {
+        MiniDiscount::markSellUsed($__volDiscountCode, $user);
+        MiniDiscount::logOrderDiscount([
+            'id_user' => $from_id,
+            'id_invoice' => $nameloc['id_invoice'] ?? null,
+            'code' => $__volDiscountCode,
+            'kind' => 'sell',
+            'price_before' => $volume,
+            'discount_amount' => (float)$volume - (float)$volumepricelast,
+            'price_after' => $volumepricelast,
+            'section' => 'volume',
+        ]);
+        update("user", "Processing_value_four", "", "id", $from_id);
     }
     $stmt = $pdo->prepare("INSERT IGNORE INTO service_other (id_user, username, value, type, time, price, output) VALUES (:id_user, :username, :value, :type, :time, :price, :output)");
     $value = $data_for_database;
@@ -3158,7 +3829,8 @@ $textconnect
         ]
     ]);
     if (intval($setting['scorestatus']) == 1 and !in_array($from_id, $admin_ids)) {
-        sendmessage($from_id, "📌شما 1 امتیاز جدید کسب کردید.", null, 'html');
+        $rxPointsEarnedTpl = $datatextbot['dyn_rewards_points_earned'] ?? "📌شما %s امتیاز جدید کسب کردید.";
+        sendmessage($from_id, sprintf($rxPointsEarnedTpl, 1), null, 'html');
         $scorenew = $user['score'] + 1;
         update("user", "score", $scorenew, "id", $from_id);
     }
@@ -3174,11 +3846,11 @@ $textconnect
     $text_report = "⭕️ یک کاربر حجم اضافه خریده است
 
 اطلاعات کاربر :
-🪪 آیدی عددی : $from_id
-🛍 حجم خریداری شده  : $volumes گیگ
-💰 مبلغ پرداختی : $volumesformat تومان
-👤 نام کاربری کانفیگ : {$nameloc['username']}
-موجودی کاربر قبل خرید : {$user['Balance']}
+<blockquote>🪪 آیدی عددی : $from_id</blockquote>
+<blockquote>🛍 حجم خریداری شده  : $volumes گیگ</blockquote>
+<blockquote>💰 مبلغ پرداختی : $volumesformat تومان</blockquote>
+<blockquote>👤 نام کاربری کانفیگ : {$nameloc['username']}</blockquote>
+<blockquote>موجودی کاربر قبل خرید : {$user['Balance']}</blockquote>
 ";
     if (strlen($setting['Channel_Report'] ?? '') > 0) {
         telegram('sendmessage', [
@@ -3208,7 +3880,7 @@ $textconnect
     update("user", "Processing_value", $nameloc['id_invoice'], "id", $from_id);
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     if ($marzban_list_get['changeloc'] == "offchangeloc") {
-        sendmessage($from_id, "❌ این قابلیت درحال حاضر دردسترس نیست.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_location_change_unavailable'] ?? "❌ این قابلیت درحال حاضر دردسترس نیست.", null, 'html');
         return;
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
@@ -3265,11 +3937,11 @@ $textconnect
         return;
     }
     if ($marzban_list_get_new['changeloc'] == "offchangeloc") {
-        sendmessage($from_id, "❌ این قابلیت درحال حاضر دردسترس نیست.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_location_change_unavailable'] ?? "❌ این قابلیت درحال حاضر دردسترس نیست.", null, 'html');
         return;
     }
     if ($marzban_list_get_new == false) {
-        sendmessage($from_id, "❌ خطایی رخ داده است لطفا مراحل مجددا انجام دهید", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_generic_restart_process'] ?? "❌ خطایی رخ داده است لطفا مراحل مجددا انجام دهید", null, 'html');
         return;
     }
     $Pricechange = $marzban_list_get_new['priceChangeloc'];
@@ -3277,7 +3949,7 @@ $textconnect
         $prodcut['code_product'] = "🛍 حجم دلخواه";
         $product['inbounds'] = null;
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :service_location OR Location = '/all') AND name_product = :name_product AND (agent = :agent OR agent = 'all')");
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:service_location, Location) > 0 OR Location = '/all') AND name_product = :name_product AND (agent = :agent OR agent = 'all')");
         $stmt->execute([
             ':service_location' => $nameloc['Service_location'],
             'name_product' => $nameloc['name_product'],
@@ -3289,12 +3961,12 @@ $textconnect
         $marzban_list_get_new['inboundid'] = $prodcut['inbounds'];
     }
     if ($marzban_list_get_new['type'] == "Manualsale" && $marzban_list_get['url_panel'] == $marzban_list_get_new['url_panel']) {
-        sendmessage($from_id, "❌ امکان انتقال به پنل وجود ندارد.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_transfer_panel_unavailable'] ?? "❌ امکان انتقال به پنل وجود ندارد.", null, 'html');
         return;
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     if ($DataUserOut['status'] == "on_hold") {
-        sendmessage($from_id, "❌ کانفیگ شما در وضعیت استفاده نشده است و امکان انتقال موقعیت سرویس وجود ندارد.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_transfer_unused_config_only'] ?? "❌ کانفیگ شما در وضعیت استفاده نشده است و امکان انتقال موقعیت سرویس وجود ندارد.", null, 'html');
         return;
     }
     if ($DataUserOut['status'] != "active") {
@@ -3305,7 +3977,7 @@ $textconnect
         $Pricechange = 0;
     }
     if ($user['Balance'] < $Pricechange && $user['agent'] != "n2" && $limitfree) {
-        $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
+        $marzbandirectpay = panel_feature_enabled($nameloc['Service_location'], 'directbuy') ? "ondirectbuy" : "offdirectbuy";
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
             $maxbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "maxbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -3376,9 +4048,12 @@ $textconnect
         'data_limit' => $data_limit,
         'from_id' => $from_id,
         'username' => $username,
-        'type' => 'usertest'
+        'type' => 'usertest',
+        'ip_limit' => intval($nameloc['ip_limit'] ?? 0),
     );
-    $expirationDate = $DataUserOut['expire'] ? jdate('Y/m/d', $DataUserOut['expire']) : $textbotlang['users']['stateus']['Unlimited'];
+    $expirationDate = $DataUserOut['expire']
+        ? jdate('Y/m/d', $DataUserOut['expire'])
+        : (($DataUserOut['status'] ?? '') === 'on_hold' ? $textbotlang['users']['stateus']['PendingFirstConnection'] : $textbotlang['users']['stateus']['Unlimited']);
     $timeDiff = $DataUserOut['expire'] - time();
     $day = $DataUserOut['expire'] ? floor($timeDiff / 86400) . $textbotlang['users']['stateus']['day'] : $textbotlang['users']['stateus']['Unlimited'];
     $output = $DataUserOut['data_limit'] - $DataUserOut['used_traffic'];
@@ -3392,12 +4067,11 @@ $textconnect
             $dataoutput['msg'] = json_encode($dataoutput['msg']);
             sendmessage($from_id, $textbotlang['users']['sell']['ErrorConfig'], $keyboard, 'HTML');
             $texterros = "خطا هنگام تغییر موقعیت سرویس
-دلیل خطا :
-{$dataoutput['msg']}
-آیدی کابر : $from_id
-نام کاربری کاربر : @$username
-نام پنل : {$marzban_list_get['name_panel']}
-نام پنل مقصد : {$marzban_list_get_new['name_panel']}";
+<blockquote>دلیل خطا : {$dataoutput['msg']}</blockquote>
+<blockquote>آیدی کابر : $from_id</blockquote>
+<blockquote>نام کاربری کاربر : @$username</blockquote>
+<blockquote>نام پنل : {$marzban_list_get['name_panel']}</blockquote>
+<blockquote>نام پنل مقصد : {$marzban_list_get_new['name_panel']}</blockquote>";
             if (strlen($setting['Channel_Report'] ?? '') > 0) {
                 telegram('sendmessage', [
                     'chat_id' => $setting['Channel_Report'],
@@ -3436,7 +4110,7 @@ $textconnect
         $__allowNegPc = ($user['agent'] === 'n2') ? (int)($user['maxbuyagent'] ?? 0) : 0;
         $__chargePc = function_exists('balance_atomic_charge') ? balance_atomic_charge($from_id, $Pricechange, $__allowNegPc) : ['ok' => false];
         if (empty($__chargePc['ok'])) {
-            sendmessage($from_id, "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", null, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_concurrency_insufficient_stock'] ?? "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", null, 'HTML');
             return;
         }
         $Balance_Low_user = $__chargePc['new_balance'];
@@ -3451,13 +4125,13 @@ $textconnect
     $textreport = "
 تغییر موقعیت سرویس
 
-🔻آیدی عددی : <code>$from_id</code>
-🔻نام کاربری : @$username
-🔻نام پنل قدیم : {$marzban_list_get['name_panel']}
-🔻نام پنل جدید : {$marzban_list_get_new['name_panel']}
-🔻 نام کاربری مشتری در پنل  :{$nameloc['username']}
-🔻حجم نهایی سرویس : $format_byte
-🔻موجودی کاربر : $balanceformatsell تومان";
+<blockquote>🔻آیدی عددی : <code>$from_id</code></blockquote>
+<blockquote>🔻نام کاربری : @$username</blockquote>
+<blockquote>🔻نام پنل قدیم : {$marzban_list_get['name_panel']}</blockquote>
+<blockquote>🔻نام پنل جدید : {$marzban_list_get_new['name_panel']}</blockquote>
+<blockquote>🔻 نام کاربری مشتری در پنل  :{$nameloc['username']}</blockquote>
+<blockquote>🔻حجم نهایی سرویس : $format_byte</blockquote>
+<blockquote>🔻موجودی کاربر : $balanceformatsell تومان</blockquote>";
     if (strlen($setting['Channel_Report'] ?? '') > 0) {
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
@@ -3510,7 +4184,7 @@ $textconnect
     $keyboarddisorder = json_encode([
         'inline_keyboard' => [
             [
-                ['text' => "✅ تایید و ارسال گزارش اختلال", 'callback_data' => "confirmdisorders-" . $user['Processing_value']],
+                ['text' => "✅ ارسال گزارش اختلال", 'callback_data' => "confirmdisorders-" . $user['Processing_value']],
             ],
             [
                 ['text' => $textbotlang['users']['stateus']['backinfo'], 'callback_data' => "product_" . $user['Processing_value']],
@@ -3551,17 +4225,31 @@ $textconnect
     $lastonline = formatOnlineAtLabel($DataUserOut['online_at'] ?? null, $DataUserOut['is_online'] ?? null);
 
     $status = $DataUserOut['status'];
-    $status_var = [
+    $bExp3 = is_numeric($DataUserOut['expire'] ?? null) ? (int)$DataUserOut['expire'] : 0;
+    $bDl3 = is_numeric($DataUserOut['data_limit'] ?? null) ? (float)$DataUserOut['data_limit'] : 0.0;
+    $bUt3 = is_numeric($DataUserOut['used_traffic'] ?? null) ? (float)$DataUserOut['used_traffic'] : 0.0;
+    if ($bExp3 > 0 && $bExp3 <= time()) {
+        $status = 'expired';
+    } elseif ($bDl3 > 0.0 && $bUt3 >= $bDl3) {
+        $status = 'limited';
+    }
+    $status_map3 = [
         'active' => $textbotlang['users']['stateus']['active'],
         'limited' => $textbotlang['users']['stateus']['limited'],
+        'end_of_volume' => $textbotlang['users']['stateus']['limited'],
         'disabled' => $textbotlang['users']['stateus']['disabled'],
-        'expired' => $textbotlang['users']['stateus']['expired'],
-        'on_hold' => $textbotlang['users']['stateus']['on_hold'],
-        'Unknown' => $textbotlang['users']['stateus']['Unknown'],
         'deactivev' => $textbotlang['users']['stateus']['disabled'],
-    ][$status];
+        'expired' => $textbotlang['users']['stateus']['expired'],
+        'end_of_time' => $textbotlang['users']['stateus']['expired'],
+        'on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'send_on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'Unknown' => $textbotlang['users']['stateus']['Unknown']
+    ];
+    $status_var = $status_map3[$status] ?? ($textbotlang['users']['stateus']['active'] ?? 'فعال');
 
-    $expirationDate = $DataUserOut['expire'] ? jdate('Y/m/d', $DataUserOut['expire']) : $textbotlang['users']['stateus']['Unlimited'];
+    $expirationDate = $DataUserOut['expire']
+        ? jdate('Y/m/d', $DataUserOut['expire'])
+        : (($DataUserOut['status'] ?? '') === 'on_hold' ? $textbotlang['users']['stateus']['PendingFirstConnection'] : $textbotlang['users']['stateus']['Unlimited']);
 
     $LastTraffic = $DataUserOut['data_limit'] ? formatBytes($DataUserOut['data_limit']) : $textbotlang['users']['stateus']['Unlimited'];
 
@@ -3616,7 +4304,7 @@ $textconnect
             ]
         ]
     ]);
-    Editmessagetext($from_id, $message_id, "✅ با تشکر از ثبت درخواست ،درخواست شما  ارسال شده و درحال بررسی توسط پشتیبانی می باشد.", $bakinfos, 'html');
+    Editmessagetext($from_id, $message_id, $datatextbot['dyn_errors_removal_request_thanks'] ?? "✅ با تشکر از ثبت درخواست ،درخواست شما  ارسال شده و درحال بررسی توسط پشتیبانی می باشد.", $bakinfos, 'html');
 } elseif (preg_match('/Extra_time_(\w+)/', $datain, $dataget)) {
     $id_invoice = $dataget[1];
     $nameloc = select("invoice", "*", "id_invoice", $id_invoice, "select");
@@ -3631,7 +4319,7 @@ $textconnect
     }
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
     if ($marzban_list_get['status_extend'] == "off_extend") {
-        sendmessage($from_id, "❌ امکان خرید زمان اضافه در این پنل وجود ندارد", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_extra_time_unavailable_panel'] ?? "❌ امکان خرید زمان اضافه در این پنل وجود ندارد", null, 'html');
         return;
     }
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
@@ -3641,7 +4329,7 @@ $textconnect
         return;
     }
     if ($DataUserOut['status'] == "on_hold") {
-        sendmessage($from_id, "❌ هنوز به سرویس متصل نشده اید برای تمدید سرویس ابتدا به سرویس متصل شوید سپس اقدام به تمدید کنید", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_not_connected_extend'] ?? "❌ هنوز به سرویس متصل نشده اید برای تمدید سرویس ابتدا به سرویس متصل شوید سپس اقدام به تمدید کنید", null, 'html');
         return;
     }
     $eextraprice = json_decode($marzban_list_get['priceextratime'], true);
@@ -3671,16 +4359,20 @@ $textconnect
     $eextraprice = json_decode($marzban_list_get['priceextravolume'], true);
     $extrapricevalue = $eextraprice[$user['agent']];
     $priceextratime = $extratimepricevalue * $text;
-    $keyboardsetting = json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => $textbotlang['users']['Extra_time']['extratimecheck'], 'callback_data' => 'confirmaextratime-' . $extratimepricevalue * $text],
-            ],
-            [
-                ['text' => "🎁 ثبت کد تخفیف", 'callback_data' => 'discounttime-' . $extratimepricevalue * $text],
-            ]
-        ]
-    ]);
+    $__timeSourceProduct = select("product", "*", "name_product", $nameloc['name_product'] ?? '', "select");
+    $__timeCategory = is_array($__timeSourceProduct) ? (string)($__timeSourceProduct['category'] ?? '') : '';
+    $__discEligibleTime = MiniDiscount::hasEligible('time', '', (string)($marzban_list_get['code_panel'] ?? ''), $__timeCategory, $user);
+    $__timeRows = [
+        [
+            ['text' => $textbotlang['users']['Extra_time']['extratimecheck'], 'callback_data' => 'confirmaextratime-' . $extratimepricevalue * $text],
+        ],
+    ];
+    if ($__discEligibleTime) {
+        $__timeRows[] = [
+            ['text' => "🎁 ثبت کد تخفیف", 'callback_data' => 'discounttime-' . $extratimepricevalue * $text],
+        ];
+    }
+    $keyboardsetting = json_encode(['inline_keyboard' => $__timeRows]);
     $priceextratime = number_format($priceextratime, 0);
     $extrapricevalues = number_format($extrapricevalue, 0);
     $textextra = "📜 فاکتور خرید زمان اضافه برای شما ایجاد شد.
@@ -3700,7 +4392,7 @@ $textconnect
 } elseif ($user['step'] == "getcodesellDiscounttime") {
     $nameloc = select("invoice", "*", "id_invoice", $user['Processing_value'], "select");
     if (!is_array($nameloc) || (string)($nameloc['id_user'] ?? '') !== (string)$from_id) {
-        sendmessage($from_id, "❌ مراحل خرید زمان اضافه را مجددا انجام دهید", $keyboard, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_extra_time_restart_process'] ?? "❌ مراحل خرید زمان اضافه را مجددا انجام دهید", $keyboard, 'HTML');
         step('home', $from_id);
         return;
     }
@@ -3708,7 +4400,7 @@ $textconnect
     $__pv4 = (string)$user['Processing_value_four'];
     $__baseTime = (strpos($__pv4, 'pretime_') === 0) ? intval(substr($__pv4, 8)) : 0;
     if ($__baseTime <= 0) {
-        sendmessage($from_id, "❌ مراحل خرید زمان اضافه را مجددا انجام دهید", $keyboard, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_extra_time_restart_process'] ?? "❌ مراحل خرید زمان اضافه را مجددا انجام دهید", $keyboard, 'HTML');
         step('home', $from_id);
         return;
     }
@@ -3716,12 +4408,14 @@ $textconnect
         sendmessage($from_id, $textbotlang['users']['Discount']['notcode'], $backuser, 'HTML');
         return;
     }
-    $dv = nm_validateSellDiscount($text, 'time', '', $marzban_list_get['code_panel'], $user, $from_id);
+    $__timeSourceProduct2 = select("product", "*", "name_product", $nameloc['name_product'] ?? '', "select");
+    $__timeCategory2 = is_array($__timeSourceProduct2) ? (string)($__timeSourceProduct2['category'] ?? '') : '';
+    $dv = MiniDiscount::validateSell($text, 'time', '', (string)($marzban_list_get['code_panel'] ?? ''), $__timeCategory2, $user);
     if (empty($dv['ok'])) {
         sendmessage($from_id, $dv['reason'], $backuser, 'HTML');
         return;
     }
-    $__discounted = (int)round(nm_applySellDiscountToPrice($dv['row'], $__baseTime));
+    $__discounted = (int)round(MiniDiscount::applyToPrice($dv['row'], $__baseTime));
     if ($__discounted < 0) $__discounted = 0;
     update("user", "Processing_value_four", "distime_" . $text . "_" . $__baseTime . "_" . $__discounted, "id", $from_id);
     $__basefmt = number_format($__baseTime, 0);
@@ -3763,7 +4457,7 @@ $textconnect
     $eextraprice = json_decode($marzban_list_get['priceextratime'], true);
     $extratimepricevalue = $eextraprice[$user['agent']];
     if ($user['Balance'] < $__timeCharge && $user['agent'] != "n2") {
-        $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
+        $marzbandirectpay = panel_feature_enabled($marzban_list_get, 'directbuy') ? "ondirectbuy" : "offdirectbuy";
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
             $maxbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "maxbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -3792,8 +4486,7 @@ $textconnect
                 update("user", "Processing_value_one", "{$nameloc['username']}%{$valuetime}", "id", $from_id);
                 update("user", "Processing_value_tow", "getextratimeuser", "id", $from_id);
                 if ($__timeDiscountCode !== '') {
-                    nm_markSellDiscountUsed($__timeDiscountCode, $from_id, $username, 'time');
-                    update("user", "Processing_value_four", "", "id", $from_id);
+                    update("user", "Processing_value_four", "dtime|" . $__timeDiscountCode . "|" . $tmieextra, "id", $from_id);
                 }
                 return;
             }
@@ -3817,7 +4510,7 @@ $textconnect
     if ($pricelasttime > 0) {
         $__chargeEt = function_exists('balance_atomic_charge') ? balance_atomic_charge($from_id, $pricelasttime, $__allowNegEt) : ['ok' => false];
         if (empty($__chargeEt['ok'])) {
-            sendmessage($from_id, "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", null, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_concurrency_insufficient_stock'] ?? "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", null, 'HTML');
             return;
         }
         $Balance_Low_user = $__chargeEt['new_balance'];
@@ -3825,10 +4518,6 @@ $textconnect
         $Balance_Low_user = $user['Balance'];
     }
     $__chargedEtUser = true;
-    if ($__timeDiscountCode !== '') {
-        nm_markSellDiscountUsed($__timeDiscountCode, $from_id, $username, 'time');
-        update("user", "Processing_value_four", "", "id", $from_id);
-    }
     update("invoice", "Status", "active", "id_invoice", $nameloc['id_invoice']);
     $extratimeday = $tmieextra / $extratimepricevalue;
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
@@ -3844,10 +4533,10 @@ $textconnect
     if ($extra_time['status'] == false) {
         $extra_time['msg'] = json_encode($extra_time['msg']);
         $textreports = "خطای خرید حجم اضافه
-نام پنل : {$marzban_list_get['name_panel']}
-نام کاربری سرویس : {$nameloc['username']}
-دلیل خطا : {$extra_time['msg']}";
-        sendmessage($from_id, "❌خطایی در خرید حجم اضافه سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
+<blockquote>نام پنل : {$marzban_list_get['name_panel']}</blockquote>
+<blockquote>نام کاربری سرویس : {$nameloc['username']}</blockquote>
+<blockquote>دلیل خطا : {$extra_time['msg']}</blockquote>";
+        sendmessage($from_id, $datatextbot['dyn_errors_extra_volume_purchase_error'] ?? "❌خطایی در خرید حجم اضافه سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
         if (strlen($setting['Channel_Report'] ?? '') > 0) {
             telegram('sendmessage', [
                 'chat_id' => $setting['Channel_Report'],
@@ -3861,6 +4550,30 @@ $textconnect
             balance_atomic_credit($from_id, $pricelasttime);
         }
         return;
+    }
+
+    MiniDiscount::logSale([
+        'id_user' => $from_id,
+        'id_invoice' => $nameloc['id_invoice'] ?? null,
+        'Service_location' => $nameloc['Service_location'],
+        'kind' => 'time',
+        'name_product' => $nameloc['name_product'] ?? null,
+        'amount' => $pricelasttime,
+        'source' => 'bot',
+    ]);
+    if ($__timeDiscountCode !== '') {
+        MiniDiscount::markSellUsed($__timeDiscountCode, $user);
+        MiniDiscount::logOrderDiscount([
+            'id_user' => $from_id,
+            'id_invoice' => $nameloc['id_invoice'] ?? null,
+            'code' => $__timeDiscountCode,
+            'kind' => 'sell',
+            'price_before' => $tmieextra,
+            'discount_amount' => (float)$tmieextra - (float)$pricelasttime,
+            'price_after' => $pricelasttime,
+            'section' => 'time',
+        ]);
+        update("user", "Processing_value_four", "", "id", $from_id);
     }
 
     $stmt = $pdo->prepare("INSERT IGNORE INTO service_other (id_user, username, value, type, time, price, output) VALUES (:id_user, :username, :value, :type, :time, :price, :output)");
@@ -3885,7 +4598,8 @@ $textconnect
         ]
     ]);
     if (intval($setting['scorestatus']) == 1 and !in_array($from_id, $admin_ids)) {
-        sendmessage($from_id, "📌شما 1 امتیاز جدید کسب کردید.", null, 'html');
+        $rxPointsEarnedTpl = $datatextbot['dyn_rewards_points_earned'] ?? "📌شما %s امتیاز جدید کسب کردید.";
+        sendmessage($from_id, sprintf($rxPointsEarnedTpl, 1), null, 'html');
         $scorenew = $user['score'] + 1;
         update("user", "score", $scorenew, "id", $from_id);
     }
@@ -3901,10 +4615,10 @@ $textconnect
     $text_report = "⭕️ یک کاربر زمان اضافه خریده است
 
 اطلاعات کاربر :
-🪪 آیدی عددی : $from_id
-🛍 زمان خریداری شده  : $volumes روز
-💰 مبلغ پرداختی : $volumesformat تومان
-👤 نام کاربری کانفیگ : {$nameloc['username']}";
+<blockquote>🪪 آیدی عددی : $from_id</blockquote>
+<blockquote>🛍 زمان خریداری شده  : $volumes روز</blockquote>
+<blockquote>💰 مبلغ پرداختی : $volumesformat تومان</blockquote>
+<blockquote>👤 نام کاربری کانفیگ : {$nameloc['username']}</blockquote>";
     if (strlen($setting['Channel_Report'] ?? '') > 0) {
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
@@ -3912,6 +4626,13 @@ $textconnect
             'text' => $text_report,
             'parse_mode' => "HTML"
         ]);
+    }
+    if (function_exists('faoxima_public_purchase_log_event')) {
+        faoxima_public_purchase_log_event('time_extra', [
+            'user_id' => $from_id,
+            'amount'  => $volumes,
+            'price'   => $volumesformat,
+        ], $setting);
     }
 } elseif (preg_match('/deletelist-(\w+)/', $datain, $dataget)) {
     $id_invoice = $dataget[1];
@@ -3925,9 +4646,9 @@ $textconnect
             $stmtDelete->bindParam(':user_id', $from_id);
             $stmtDelete->execute();
         }
-        sendmessage($from_id, "📌 سرویس از لیست شما حذف شد", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_service_removed'] ?? "📌 سرویس از لیست شما حذف شد", null, 'html');
     } else {
-        sendmessage($from_id, "❌ امکان حذف سرویس وجود ندارد.", null, 'html');
+        sendmessage($from_id, $datatextbot['dyn_errors_service_removal_unavailable'] ?? "❌ امکان حذف سرویس وجود ندارد.", null, 'html');
     }
 } elseif (preg_match('/removeserviceuser_(\w+)/', $datain, $dataget)) {
     $id_invoice = $dataget[1];
@@ -3949,7 +4670,7 @@ $textconnect
             ]
         ]
     ]);
-    Editmessagetext($from_id, $message_id, "📌 دلیل حذف سرویس خود را ارسال کنید.", $bakinfos);
+    Editmessagetext($from_id, $message_id, $datatextbot['dyn_errors_removal_reason_prompt'] ?? "📌 دلیل حذف سرویس خود را ارسال کنید.", $bakinfos);
     step("getdisdeleteconfig", $from_id);
 } elseif ($user['step'] == "getdisdeleteconfig") {
     $userdata = json_decode($user['Processing_value'], true);
@@ -4024,18 +4745,31 @@ $textconnect
 
     $lastonline = formatOnlineAtLabel($DataUserOut['online_at'] ?? null, $DataUserOut['is_online'] ?? null);
     $status = $DataUserOut['status'];
-    $status_var = [
+    $bExp4 = is_numeric($DataUserOut['expire'] ?? null) ? (int)$DataUserOut['expire'] : 0;
+    $bDl4 = is_numeric($DataUserOut['data_limit'] ?? null) ? (float)$DataUserOut['data_limit'] : 0.0;
+    $bUt4 = is_numeric($DataUserOut['used_traffic'] ?? null) ? (float)$DataUserOut['used_traffic'] : 0.0;
+    if ($bExp4 > 0 && $bExp4 <= time()) {
+        $status = 'expired';
+    } elseif ($bDl4 > 0.0 && $bUt4 >= $bDl4) {
+        $status = 'limited';
+    }
+    $status_map4 = [
         'active' => $textbotlang['users']['stateus']['active'],
         'limited' => $textbotlang['users']['stateus']['limited'],
+        'end_of_volume' => $textbotlang['users']['stateus']['limited'],
         'disabled' => $textbotlang['users']['stateus']['disabled'],
-        'expired' => $textbotlang['users']['stateus']['expired'],
-        'on_hold' => $textbotlang['users']['stateus']['on_hold'],
-        'Unknown' => $textbotlang['users']['stateus']['Unknown'],
         'deactivev' => $textbotlang['users']['stateus']['disabled'],
+        'expired' => $textbotlang['users']['stateus']['expired'],
+        'end_of_time' => $textbotlang['users']['stateus']['expired'],
+        'on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'send_on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'Unknown' => $textbotlang['users']['stateus']['Unknown']
+    ];
+    $status_var = $status_map4[$status] ?? ($textbotlang['users']['stateus']['active'] ?? 'فعال');
 
-    ][$status];
-
-    $expirationDate = $DataUserOut['expire'] ? jdate('Y/m/d', $DataUserOut['expire']) : $textbotlang['users']['stateus']['Unlimited'];
+    $expirationDate = $DataUserOut['expire']
+        ? jdate('Y/m/d', $DataUserOut['expire'])
+        : (($DataUserOut['status'] ?? '') === 'on_hold' ? $textbotlang['users']['stateus']['PendingFirstConnection'] : $textbotlang['users']['stateus']['Unlimited']);
 
     $LastTraffic = $DataUserOut['data_limit'] ? formatBytes($DataUserOut['data_limit']) : $textbotlang['users']['stateus']['Unlimited'];
 
@@ -4074,7 +4808,7 @@ $textconnect
             [
                 ['text' => "❌حذف دستی", 'callback_data' => "remoceserviceadminmanual-{$nameloc['id_invoice']}"],
                 ['text' => "❌حذف سرویس", 'callback_data' => "remoceserviceadmin-{$nameloc['id_invoice']}"],
-                ['text' => "❌عدم تایید حذف", 'callback_data' => "rejectremoceserviceadmin-{$nameloc['id_invoice']}"],
+                ['text' => "❌لغو حذف", 'callback_data' => "rejectremoceserviceadmin-{$nameloc['id_invoice']}"],
             ],
         ]
     ]);
@@ -4167,9 +4901,9 @@ $textconnect
     $stmt->bind_param("ssssss", $from_id, $nameloc['username'], $value, $type, $dateacc, $price);
     $stmt->execute();
     $stmt->close();
-} elseif ($text == $datatextbot['text_usertest'] || $datain == "usertestbtn" || $text == "usertest") {
+} elseif (($text !== '' && $text == $datatextbot['text_usertest']) || $datain == "usertestbtn" || $text == "usertest") {
     if (!check_active_btn($setting['keyboardmain'], "text_usertest")) {
-        sendmessage($from_id, "📌 سرویس تست در حال حاضر در دسترس نیست .", null, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_test_service_unavailable'] ?? "📌 سرویس تست در حال حاضر در دسترس نیست .", null, 'HTML');
         return;
     }
     $locationproduct = select("marzban_panel", "*", "TestAccount", "ONTestAccount", "count");

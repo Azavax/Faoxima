@@ -1,10 +1,103 @@
 <?php
 require_once __DIR__ . '/config.php';
-if (!function_exists('rx_kb_debug_log')) {
-    function rx_kb_debug_log($label, $data = null) {
-        return;
+
+if (!function_exists('rx_releaseWebhookConnection')) {
+    function rx_releaseWebhookConnection()
+    {
+        static $released = false;
+        if ($released) {
+            return;
+        }
+        $released = true;
+
+        if (function_exists('fastcgi_finish_request')) {
+            @fastcgi_finish_request();
+            return;
+        }
+        if (function_exists('litespeed_finish_request')) {
+            @litespeed_finish_request();
+            return;
+        }
+        if (headers_sent()) {
+            return;
+        }
+
+        @ignore_user_abort(true);
+        $rxBuffered = '';
+        while (ob_get_level() > 0) {
+            $rxBuffered = ob_get_clean() . $rxBuffered;
+        }
+        @header('Connection: close');
+        @header('Content-Length: ' . strlen($rxBuffered));
+        echo $rxBuffered;
+        @flush();
     }
 }
+
+if (!function_exists('rx_callback_lock_acquire')) {
+    function rx_callback_lock_acquire($ownerId, $scope = 'cb', $timeout = 2.5)
+    {
+        global $pdo;
+
+        if (!($pdo instanceof PDO)) {
+            return true;
+        }
+
+        $ownerId = (string) $ownerId;
+        if ($ownerId === '' || !ctype_digit($ownerId)) {
+            return true;
+        }
+
+        $prefix = defined('_FX_SHARD') ? substr(_FX_SHARD, 0, 8) : 'fx';
+        $name = substr($prefix . ':' . preg_replace('/[^a-z0-9_]/i', '', $scope) . ':' . $ownerId, 0, 64);
+
+        try {
+            $stmt = $pdo->prepare('SELECT GET_LOCK(?, ?)');
+            $stmt->execute([$name, $timeout]);
+            $got = $stmt->fetchColumn();
+        } catch (Throwable $e) {
+            @error_log('[rx_callback_lock] acquire failed: ' . $e->getMessage());
+            return true;
+        }
+
+        return ((string) $got === '1') ? $name : false;
+    }
+}
+
+if (!function_exists('rx_callback_lock_release')) {
+    function rx_callback_lock_release($name)
+    {
+        global $pdo;
+
+        if (!is_string($name) || $name === '' || !($pdo instanceof PDO)) {
+            return;
+        }
+
+        try {
+            $stmt = $pdo->prepare('SELECT RELEASE_LOCK(?)');
+            $stmt->execute([$name]);
+            $stmt->fetchColumn();
+        } catch (Throwable $e) {
+            @error_log('[rx_callback_lock] release failed: ' . $e->getMessage());
+        }
+    }
+}
+
+if (!function_exists('rx_callback_busy_reply')) {
+    function rx_callback_busy_reply($callbackQueryId, $text = '⏳ لطفاً کمی صبر کنید…')
+    {
+        if (empty($callbackQueryId)) {
+            return;
+        }
+        @telegram('answerCallbackQuery', [
+            'callback_query_id' => $callbackQueryId,
+            'text' => $text,
+            'show_alert' => false,
+            'cache_time' => 0,
+        ]);
+    }
+}
+
 function telegram($method, $datas = [], $token = null)
 {
     global $APIKEY, $telegramCurlTimeout;
@@ -31,7 +124,7 @@ function telegram($method, $datas = [], $token = null)
     $rxAlreadyTransformed = !empty($datas['_rx_already_transformed']);
     unset($datas['_rx_already_transformed']);
 
-    $rxAutoTransformMethods = ['sendmessage', 'sendMessage', 'editmessagetext', 'editMessageText', 'sendphoto', 'sendPhoto', 'sendvideo', 'sendVideo', 'sendDocument', 'senddocument', 'editmessagecaption', 'editMessageCaption'];
+    $rxAutoTransformMethods = ['sendmessage', 'sendMessage', 'editmessagetext', 'editMessageText', 'sendphoto', 'sendPhoto', 'sendvideo', 'sendVideo', 'sendDocument', 'senddocument', 'editmessagecaption', 'editMessageCaption', 'editMessageReplyMarkup', 'editmessagereplymarkup'];
     if (!$rxAlreadyTransformed && in_array(strtolower($method), array_map('strtolower', $rxAutoTransformMethods), true)) {
 
         $rxTextField = null;
@@ -44,7 +137,7 @@ function telegram($method, $datas = [], $token = null)
 
         if (isset($datas['reply_markup']) && $datas['reply_markup'] !== '' && $datas['reply_markup'] !== null) {
             if (function_exists('processKeyboardStyles')) {
-                $datas['reply_markup'] = processKeyboardStyles($datas['reply_markup']);
+                $datas['reply_markup'] = processKeyboardStyles($datas['reply_markup'], isset($datas['chat_id']) && function_exists('rx_isAdminChat') && rx_isAdminChat($datas['chat_id']));
             }
             if (function_exists('applyPremiumEmojiToKeyboard')) {
                 $datas['reply_markup'] = applyPremiumEmojiToKeyboard($datas['reply_markup']);
@@ -61,6 +154,25 @@ function telegram($method, $datas = [], $token = null)
     if (isset($datas['reply_markup']) && is_string($datas['reply_markup']) && $datas['reply_markup'] !== ''
         && function_exists('rx_sanitizeKeyboardButtons')) {
         $datas['reply_markup'] = rx_sanitizeKeyboardButtons($datas['reply_markup']);
+    }
+
+    $rxSendMethod = strtolower((string) $method);
+    if (($rxSendMethod === 'sendmessage' || $rxSendMethod === 'editmessagetext')
+        && (!isset($datas['text']) || !is_string($datas['text']) || trim($datas['text']) === '')) {
+        $rxEmptyCaller = 'unknown';
+        foreach (debug_backtrace(DEBUG_BACKTRACE_IGNORE_ARGS) as $rxFrame) {
+            if (isset($rxFrame['file']) && basename($rxFrame['file']) !== 'botapi.php') {
+                $rxEmptyCaller = basename($rxFrame['file']) . ':' . ($rxFrame['line'] ?? '?');
+                break;
+            }
+        }
+        $rxEmptyMsg = '[empty-message] skipped ' . $method . ' to chat ' . ($datas['chat_id'] ?? '?') . ' — empty text from ' . $rxEmptyCaller;
+        if (function_exists('faoxima_dedup_error_log')) {
+            faoxima_dedup_error_log('rx_empty_text_' . $rxSendMethod . '_' . $rxEmptyCaller, $rxEmptyMsg, 21600);
+        } else {
+            @error_log($rxEmptyMsg);
+        }
+        return ['ok' => false, 'error_code' => 400, 'description' => 'message text is empty (skipped locally)'];
     }
 
     $preparedPayload = prepareTelegramRequestPayload($datas);
@@ -141,7 +253,6 @@ function telegram($method, $datas = [], $token = null)
         $logError = $curlError !== '' ? $curlError : 'Unknown cURL error';
         error_log(sprintf('Telegram request failed (errno: %d, url: %s, attempts: %d): %s',
             $curlErrorNumber, $url, $attemptedTimes, $logError));
-
         return [
             'ok' => false,
             'description' => ($curlError !== '' ? $curlError : 'Telegram request failed.') . ' اتصال به تلگرام در مهلت مقرر برقرار نشد؛ فایروال یا پراکسی خروجی را بررسی کنید.'
@@ -152,9 +263,14 @@ function telegram($method, $datas = [], $token = null)
         error_log(sprintf('Slow Telegram response detected (method: %s, http_code: %d, duration: %.3fs)', $method, $httpCode, $duration));
     }
 
+    return rx_parse_telegram_response($rawResponse, $httpCode);
+}
+
+function rx_parse_telegram_response($rawResponse, $httpCode)
+{
     $decodedResponse = json_decode($rawResponse, true);
     if (!is_array($decodedResponse)) {
-        $logSnippet = substr($rawResponse, 0, 200);
+        $logSnippet = substr((string) $rawResponse, 0, 200);
         error_log(sprintf('Invalid response from Telegram API (HTTP %d): %s', $httpCode, $logSnippet));
 
         return [
@@ -179,6 +295,7 @@ function telegram($method, $datas = [], $token = null)
             'bot was blocked by the user',
             'user is deactivated',
             'chat not found',
+            'member list is inaccessible',
         ];
         $rxDesc = (string) ($decodedResponse['description'] ?? '');
         $rxIsBenign = false;
@@ -200,6 +317,114 @@ function telegram($method, $datas = [], $token = null)
 
     return $decodedResponse;
 }
+
+function rx_telegram_dispatch_concurrent(array $requests)
+{
+    global $APIKEY;
+
+    $multiHandle = curl_multi_init();
+    $curlHandles = [];
+
+    foreach ($requests as $index => $request) {
+        $method = $request['method'];
+        $datas = is_array($request['datas']) ? $request['datas'] : [];
+        $token = $request['token'] ?? $APIKEY;
+        $url = "https://api.telegram.org/bot" . $token . "/" . $method;
+
+        $preparedPayload = prepareTelegramRequestPayload($datas);
+
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_ENCODING, '');
+        curl_setopt($ch, CURLOPT_TIMEOUT, 10);
+        curl_setopt($ch, CURLOPT_CONNECTTIMEOUT, 5);
+        curl_setopt($ch, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V4);
+        curl_setopt($ch, CURLOPT_TCP_KEEPALIVE, 1);
+        curl_setopt($ch, CURLOPT_TCP_KEEPIDLE, 60);
+        curl_setopt($ch, CURLOPT_TCP_KEEPINTVL, 30);
+        if (function_exists('faoxima_apply_curl_proxy')) {
+            faoxima_apply_curl_proxy($ch, 'telegram');
+        }
+        if (!empty($preparedPayload['headers'])) {
+            curl_setopt($ch, CURLOPT_HTTPHEADER, $preparedPayload['headers']);
+        }
+        curl_setopt($ch, CURLOPT_POSTFIELDS, $preparedPayload['body']);
+
+        curl_multi_add_handle($multiHandle, $ch);
+        $curlHandles[$index] = $ch;
+    }
+
+    $running = null;
+    do {
+        $status = curl_multi_exec($multiHandle, $running);
+        if ($running > 0) {
+            curl_multi_select($multiHandle, 1.0);
+        }
+    } while ($running > 0 && $status === CURLM_OK);
+
+    $results = [];
+    foreach ($curlHandles as $index => $ch) {
+        $rawResponse = curl_multi_getcontent($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        $curlErrno = curl_errno($ch);
+        if ($curlErrno !== 0 || $rawResponse === null || $rawResponse === '') {
+            $results[$index] = [
+                'ok' => false,
+                'description' => curl_error($ch) !== '' ? curl_error($ch) : 'Telegram request failed.'
+            ];
+        } else {
+            $results[$index] = rx_parse_telegram_response($rawResponse, $httpCode);
+        }
+        curl_multi_remove_handle($multiHandle, $ch);
+        curl_close($ch);
+    }
+    curl_multi_close($multiHandle);
+
+    return $results;
+}
+
+if (!function_exists('rx_answer_and_edit')) {
+    function rx_answer_and_edit($callbackQueryId, $toastText, $fromId, $messageId, $newText, $newKeyboard, $showAlert = false, $cacheTime = 0)
+    {
+        $cacheTime = max(0, (int) $cacheTime);
+
+        if (function_exists('rx_telegram_dispatch_concurrent')) {
+            return rx_telegram_dispatch_concurrent([
+                [
+                    'method' => 'editmessagetext',
+                    'datas' => [
+                        'chat_id' => $fromId,
+                        'message_id' => $messageId,
+                        'text' => $newText,
+                        'reply_markup' => $newKeyboard,
+                        'parse_mode' => 'HTML',
+                    ],
+                ],
+                [
+                    'method' => 'answerCallbackQuery',
+                    'datas' => [
+                        'callback_query_id' => $callbackQueryId,
+                        'text' => $toastText,
+                        'show_alert' => $showAlert,
+                        'cache_time' => $cacheTime,
+                    ],
+                ],
+            ]);
+        }
+
+        telegram('answerCallbackQuery', [
+            'callback_query_id' => $callbackQueryId,
+            'text' => $toastText,
+            'show_alert' => $showAlert,
+            'cache_time' => $cacheTime,
+        ]);
+        if (function_exists('Editmessagetext')) {
+            Editmessagetext($fromId, $messageId, $newText, $newKeyboard, 'HTML');
+        }
+        return null;
+    }
+}
+
 function prepareTelegramRequestPayload(array $datas)
 {
     $normalised = [];
@@ -257,6 +482,17 @@ function normaliseTelegramValue($value)
 }
 
 
+function isValidPremiumEmojiSource($emoji) {
+    if (!is_string($emoji) || $emoji === '') { return false; }
+    if (strlen($emoji) > 32) { return false; }
+    // Reject plain multi-letter text mistakenly stored instead of an emoji
+    // (e.g. "iploginset"), while still allowing legit keycap emoji like
+    // "0⃣", "#⃣", "*⃣" (ASCII digit/#/* immediately followed by U+20E3).
+    if (preg_match('/[A-Za-z]/', $emoji)) { return false; }
+    if (preg_match('/[0-9#*](?!\x{20E3})/u', $emoji)) { return false; }
+    return (bool) preg_match('/^[0-9#*\x{1F000}-\x{1FFFF}\x{2000}-\x{3300}\x{FE00}-\x{FE0F}\x{200D}]+$/u', $emoji);
+}
+
 function getPremiumEmojiMap($forceReload = false) {
     static $cache = null;
     if ($forceReload) { $cache = null; }
@@ -276,7 +512,9 @@ function getPremiumEmojiMap($forceReload = false) {
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                 $emoji = (string)($row['emoji'] ?? '');
                 $cid   = (string)($row['custom_emoji_id'] ?? '');
-                if ($emoji !== '' && $cid !== '') { $cache[$emoji] = $cid; }
+                if ($emoji === '' || $cid === '') { continue; }
+                if (!isValidPremiumEmojiSource($emoji)) { continue; }
+                $cache[$emoji] = $cid;
             }
         }
     } catch (\Throwable $e) {  }
@@ -326,9 +564,6 @@ function stripReplyStyleEmoji(string $text): string {
     return $text;
 }
 
-
-
-
 if (!function_exists('rx_adminPanelCallbackMapFile')) {
     function rx_adminPanelCallbackMapFile(): string {
         $base = defined('REFACTORED_LEGACY_ROOT') ? REFACTORED_LEGACY_ROOT : __DIR__;
@@ -366,7 +601,7 @@ if (!function_exists('rx_resolveAdminPanelCallback')) {
     }
 }
 if (!function_exists('rx_finalizeInlineAdminKb')) {
-    function rx_finalizeInlineAdminKb(string $json): string {
+    function rx_finalizeInlineAdminKb(string $json, bool $rxMarkPlain = true): string {
         $kb = json_decode($json, true);
         if (!is_array($kb)) return $json;
         $rows = null;
@@ -382,7 +617,16 @@ if (!function_exists('rx_finalizeInlineAdminKb')) {
 
         $rxGlassMode = isset($GLOBALS['setting']['inlinebtnmain']) && $GLOBALS['setting']['inlinebtnmain'] === 'oninline';
         if (!$rxGlassMode && isset($kb['keyboard'])) {
-            return $json;
+            foreach ($kb['keyboard'] as &$rxFRow) {
+                if (!is_array($rxFRow)) continue;
+                foreach ($rxFRow as &$rxFBtn) {
+                    if (!is_array($rxFBtn)) continue;
+                    if ($rxMarkPlain) { $rxFBtn['_rxap'] = 1; } else { $rxFBtn['_rxkeep'] = 1; }
+                }
+                unset($rxFBtn);
+            }
+            unset($rxFRow);
+            return json_encode($kb, JSON_UNESCAPED_UNICODE);
         }
 
         $hasContactRequest = false;
@@ -411,6 +655,7 @@ if (!function_exists('rx_finalizeInlineAdminKb')) {
                     && !isset($btn['switch_inline_query_current_chat']) && !isset($btn['web_app'])) {
                     $btn['callback_data'] = rx_makeAdminPanelCallback((string)$btn['text']);
                 }
+                if ($rxMarkPlain) { $btn['_rxap'] = 1; } else { $btn['_rxkeep'] = 1; }
                 $newRow[] = $btn;
             }
             if (!empty($newRow)) $newRows[] = $newRow;
@@ -495,7 +740,33 @@ if (!function_exists('rx_collectKeyboardLabels')) {
 }
 
 
-function processKeyboardStyles($keyboard) {
+if (!function_exists('rx_isAdminChat')) {
+    function rx_isAdminChat($chatId): bool {
+        $chatId = trim((string)$chatId);
+        if ($chatId === '') return false;
+        static $adminSet = null;
+        if ($adminSet === null) {
+            $adminSet = [];
+            $rxMain = trim((string)($GLOBALS['adminnumber'] ?? ''));
+            if ($rxMain !== '') { $adminSet[$rxMain] = true; }
+            try {
+                global $pdo;
+                if (isset($pdo) && $pdo instanceof PDO) {
+                    $stmt = $pdo->query("SELECT id_admin FROM admin WHERE id_admin IS NOT NULL AND id_admin <> '' AND id_admin <> '0'");
+                    if ($stmt) {
+                        foreach ($stmt->fetchAll(PDO::FETCH_COLUMN) as $rxId) {
+                            $rxId = trim((string)$rxId);
+                            if ($rxId !== '') { $adminSet[$rxId] = true; }
+                        }
+                    }
+                }
+            } catch (\Throwable $e) {}
+        }
+        return isset($adminSet[$chatId]);
+    }
+}
+
+function processKeyboardStyles($keyboard, $rxPlainAdmin = false) {
     $styleMap = unserialize(REPLY_STYLE_EMOJI_MAP);
     $wasString = is_string($keyboard);
     if ($wasString) {
@@ -509,11 +780,10 @@ function processKeyboardStyles($keyboard) {
     }
 
 
-    
-    
-    
-    
-    
+
+
+
+
     static $_rx_kb_list_styles = null;
     if ($_rx_kb_list_styles === null) {
         $_rx_kb_list_styles = ['lists' => [], 'misc' => [], 'features' => []];
@@ -550,7 +820,7 @@ function processKeyboardStyles($keyboard) {
                             'admin_features','admin_channel','admin_help','admin_category','admin_products',
 
 
-                            'service','account','payment','user_nav','pay_receipt','invoice_copy_buttons',
+                            'service','account','payment','user_nav','pay_receipt','invoice_copy_buttons','home_menu',
                         ];
                         foreach ($featMenus as $fm) {
                             if (!empty($all[$fm]) && is_array($all[$fm])) {
@@ -588,6 +858,33 @@ function processKeyboardStyles($keyboard) {
                     }
                 }
             }
+        }
+    }
+
+    static $_rx_admin_plain_cb = null;
+    if ($_rx_admin_plain_cb === null) {
+        $_rx_admin_plain_cb = [];
+        $_rx_user_secs = ['service','account','payment','user_nav','pay_receipt','user_subscription','user_dynamic_lists','invoice_copy_buttons','recheckcrypto_buttons','home_menu'];
+        if (function_exists('rx_getKeyboardDefaultStyles')) {
+            $_rx_admin_def = rx_getKeyboardDefaultStyles();
+            if (is_array($_rx_admin_def)) {
+                $_rx_user_keys = [];
+                foreach ($_rx_user_secs as $_rx_us) {
+                    if (!empty($_rx_admin_def[$_rx_us]) && is_array($_rx_admin_def[$_rx_us])) {
+                        foreach ($_rx_admin_def[$_rx_us] as $_rx_uk => $_rx_uv) { $_rx_user_keys[(string)$_rx_uk] = true; }
+                    }
+                }
+                foreach ($_rx_admin_def as $_rx_sec => $_rx_pairs) {
+                    if (!is_array($_rx_pairs) || in_array($_rx_sec, $_rx_user_secs, true)) continue;
+                    foreach ($_rx_pairs as $_rx_cbk => $_rx_cbv) {
+                        $_rx_cbk = (string)$_rx_cbk;
+                        if (!isset($_rx_user_keys[$_rx_cbk])) { $_rx_admin_plain_cb[$_rx_cbk] = true; }
+                    }
+                }
+            }
+        }
+        foreach (['confirmandgetservice','confirmserivce','confirmserdiscount','confirmpaid','acceptrule','buyback','startaction','next_page','previous_page','next_page_extends','previous_page_extends','searchservice'] as $_rx_uex) {
+            unset($_rx_admin_plain_cb[$_rx_uex]);
         }
     }
     $listPrefixMap = [
@@ -681,7 +978,7 @@ function processKeyboardStyles($keyboard) {
         'removeaffiliate-'       => 'admin_removes',
         'removeaffiliateuser-'   => 'admin_removes',
         'removeagent_'           => 'admin_removes',
-        'removeauto-'            => 'admin_removes',
+        'removeauto-'            => 'service_actions',
         'removebotsell_'         => 'admin_removes',
         'rejectrequesta_'        => 'admin_removes',
         
@@ -691,6 +988,7 @@ function processKeyboardStyles($keyboard) {
         
         'config_'                => 'service_actions',
         'configget_'             => 'service_actions',
+        'configpage_'            => 'service_actions',
         'activeconfig-'          => 'service_actions',
         'changelink_'            => 'service_actions',
         'changenote_'            => 'service_actions',
@@ -712,7 +1010,7 @@ function processKeyboardStyles($keyboard) {
         'changecoefficient'      => 'node_actions',
         'bakcnode'               => 'node_actions',
         'actionnode'             => 'node_actions',
-        'deletelist-'            => 'admin_removes',
+        'deletelist-'            => 'service_actions',
 
 
         'prodcutservice_'        => 'product_buy',
@@ -728,6 +1026,33 @@ function processKeyboardStyles($keyboard) {
         'helpsection_'           => 'helpsection',
         'paneluserbuy_'          => 'panel_buy',
         'locationbuy_'           => 'panel_buy',
+
+        'updateproduct_'         => 'service_actions',
+        'subscriptionurl_'       => 'service_actions',
+        'removeserviceuser_'     => 'service_actions',
+        'transfer_'              => 'service_actions',
+        'disorder-'              => 'service_actions',
+        'confrimtransfers_'      => 'service_actions',
+        'extends_'               => 'service_actions',
+        'infocard_qr_'           => 'service_actions',
+        'digitaltron_pay_'       => 'crypto_actions',
+        'digitaltron_submit_'    => 'crypto_actions',
+        'crypto_cancel_'         => 'invoice_back',
+        'rcc_resubmit_'          => 'crypto_manual_actions',
+        'discountvolume-'        => 'extra_purchase',
+        'discounttime-'          => 'extra_purchase',
+        'helpos_'                => 'helpsection',
+        'ticketopen_'            => 'ticket_list',
+        'ticketmsg_'             => 'ticket_list',
+        'ticketclose_'           => 'ticket_list',
+        'tk_cnt_'                => 'ticket_list',
+        'tk_album_'              => 'ticket_list',
+        'departman_'             => 'ticket_list',
+        'remnausage_'            => 'service_actions',
+        'remnapicker_'           => 'service_actions',
+        'remnasetsquad_'         => 'service_actions',
+        'helpctgoryـ'            => 'helpsection',
+        'rcc_view_'              => 'crypto_manual_actions',
 
 
         'apn:'                   => 'auto_inline_btn',
@@ -861,13 +1186,79 @@ function processKeyboardStyles($keyboard) {
     }
 
     if ($rxStyleTargetKey !== null) {
+        $rxIsUserKb = false;
+        static $rxUserKbPrefixes = [
+            'prodcutservice','serviceextend','producttime_','productvolume_','categorynames_','helpsection_','paneluserbuy_','locationbuy_','buy_service',
+            'quickview_','updateproduct_','subscriptionurl_','removeserviceuser_','transfer_','disorder-','confrimtransfers_','extends_','infocard_qr_',
+            'Extra_time_','Extra_volume_','Extra_volumes_','extravolunme','exntedagei','discountvolume-','discounttime-',
+            'confirm_pay','confirm_discount','confirm_back','confirmandgetservice','chargehasdiscount','chargenodiscount','rules_accept','acceptrule','nav_back',
+            'cart_to_offline','colselist','paymentnotverify','startelegrams',
+            'pay_sendreceipt','pay_done','pay_cancel','pay_back','pay_wallet_copy','pay_card_copy','pay_check','sendresidcart-',
+            'currency_pick','copy_wallet','copy_amount','copy_memo','paid_submit','invoice_back','mode_external','cancel_hash_input',
+            'digitaltron_pay_','digitaltron_submit_','crypto_cancel_','crypto_pay_','crypto_submit_',
+            'recheckcrypto','rcc_pick_','rcc_skip_photo','rcc_cancel','rcc_resubmit_',
+            'Discount','Add_Balance','backuser','backorder','account','rw_pick_','rw_custom','confirmandgetserviceDiscount','aptdc',
+            'ticketnew','ticketopen_','ticketmsg_','ticketclose_','tk_cnt_','tk_album_','tk_cancel','tk_media_yes','tk_media_no','departman_','supporttickets','helpos_',
+            'wheel_luck','affiliatesbtn','agentpanel','requestagent','supportbtns','helpbtns','usertestbtn','extendbtn',
+            'my_miniapp_pending','location_','buyback','ticketclose_',
+            'gen_random_uname',
+            'nmstocksel_','nmstockextend_','nmstockrefund_','nmstockcfg_','nmstocksub_',
+            'cv_use_','cv_new',
+            'confirmpaid','confirmserivce','confirmserdiscount',
+        ];
+        foreach ($kb[$rxStyleTargetKey] as $rxScanRow) {
+            if (!is_array($rxScanRow)) continue;
+            foreach ($rxScanRow as $rxScanBtn) {
+                if (!is_array($rxScanBtn) || !isset($rxScanBtn['callback_data'])) continue;
+                $rxScanCb = (string)$rxScanBtn['callback_data'];
+                foreach ($rxUserKbPrefixes as $rxUP) {
+                    if (strpos($rxScanCb, $rxUP) === 0) { $rxIsUserKb = true; break 3; }
+                }
+            }
+        }
         foreach ($kb[$rxStyleTargetKey] as &$row) {
             if (!is_array($row)) continue;
             foreach ($row as &$btn) {
-                if (!is_array($btn) || !isset($btn['callback_data'])) continue;
-                if (isset($btn['style'])) continue;
+                if (!is_array($btn)) continue;
+                $rxKeep = !empty($btn['_rxkeep']); unset($btn['_rxkeep']);
+                if (!empty($btn['_rxap'])) { unset($btn['_rxap'], $btn['style']); continue; }
+                if ($rxPlainAdmin && !$rxKeep && !$rxIsUserKb) { unset($btn['style']); continue; }
+                if (!isset($btn['callback_data'])) {
+                    $rxCk = isset($btn['_rxck']) ? (string)$btn['_rxck'] : ''; unset($btn['_rxck']);
+                    if ($rxIsUserKb && !isset($btn['style'])) {
+                        $rxCopyStyle = ($rxCk !== '' ? ($_rx_kb_list_styles['lists']['copy_' . $rxCk] ?? null) : null)
+                            ?? $_rx_kb_list_styles['lists']['copy_text_btn'] ?? null;
+                        if (!empty($rxCopyStyle) && $rxCopyStyle !== 'default') {
+                            $btn['style'] = $rxCopyStyle;
+                        } elseif (isset($btn['text']) && function_exists('rx_kb_guess_style_from_text')
+                            && (!function_exists('rx_kb_use_defaults') || rx_kb_use_defaults())) {
+                            $rxG = rx_kb_guess_style_from_text((string)$btn['text']);
+                            $btn['style'] = ($rxG !== null) ? $rxG : 'primary';
+                        }
+                    }
+                    continue;
+                }
                 $cb = (string)$btn['callback_data'];
-                
+                $rxSk = isset($btn['_rxsk']) ? (string)$btn['_rxsk'] : ''; unset($btn['_rxsk']);
+                if ($rxSk !== '') {
+                    if (!isset($btn['style'])) {
+                        $rxSkSt = $_rx_kb_list_styles['features'][$rxSk] ?? null;
+                        if (!empty($rxSkSt) && $rxSkSt !== 'default') {
+                            $btn['style'] = $rxSkSt;
+                        } elseif (isset($btn['text']) && function_exists('rx_kb_guess_style_from_text')
+                            && (!function_exists('rx_kb_use_defaults') || rx_kb_use_defaults())) {
+                            $rxSkG = rx_kb_guess_style_from_text((string)$btn['text']);
+                            $btn['style'] = ($rxSkG !== null) ? $rxSkG : 'primary';
+                        }
+                    }
+                    continue;
+                }
+                if (isset($_rx_admin_plain_cb[$cb]) && !$rxIsUserKb) {
+                    unset($btn['style']);
+                    continue;
+                }
+                if (isset($btn['style'])) continue;
+
                 if (isset($miscMap[$cb])) {
                     $st = $_rx_kb_list_styles['misc'][$miscMap[$cb]] ?? null;
                     if (!empty($st) && $st !== 'default') { $btn['style'] = $st; continue; }
@@ -902,9 +1293,7 @@ function processKeyboardStyles($keyboard) {
                     && function_exists('rx_kb_guess_style_from_text')
                     && (!function_exists('rx_kb_use_defaults') || rx_kb_use_defaults())) {
                     $rxGuessed = rx_kb_guess_style_from_text((string)$btn['text']);
-                    if ($rxGuessed !== null) {
-                        $btn['style'] = $rxGuessed;
-                    }
+                    $btn['style'] = ($rxGuessed !== null) ? $rxGuessed : 'primary';
                 }
             }
             unset($btn);
@@ -950,7 +1339,6 @@ function processKeyboardStyles($keyboard) {
         unset($row);
     }
 
-
     return $wasString ? json_encode($kb, JSON_UNESCAPED_UNICODE) : $kb;
 }
 
@@ -974,18 +1362,25 @@ function applyPremiumEmojiToKeyboard($keyboard) {
 
 
     $sortedEmojis = array_keys($map);
-    $stripPrefixIfMatch = function ($text) use ($map, $sortedEmojis) {
+    $stripPremiumEmoji = function ($text) use ($map, $sortedEmojis) {
 
         if (!is_string($text) || $text === '') { return null; }
+        $bestPos = null; $bestEmoji = null; $bestLen = 0;
         foreach ($sortedEmojis as $emoji) {
             $emojiByteLen = strlen($emoji);
             if ($emojiByteLen === 0) { continue; }
-            if (strncmp($text, $emoji, $emojiByteLen) === 0) {
-                $rest = ltrim((string)substr($text, $emojiByteLen));
-                return [$rest, $map[$emoji]];
+            $pos = strpos($text, $emoji);
+            if ($pos === false) { continue; }
+            if ($bestPos === null || $pos < $bestPos || ($pos === $bestPos && $emojiByteLen > $bestLen)) {
+                $bestPos = $pos; $bestEmoji = $emoji; $bestLen = $emojiByteLen;
             }
         }
-        return null;
+        if ($bestEmoji === null) { return null; }
+        $after = substr($text, $bestPos + $bestLen);
+        $after = preg_replace('/^[\x{FE00}-\x{FE0F}\x{200D}]+/u', '', (string)$after);
+        $rest = substr($text, 0, $bestPos) . $after;
+        $rest = preg_replace('/\s{2,}/u', ' ', trim((string)$rest));
+        return [$rest, $map[$bestEmoji]];
     };
 
     if (isset($kb['inline_keyboard']) && is_array($kb['inline_keyboard'])) {
@@ -995,7 +1390,7 @@ function applyPremiumEmojiToKeyboard($keyboard) {
                 if (!is_array($btn)) { continue; }
                 if (isset($btn['icon_custom_emoji_id'])) { continue; }
                 if (!isset($btn['text']) || !is_string($btn['text'])) { continue; }
-                $hit = $stripPrefixIfMatch($btn['text']);
+                $hit = $stripPremiumEmoji($btn['text']);
                 if ($hit !== null) {
                     $btn['text'] = $hit[0] !== '' ? $hit[0] : ' ';
                     $btn['icon_custom_emoji_id'] = (string)$hit[1];
@@ -1018,11 +1413,11 @@ function applyPremiumEmojiToKeyboard($keyboard) {
                 if (!is_array($btn)) { continue; }
                 if (isset($btn['icon_custom_emoji_id'])) { continue; }
                 if (!isset($btn['text']) || !is_string($btn['text'])) { continue; }
-                $hit = $stripPrefixIfMatch($btn['text']);
+                $hit = $stripPremiumEmoji($btn['text']);
                 if ($hit !== null) {
                     $origText    = $btn['text'];
                     $strippedTxt = $hit[0] !== '' ? $hit[0] : ' ';
-                    
+
                     $rxReplyEntries[$strippedTxt] = $origText;
                     $btn['text']              = $strippedTxt;
                     $btn['icon_custom_emoji_id'] = (string)$hit[1];
@@ -1040,7 +1435,14 @@ function applyPremiumEmojiToKeyboard($keyboard) {
                 $rxRbmRaw = json_decode((string)@file_get_contents($rxRbmFile), true);
                 if (is_array($rxRbmRaw)) { $rxRbmExisting = $rxRbmRaw; }
             }
-            $rxRbmMerged = array_merge($rxRbmExisting, $rxReplyEntries);
+            // rx_reply_button_map.json is a single global file shared by every
+            $rxRbmMerged = $rxRbmExisting;
+            foreach ($rxReplyEntries as $rxRbmKey => $rxRbmValue) {
+                if (isset($rxRbmMerged[$rxRbmKey]) && $rxRbmMerged[$rxRbmKey] !== $rxRbmValue) {
+                    continue;
+                }
+                $rxRbmMerged[$rxRbmKey] = $rxRbmValue;
+            }
             @file_put_contents(
                 $rxRbmFile,
                 json_encode($rxRbmMerged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
@@ -1099,7 +1501,9 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'set_adminmgr'   => 'primary',
                     'set_testlimit'  => 'success',
                     'set_agentprice' => 'success',
+                    'set_qrsettings' => 'primary',
                     'set_qrbg'       => 'primary',
+                    'set_qr_toggle'  => 'success',
                     'set_webhook'    => 'primary',
                     'set_backadmin'  => 'danger',
                     'set_backmenu'   => 'danger',
@@ -1142,8 +1546,8 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
 
                     'trnado_name'      => 'primary',
                     'trnado_apikey'    => 'success',
-                    'trnado_wallet'    => 'success',
-                    'trnado_apiurl'    => 'success',
+                    'trnado_signingkey' => 'success',
+                    'trnado_wage'      => 'primary',
                     'trnado_cashback'  => 'success',
                     'trnado_min'       => 'primary',
                     'trnado_max'       => 'primary',
@@ -1182,6 +1586,12 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'plisio_max'       => 'primary',
                     'plisio_edu'       => 'primary',
                     'plisio_back'      => 'danger',
+
+                    'tonpay_name'      => 'primary',
+                    'cubepay_name'     => 'primary',
+                    'blupal_name'      => 'primary',
+                    'atlaspay_name'    => 'primary',
+                    'tetrapay_name'    => 'primary',
                 ],
                 'admin_features' => [
                     'feat_info'     => 'success',
@@ -1300,8 +1710,6 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'changeloclimit'      => 'primary',
                     'infocard_status'     => 'success',
                     'infocard_color_menu' => 'primary',
-                    'linkappstatus'       => 'success',
-                    'linkappsetting'      => 'primary',
                 ],
                 'features_lottery' => [
                     'wheel_luck'         => 'success',
@@ -1405,12 +1813,10 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'zarinpeysetting'        => 'primary',
                     'plisiosetting'          => 'primary',
                     'nowpaymentsetting'      => 'primary',
-                    'iranpay1setting'        => 'primary',
                     'iranpay2setting'        => 'primary',
                     'iranpay3setting'        => 'primary',
                     'affilnecurrency'        => 'success',
                     'affilnecurrencysetting' => 'primary',
-                    'arzireyali1'            => 'success',
                     'arzireyali2'            => 'success',
                     'oniranpay3'             => 'success',
                 ],
@@ -1460,7 +1866,6 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'maxbalanceaccount'       => 'primary',
                     'kharidanbuh'             => 'success',
                     'systemsms'               => 'primary',
-                    'linkappdownlod'          => 'primary',
                     'fqQuestions'             => 'primary',
                     'disorderss'              => 'primary',
                     'reasetchangeloc'         => 'danger',
@@ -1471,8 +1876,6 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                 'admin_premium_stock' => [
                     'premium_emoji_add'  => 'success',
                     'premium_emoji_noop' => 'primary',
-                    'nm_del_all_stock'   => 'danger',
-                    'nm_del_one_stock'   => 'danger',
                     'antispam_noop'      => 'primary',
                 ],
                 'recheckcrypto_admin_buttons' => [
@@ -1531,11 +1934,27 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'changelink'       => 'primary',
                     'changenameconfig' => 'primary',
                     'backorder'        => 'danger',
+                    'discountextend'   => 'success',
+                    'productcheckdata' => 'primary',
+                    'config_header'    => 'primary',
                 ],
                 'account' => [
-                    'Discount'    => 'success',
-                    'Add_Balance' => 'success',
-                    'backuser'    => 'danger',
+                    'Discount'             => 'success',
+                    'Add_Balance'          => 'success',
+                    'TransferBalance'      => 'primary',
+                    'MyTransactions'       => 'primary',
+                    'transferbal_confirm'  => 'success',
+                    'transferbal_cancel'   => 'danger',
+                    'backuser'             => 'danger',
+                ],
+                'tx_stats' => [
+                    'tx_24h'      => 'primary',
+                    'tx_3d'       => 'primary',
+                    'tx_7d'       => 'primary',
+                    'tx_30d'      => 'primary',
+                    'tx_prev'     => 'primary',
+                    'tx_next'     => 'primary',
+                    'tx_back'     => 'danger',
                 ],
                 'payment' => [
                     'cart_to_offline'  => 'success',
@@ -1550,6 +1969,10 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'nowpayment'       => 'primary',
                     'digitaltron'      => 'primary',
                     'startelegrams'    => 'primary',
+                    'piroozpay'        => 'primary',
+                    'aptdc'            => 'success',
+                    'chargenodiscount' => 'primary',
+                    'chargehasdiscount'=> 'success',
                     'colselist'        => 'danger',
                 ],
                 'user_nav' => [
@@ -1560,6 +1983,11 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'nav_back'         => 'danger',
                     'contact_phone'    => 'success',
                     'contact_back'     => 'danger',
+                    'confirmandgetserviceDiscount' => 'success',
+                    'tk_cancel'        => 'danger',
+                    'tk_media_yes'     => 'success',
+                    'tk_media_no'      => 'primary',
+                    'confirmchannel'   => 'success',
                 ],
                 'pay_receipt' => [
                     'pay_sendreceipt' => 'success',
@@ -1576,8 +2004,10 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'support'         => 'primary',
                     'Status'          => 'primary',
                     'LastTraffic'     => 'primary',
+                    'usedtraffic'     => 'primary',
                     'RemainingVolume' => 'primary',
                     'expirationDate'  => 'primary',
+                    'daysleft'        => 'primary',
                     'extravolunme'    => 'success',
                     'exntedagei'      => 'success',
                     'Responseuser'    => 'primary',
@@ -1585,6 +2015,8 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'iduser'          => 'primary',
                     'username'        => 'primary',
                     'notusernameme'   => 'primary',
+                    'ticketnew'       => 'success',
+                    'supporttickets'  => 'primary',
                 ],
                 'invoice_copy_buttons' => [
                     'currency_pick' => 'primary',
@@ -1595,6 +2027,7 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'copy_memo'     => 'primary',
                     'paid_submit'   => 'success',
                     'invoice_back'  => 'danger',
+                    'cancel_hash_input' => 'danger',
                 ],
                 'recheckcrypto_buttons' => [
                     'recheckcrypto'        => 'success',
@@ -1617,7 +2050,32 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'product_back'     => 'danger',
                     'category_back'    => 'danger',
                     'custom_volume'    => 'success',
+                    'service_actions'       => 'primary',
+                    'user_services_list'    => 'primary',
+                    'paneluser_list'        => 'primary',
+                    'crypto_actions'        => 'primary',
+                    'crypto_manual_actions' => 'primary',
+                    'user_confirms'         => 'success',
+                    'extra_purchase'        => 'success',
+                    'ticket_list'           => 'primary',
+                    'copy_card_num'         => 'primary',
+                    'copy_card_amount'      => 'success',
+                    'copy_text_btn'         => 'primary',
                     'auto_inline_btn'  => 'primary',
+                ],
+                'home_menu' => [
+                    'home_buy'         => 'success',
+                    'home_myservices'  => 'primary',
+                    'home_account'     => 'success',
+                    'home_tariff'      => 'primary',
+                    'wheel_luck'    => 'success',
+                    'affiliatesbtn' => 'success',
+                    'extendbtn'     => 'success',
+                    'supportbtns'   => 'primary',
+                    'helpbtns'      => 'primary',
+                    'usertestbtn'   => 'success',
+                    'agentpanel'    => 'primary',
+                    'requestagent'  => 'success',
                 ],
                 'cron_notifications' => [
                     'cron_extend'         => 'success',
@@ -1630,7 +2088,6 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'cron_help'           => 'primary',
                     'cron_affiliates'     => 'success',
                     'cron_addbalance'     => 'success',
-                    'cron_cancel'         => 'danger',
                 ],
                 'misc_buttons' => [
                     'adm_backmenu'                 => 'danger',
@@ -1690,96 +2147,60 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                 "✍️ نام پنل"                          => 'primary',
                 "❌ حذف پنل"                          => 'danger',
                 "🔐 ویرایش رمز عبور"                  => 'primary',
-                "👤 ویرایش نام کاربری"                => 'primary',
+                "👤 ویرایش نام"                => 'primary',
                 "🔗 ویرایش آدرس پنل"                  => 'primary',
                 "🔋 روش تمدید سرویس"                  => 'success',
-                "💡 روش ساخت نام کاربری"              => 'primary',
-                "🚨 محدودیت ساخت اکانت"               => 'success',
-                "📍 تغییر گروه کاربری"                => 'primary',
+                "💡 ساخت نام کاربری"              => 'primary',
+                "🚨 محدودیت اکانت"               => 'success',
+                "📍 تغییر گروه"                => 'primary',
                 "⏳ زمان سرویس تست"                  => 'success',
                 "💾 حجم اکانت تست"                   => 'success',
-                "🌍 قیمت تغییر لوکیشن"                => 'success',
+                "🌍 قیمت تغییر مکان"                => 'success',
                 "➕ قیمت حجم اضافه"                   => 'success',
                 "⏳ قیمت زمان اضافه"                  => 'success',
-                "⚙️ قیمت حجم سرویس دلخواه"          => 'success',
+                "⚙️ قیمت حجم دلخواه"          => 'success',
                 "⏳ قیمت زمان دلخواه"                 => 'success',
-                "📍 حداقل حجم دلخواه"                 => 'primary',
-                "📍 حداکثر حجم دلخواه"                => 'primary',
-                "📍 حداقل زمان دلخواه"                => 'primary',
-                "📍 حداکثر زمان دلخواه"               => 'primary',
-                "📦 انبار شبکه ملی"                   => 'primary',
-                "📌 ثبت پنل اضطراری"                  => 'success',
-                "🚨 پنل اضطراری"                      => 'danger',
+                "📍 کف حجم دلخواه"                 => 'primary',
+                "📍 سقف حجم دلخواه"                => 'primary',
+                "📍 کف زمان دلخواه"                => 'primary',
+                "📍 سقف زمان دلخواه"               => 'primary',
                 "🌐 وضعیت نت ملی"                    => 'success',
-                "🫣 مخفی کردن پنل برای یک کاربر"      => 'primary',
-                "❌  حذف کاربر از لیست مخفی شدگان"    => 'danger',
+                "🫣 مخفی پنل برای کاربر"      => 'primary',
+                "❌ حذف از لیست مخفی"    => 'danger',
                 "⚙️  اینباند اکانت غیرفعال"          => 'primary',
             ];
 
             $cache['admin_panel_marzban'] = $rxPanelReplyCommon + [
-                "⚙️ تنظیم پروتکل و اینباند" => 'success',
+                "⚙️ پروتکل اینباند" => 'success',
             ];
             $cache['admin_panel_guard'] = $rxPanelReplyCommon + [
                 "🔐 ویرایش کلید"                => 'primary',
-                "⁉️ وضعیت اتصال به پنل"       => 'primary',
+                "⁉️ اتصال به پنل"       => 'primary',
                 "⚙️ تنظیم سرویس ها"            => 'success',
-                "🎛️ تنظیمات سرویس"            => 'primary',
             ];
-            $cache['admin_panel_ibsng'] = $rxPanelReplyCommon + [
-                '🎛 تنظیم نام گروه' => 'primary',
-            ];
-            $cache['admin_panel_mikrotik'] = $rxPanelReplyCommon + [
-                '🎛 تنظیم نام گروه' => 'primary',
-            ];
-            $cache['admin_panel_s_ui'] = $rxPanelReplyCommon + [
-                "⚙️ تنظیم پروتکل و اینباند" => 'success',
+            $cache['admin_panel_pasarguard'] = $rxPanelReplyCommon + [
+                "🔐 ویرایش کلید"                => 'primary',
+                "⁉️ اتصال به پنل"       => 'primary',
+                "⚙️ پروتکل اینباند" => 'success',
             ];
             $cache['admin_panel_wg'] = $rxPanelReplyCommon + [
-                "💎 تنظیم شناسه اینباند" => 'success',
-            ];
-            $cache['admin_panel_marzneshin'] = $rxPanelReplyCommon + [
-                "⚙️ تنظیمات سرویس" => 'primary',
+                "💎 شناسه اینباند" => 'success',
             ];
             $cache['admin_panel_manualsale'] = $rxPanelReplyCommon + [
-                "➕ اضافه کردن کانفیگ" => 'success',
+                "➕ افزودن کانفیگ" => 'success',
                 "❌ حذف کانفیگ "       => 'danger',
                 "✏️ ویرایش کانفیگ"    => 'primary',
             ];
             $cache['admin_panel_x_ui_single'] = $rxPanelReplyCommon + [
-                "💎 تنظیم شناسه اینباند" => 'success',
+                "💎 شناسه اینباند" => 'success',
                 '🔗 دامنه لینک ساب'      => 'primary',
-            ];
-            $cache['admin_panel_alireza_single'] = $rxPanelReplyCommon + [
-                "💎 تنظیم شناسه اینباند" => 'success',
-                '🔗 دامنه لینک ساب'      => 'primary',
-            ];
-            $cache['admin_panel_hiddify'] = $rxPanelReplyCommon + [
-                '🔗 دامنه لینک ساب' => 'primary',
-                "🔗 uuid admin"     => 'primary',
             ];
             $cache['admin_panel_athmarzban'] = [
-                "🔧 ساخت کانفیگ دستی" => 'primary',
+                "🔧 کانفیگ دستی" => 'primary',
                 "🖥 مدیریت نود ها"     => 'success',
             ];
             $cache['admin_panel_athx_ui'] = [
-                "🔧 ساخت کانفیگ دستی" => 'primary',
-            ];
-            // Stock management keyboard (📦 انبار شبکه ملی) — coloured per-action.
-            $cache['admin_panel_stock_manage'] = [
-                "➕ افزودن انبار مدنظر"        => 'success',
-                "➕ وارد کردن دسته‌ای انبار"   => 'success',
-                "➕ افزودن کانفیگ تکی انبار"   => 'success',
-                "✏️ ویرایش انبار"             => 'primary',
-                "❌ حذف کانفیگ انبار"         => 'danger',
-                "🗑 حذف کامل انبار"           => 'danger',
-                "📊 گزارش موجودی انبار"        => 'primary',
-                "🔄 همگام‌سازی محصولات انبار" => 'primary',
-                "🚨 پنل اضطراری"              => 'danger',
-                "🌐 وضعیت نت ملی"            => 'success',
-                "🔙 بازگشت به انبار"           => 'primary',
-                "🔢 حذف کانفیگ با آیدی"        => 'danger',
-                "📋 نمایش لیست کانفیگ‌ها"      => 'primary',
-                "🗑 حذف همه کانفیگ‌های فعال این انبار" => 'danger',
+                "🔧 کانفیگ دستی" => 'primary',
             ];
         }
         if ($section === null) {
@@ -1970,7 +2391,7 @@ if (!function_exists('rx_mergeKeyboardSectionDefaults')) {
 function sendmessage($chat_id,$text,$keyboard,$parse_mode,$bot_token = null){
     if(intval($chat_id) == 0)return ['ok' => false];
     $text = applyPremiumEmojiTransform($text, $parse_mode);
-    $keyboard = processKeyboardStyles($keyboard);
+    $keyboard = processKeyboardStyles($keyboard, function_exists('rx_isAdminChat') && rx_isAdminChat($chat_id));
     $keyboard = applyPremiumEmojiToKeyboard($keyboard);
     return telegram('sendmessage',[
         'chat_id' => $chat_id,
@@ -1995,29 +2416,30 @@ if (!function_exists('rx_cron_style')) {
      * cannot disambiguate by callback_data alone.
      */
     function rx_cron_style(string $key): ?string {
-        static $cronStyles = null;
-        if ($cronStyles === null) {
-            $cronStyles = [];
+        static $styles = null;
+        if ($styles === null) {
+            $styles = [];
+            global $pdo;
             try {
-                global $pdo;
                 if (isset($pdo) && $pdo instanceof PDO) {
                     $stmt = $pdo->query("SELECT keyboard_styles_all FROM setting LIMIT 1");
-                    $row  = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
-                    if ($row && !empty($row['keyboard_styles_all'])) {
+                    $row = $stmt ? $stmt->fetch(PDO::FETCH_ASSOC) : null;
+                    if (is_array($row) && !empty($row['keyboard_styles_all'])) {
                         $all = json_decode($row['keyboard_styles_all'], true);
                         if (is_array($all) && !empty($all['cron_notifications']) && is_array($all['cron_notifications'])) {
-                            $cronStyles = $all['cron_notifications'];
+                            $styles = $all['cron_notifications'];
                         }
                     }
                 }
-            } catch (Throwable $e) { /* ignore — defaults below */ }
+            } catch (\Throwable $e) {}
             if (function_exists('rx_getKeyboardDefaultStyles') && (!function_exists('rx_kb_use_defaults') || rx_kb_use_defaults())) {
-                $cronStyles = $cronStyles + rx_getKeyboardDefaultStyles('cron_notifications');
+                $styles = $styles + rx_getKeyboardDefaultStyles('cron_notifications');
             }
         }
-        $v = $cronStyles[$key] ?? null;
-        if (!is_string($v) || $v === '' || $v === 'default') return null;
-        return $v;
+        if (!empty($styles[$key]) && $styles[$key] !== 'default') {
+            return $styles[$key];
+        }
+        return null;
     }
 }
 
@@ -2030,6 +2452,7 @@ if (!function_exists('rx_cron_btn')) {
      *   rx_cron_btn('cron_buy_service', ['text' => 'خرید', 'callback_data' => 'buy'])
      */
     function rx_cron_btn(string $cronKey, array $btn): array {
+        $btn['_rxkeep'] = 1;
         if (isset($btn['style'])) return $btn;
         $st = rx_cron_style($cronKey);
         if ($st !== null) $btn['style'] = $st;
@@ -2074,6 +2497,7 @@ function sendDocument($chat_id, $documentPath, $caption)
         'chat_id' => $chat_id,
         'document' => $document,
         'caption' => $caption,
+        'parse_mode' => 'HTML',
     ]);
 }
 
@@ -2089,6 +2513,7 @@ function sendphoto($chat_id,$photoid,$caption){
         'chat_id' => $chat_id,
         'photo'=> $photoid,
         'caption'=> $caption,
+        'parse_mode' => 'HTML',
     ]);
 }
 function sendvideo($chat_id,$videoid,$caption){
@@ -2096,6 +2521,7 @@ function sendvideo($chat_id,$videoid,$caption){
         'chat_id' => $chat_id,
         'video'=> $videoid,
         'caption'=> $caption,
+        'parse_mode' => 'HTML',
     ]);
 }
 function senddocumentsid($chat_id,$documentid,$caption){
@@ -2103,38 +2529,52 @@ function senddocumentsid($chat_id,$documentid,$caption){
         'chat_id' => $chat_id,
         'document'=> $documentid,
         'caption'=> $caption,
+        'parse_mode' => 'HTML',
     ]);
 }
-function Editmessagetext($chat_id, $message_id, $text, $keyboard,$parse_mode = 'HTML'){
+function Editmessagetext($chat_id, $message_id, $text, $keyboard,$parse_mode = 'HTML', $threadId = null){
     $message_id = (int) $message_id;
-    if ($message_id <= 0) {
-        if (function_exists('sendmessage')) {
-            return sendmessage($chat_id, $text, $keyboard, strtolower($parse_mode));
-        }
-        return ['ok' => false, 'description' => 'message_id missing'];
-    }
-    $text = applyPremiumEmojiTransform($text, $parse_mode);
-    $keyboard = processKeyboardStyles($keyboard);
-    $keyboard = applyPremiumEmojiToKeyboard($keyboard);
-
-    
-    
-    
     global $update;
     $__callbackMsg = (isset($update['callback_query']['message']) && is_array($update['callback_query']['message']))
         ? $update['callback_query']['message'] : null;
     $__callbackMsgId = $__callbackMsg ? (int)($__callbackMsg['message_id'] ?? 0) : 0;
+    $__origThreadId = $threadId !== null
+        ? (int) $threadId
+        : ($__callbackMsg ? (int)($__callbackMsg['message_thread_id'] ?? 0) : 0);
+    $__sendFallback = function ($fbChatId, $fbText, $fbKeyboard, $fbParseMode) use ($__origThreadId) {
+        $fbText = applyPremiumEmojiTransform($fbText, $fbParseMode);
+        $fbKeyboard = processKeyboardStyles($fbKeyboard, function_exists('rx_isAdminChat') && rx_isAdminChat($fbChatId));
+        $fbKeyboard = applyPremiumEmojiToKeyboard($fbKeyboard);
+        $fbPayload = [
+            'chat_id' => $fbChatId,
+            'text' => $fbText,
+            'reply_markup' => $fbKeyboard,
+            'parse_mode' => $fbParseMode,
+            '_rx_already_transformed' => true,
+        ];
+        if ($__origThreadId > 0) {
+            $fbPayload['message_thread_id'] = $__origThreadId;
+        }
+        return telegram('sendmessage', $fbPayload);
+    };
+    if ($message_id <= 0) {
+        return $__sendFallback($chat_id, $text, $keyboard, strtolower($parse_mode));
+    }
+    $text = applyPremiumEmojiTransform($text, $parse_mode);
+    $keyboard = processKeyboardStyles($keyboard, function_exists('rx_isAdminChat') && rx_isAdminChat($chat_id));
+    $keyboard = applyPremiumEmojiToKeyboard($keyboard);
+
     $__isPhotoMsg = $__callbackMsg && (
         !empty($__callbackMsg['photo'])
         || !empty($__callbackMsg['video'])
         || !empty($__callbackMsg['animation'])
         || !empty($__callbackMsg['document'])
     );
-    if ($__isPhotoMsg && $__callbackMsgId === (int)$message_id && function_exists('sendmessage')) {
+    if ($__isPhotoMsg && $__callbackMsgId === (int)$message_id) {
         if (function_exists('deletemessage')) {
             @deletemessage($chat_id, $message_id);
         }
-        return sendmessage($chat_id, $text, $keyboard, strtolower($parse_mode));
+        return $__sendFallback($chat_id, $text, $keyboard, strtolower($parse_mode));
     }
 
     $result = telegram('editmessagetext', [
@@ -2150,19 +2590,16 @@ function Editmessagetext($chat_id, $message_id, $text, $keyboard,$parse_mode = '
     if (is_array($result) && isset($result['ok']) && $result['ok'] === false) {
         $desc = strtolower((string)($result['description'] ?? ''));
 
-
         $needsFallback = (
             strpos($desc, 'no text in the message') !== false
             || strpos($desc, "message can't be edited") !== false
             || strpos($desc, 'message to edit not found') !== false
         );
-        if ($needsFallback && function_exists('sendmessage')) {
-            
-            
-            if (strpos($desc, 'no text in the message') !== false && function_exists('deletemessage')) {
+        if ($needsFallback) {
+            if (function_exists('deletemessage')) {
                 @deletemessage($chat_id, $message_id);
             }
-            return sendmessage($chat_id, $text, $keyboard, strtolower($parse_mode));
+            return $__sendFallback($chat_id, $text, $keyboard, strtolower($parse_mode));
         }
     }
     return $result;
@@ -2190,6 +2627,15 @@ function pinmessage($from_id,$message_id){
   return telegram('unpinAllChatMessages', [
 'chat_id' => $from_id,
 ]);
+ }
+function getChatPinnedMessageId($chat_id){
+  $resp = telegram('getChat', [
+'chat_id' => $chat_id,
+]);
+  if (isset($resp['ok']) && $resp['ok'] && isset($resp['result']['pinned_message']['message_id'])) {
+    return (int) $resp['result']['pinned_message']['message_id'];
+  }
+  return null;
  }
   function answerInlineQuery($inline_query_id,$results){
   return telegram('answerInlineQuery', [
@@ -2223,6 +2669,17 @@ function isDuplicateUpdate($updateId)
 
     if (isset($memoryCache[$updateId])) {
         return true;
+    }
+
+    if (function_exists('rx_redis_set_nx')) {
+        $rxRedisResult = rx_redis_set_nx('faoxima:dedupe:update:' . $updateId, '1', $timeToLive * 1000);
+        if ($rxRedisResult === true) {
+            $memoryCache[$updateId] = $now;
+            return false;
+        }
+        if ($rxRedisResult === false) {
+            return true;
+        }
     }
 
     $isDuplicate = false;
@@ -2365,36 +2822,6 @@ if (isDuplicateUpdate($update_id)) {
     exit;
 }
 
-
-try {
-    $rxSecretRow = $pdo->query("SELECT webhook_secret_token FROM setting LIMIT 1")->fetch(PDO::FETCH_ASSOC);
-    $rxStoredSecret = is_array($rxSecretRow) ? (string)($rxSecretRow['webhook_secret_token'] ?? '') : '';
-} catch (\Throwable $rxSecretQueryErr) {
-    $rxStoredSecret = '';
-}
-if ($rxStoredSecret !== '') {
-    $rxIncomingSecret = isset($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'])
-        ? (string) $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN']
-        : '';
-    if (!hash_equals($rxStoredSecret, $rxIncomingSecret)) {
-        $rxRejectIp = (string) ($_SERVER['REMOTE_ADDR'] ?? 'unknown');
-        $rxRejectIpKey = preg_replace('/[^A-Fa-f0-9.:]/', '_', $rxRejectIp);
-        $rxRejectMarker = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'botapi_reject_' . substr(md5($rxRejectIpKey), 0, 16) . '.flag';
-        $rxShouldLog = true;
-        if (is_file($rxRejectMarker) && (time() - (int) @filemtime($rxRejectMarker)) < 3600) {
-            $rxShouldLog = false;
-        }
-        if ($rxShouldLog) {
-            error_log('[botapi] Rejected webhook: bad or missing secret_token from ' . $rxRejectIp);
-            @touch($rxRejectMarker);
-        }
-        if (!headers_sent()) {
-            http_response_code(200);
-        }
-        exit;
-    }
-}
-
 $from_id = $update['message']['from']['id'] ?? $update['callback_query']['from']['id'] ?? $update["inline_query"]['from']['id'] ?? 0;
 $time_message = $update['message']['date'] ?? $update['callback_query']['date'] ?? $update["inline_query"]['date'] ?? 0;
 $is_bot = $update['message']['from']['is_bot'] ?? false;
@@ -2461,4 +2888,5 @@ if (!is_string($inline_query_id) && !is_int($inline_query_id)) {
 } elseif (!preg_match('/^\d{1,32}$/', (string) $inline_query_id)) {
     $inline_query_id = '';
 }
+
 $query = $update["inline_query"]["query"] ?? 0;

@@ -273,6 +273,111 @@
                 scheduleSave();
             });
         });
+
+        bindPointerDrag(rowsEl);
+    }
+
+    function bindPointerDrag(rowsEl) {
+        rowsEl.querySelectorAll('.kb-btn').forEach(function (b) {
+            b.addEventListener('pointerdown', function (ev) { startPointerDrag(ev, rowsEl, b, 'btn'); });
+        });
+        rowsEl.querySelectorAll('.kb-row__handle').forEach(function (h) {
+            h.addEventListener('pointerdown', function (ev) { startPointerDrag(ev, rowsEl, h.closest('.kb-row'), 'row'); });
+        });
+    }
+
+    function startPointerDrag(ev, rowsEl, el, type) {
+        if (ev.pointerType === 'mouse') return;
+        if (ev.target.closest('.kb-btn__remove')) return;
+        if (!el) return;
+        var startX = ev.clientX, startY = ev.clientY, pointerId = ev.pointerId;
+        var active = false, ghost = null, lastTarget = null;
+        var src = (type === 'row')
+            ? { type: 'row', rowIdx: parseInt(el.dataset.row, 10) }
+            : { type: 'btn', rowIdx: parseInt(el.dataset.row, 10), btnIdx: parseInt(el.dataset.btn, 10) };
+        function cleanup() {
+            document.removeEventListener('pointermove', onMove);
+            document.removeEventListener('pointerup', onUp);
+            document.removeEventListener('pointercancel', onUp);
+            el.classList.remove('dragging');
+            if (ghost) { ghost.remove(); ghost = null; }
+            if (lastTarget) { lastTarget.classList.remove('drag-over'); lastTarget = null; }
+        }
+        function begin() {
+            if (active) return;
+            active = true;
+            el.classList.add('dragging');
+            if (navigator.vibrate) { try { navigator.vibrate(12); } catch (e) {} }
+            ghost = el.cloneNode(true);
+            ghost.classList.add('kb-drag-ghost');
+            ghost.style.cssText += ';position:fixed;z-index:5000;pointer-events:none;opacity:.92;margin:0;width:' + el.offsetWidth + 'px;box-shadow:0 12px 30px rgba(0,0,0,.4);transform:rotate(1.5deg);';
+            document.body.appendChild(ghost);
+            moveGhost(startX, startY);
+        }
+        function moveGhost(x, y) {
+            if (!ghost) return;
+            ghost.style.left = (x - ghost.offsetWidth / 2) + 'px';
+            ghost.style.top = (y - 20) + 'px';
+        }
+        function highlight(x, y) {
+            if (ghost) ghost.style.visibility = 'hidden';
+            var under = document.elementFromPoint(x, y);
+            if (ghost) ghost.style.visibility = '';
+            if (lastTarget) { lastTarget.classList.remove('drag-over'); lastTarget = null; }
+            if (!under) return;
+            var t = (src.type === 'btn') ? (under.closest('.kb-btn') || under.closest('.kb-row')) : under.closest('.kb-row');
+            if (t) { t.classList.add('drag-over'); lastTarget = t; }
+        }
+        function onMove(e) {
+            if (e.pointerId !== pointerId) return;
+            if (!active) {
+                if (Math.abs(e.clientX - startX) + Math.abs(e.clientY - startY) <= 8) return;
+                begin();
+            }
+            e.preventDefault();
+            moveGhost(e.clientX, e.clientY);
+            highlight(e.clientX, e.clientY);
+        }
+        function onUp(e) {
+            if (e.pointerId !== pointerId) return;
+            var target = lastTarget, wasActive = active;
+            cleanup();
+            if (wasActive) {
+                var swallow = function (ce) { ce.stopPropagation(); ce.preventDefault(); document.removeEventListener('click', swallow, true); };
+                document.addEventListener('click', swallow, true);
+                setTimeout(function () { document.removeEventListener('click', swallow, true); }, 350);
+            }
+            if (!wasActive || !target) return;
+            if (src.type === 'row') {
+                var ti = parseInt(target.dataset.row, 10);
+                if (!isNaN(ti) && ti !== src.rowIdx) {
+                    var movedRow = rows.splice(src.rowIdx, 1)[0];
+                    rows.splice(ti, 0, movedRow);
+                    render(); scheduleSave();
+                }
+            } else {
+                if (target.classList.contains('kb-btn')) {
+                    var dr = parseInt(target.dataset.row, 10), dbi = parseInt(target.dataset.btn, 10);
+                    if (!(dr === src.rowIdx && dbi === src.btnIdx)) {
+                        var movedBtn = rows[src.rowIdx].splice(src.btnIdx, 1)[0];
+                        var idx = dbi;
+                        if (src.rowIdx === dr && src.btnIdx < dbi) idx -= 1;
+                        rows[dr].splice(idx, 0, movedBtn);
+                        render(); scheduleSave();
+                    }
+                } else if (target.dataset && target.dataset.row !== undefined) {
+                    var drr = parseInt(target.dataset.row, 10);
+                    if (drr !== src.rowIdx) {
+                        var mv = rows[src.rowIdx].splice(src.btnIdx, 1)[0];
+                        rows[drr].push(mv);
+                        render(); scheduleSave();
+                    }
+                }
+            }
+        }
+        document.addEventListener('pointermove', onMove, { passive: false });
+        document.addEventListener('pointerup', onUp);
+        document.addEventListener('pointercancel', onUp);
     }
 
 

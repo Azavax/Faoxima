@@ -10,6 +10,9 @@ final class BrandHandler extends BaseHandler
 
     public $mode = 'info';
 
+    private const DEFAULT_NAME = 'faoxima';
+    private const DEFAULT_LOGO_URL = 'https://avatars.githubusercontent.com/u/238855591?s=400&u=059d14b3c8c0993bd7211e6fc4bd7d297df4da35&v=4';
+
     public function handle(): void
     {
         switch ($this->mode) {
@@ -40,12 +43,20 @@ final class BrandHandler extends BaseHandler
     {
         $name = trim(self::readSetting('brand_name'));
         $mark = trim(self::readSetting('brand_mark'));
+        $title = trim(self::readSetting('brand_title'));
         $logo = trim(self::readSetting('brand_logo'));
+        $state = self::readSetting('brand_logo_state', 'default');
         $accent = strtolower(trim(self::readSetting('brand_accent')));
+        $mode = strtolower(trim(self::readSetting('brand_mode', 'dark')));
 
-        if ($name === '') $name = 'Faoxima';
+        if ($name === '') $name = self::DEFAULT_NAME;
         if ($mark === '') $mark = 'M';
         if (!preg_match('/^#[0-9a-fA-F]{6}$/', $accent)) $accent = '#7c5cff';
+        if ($mode !== 'dark' && $mode !== 'light') $mode = 'dark';
+        if (!in_array($state, ['default', 'custom', 'initials'], true)) $state = 'default';
+
+        $forceDark = !in_array(strtolower(trim(self::readSetting('brand_force_dark', '1'))), ['0', 'off', 'false', 'no'], true);
+        if ($forceDark) $mode = 'dark';
 
         $logoUrl = '';
         if ($logo !== '') {
@@ -55,11 +66,29 @@ final class BrandHandler extends BaseHandler
             }
         }
 
+        // A custom logo file always wins the state, regardless of what was persisted.
+        if ($logoUrl !== '') {
+            $state = 'custom';
+        } elseif ($state === 'custom') {
+            // Custom logo file is missing/deleted but state says custom: fall back to initials, never default.
+            $state = 'initials';
+        }
+
+        $isDefaultLogo = ($state === 'default');
+        if ($isDefaultLogo) {
+            $logoUrl = self::DEFAULT_LOGO_URL;
+        }
+
         return [
-            'name'     => $name,
-            'mark'     => $mark,
-            'logo_url' => $logoUrl,
-            'accent'   => $accent,
+            'name'             => $name,
+            'mark'             => $mark,
+            'title'            => $title,
+            'logo_url'         => $logoUrl,
+            'avatar_state'     => $state,
+            'is_default_logo'  => $isDefaultLogo,
+            'has_custom_logo'  => ($state === 'custom'),
+            'accent'           => $accent,
+            'mode'             => $mode,
         ];
     }
 
@@ -76,19 +105,22 @@ final class BrandHandler extends BaseHandler
     private function handleSave(): void
     {
         $this->requireMethod('POST');
+
         if (!$this->userIsAdmin()) {
             FaoximaResponse::fail(403, 'admin only');
         }
 
         $name = FaoximaInput::string($this->data, 'name');
         $mark = FaoximaInput::string($this->data, 'mark');
+        $title = FaoximaInput::string($this->data, 'title');
         $accent = strtolower(trim(FaoximaInput::string($this->data, 'accent')));
 
         $name = trim(preg_replace('/\s+/', ' ', $name));
         $mark = trim($mark);
+        $title = trim(preg_replace('/\s+/', ' ', $title));
 
         if (mb_strlen($name) > 40)  $name = mb_substr($name, 0, 40);
-        if (mb_strlen($mark) > 4)   $mark = mb_substr($mark, 0, 4);
+        if (mb_strlen($mark) > 2)   $mark = mb_substr($mark, 0, 2);
 
         $hasData = is_array($this->data);
 
@@ -98,6 +130,12 @@ final class BrandHandler extends BaseHandler
         if ($hasData && array_key_exists('mark', $this->data)) {
             $this->upsertSetting('brand_mark', $mark);
         }
+        if ($hasData && array_key_exists('title', $this->data)) {
+            if (mb_strlen($title) < 1 || mb_strlen($title) > 10) {
+                FaoximaResponse::badRequest('title must be 1 to 10 characters');
+            }
+            $this->upsertSetting('brand_title', $title);
+        }
         if ($accent !== '') {
             if (!preg_match('/^#[0-9a-fA-F]{6}$/', $accent)) {
                 FaoximaResponse::badRequest('accent must be a hex color like #7c5cff');
@@ -105,7 +143,8 @@ final class BrandHandler extends BaseHandler
             $this->upsertSetting('brand_accent', $accent);
         }
 
-        FaoximaResponse::ok(self::buildBrandPayload() + ['message' => 'برند با موفقیت ذخیره شد']);
+        $responsePayload = self::buildBrandPayload();
+        FaoximaResponse::ok($responsePayload + ['message' => 'برند با موفقیت ذخیره شد']);
     }
 
 
@@ -121,6 +160,10 @@ final class BrandHandler extends BaseHandler
         if ($clear === '1') {
             $this->deleteOldLogo();
             $this->upsertSetting('brand_logo', '');
+            // Deleting a custom logo (or the default) always lands on INITIALS.
+            // CUSTOM_IMAGE -> DEFAULT is a disallowed transition; once the user has left
+            // DEFAULT the app must never resurrect it.
+            $this->upsertSetting('brand_logo_state', 'initials');
             FaoximaResponse::ok(self::buildBrandPayload() + ['message' => 'لوگو حذف شد']);
         }
 
@@ -170,6 +213,7 @@ final class BrandHandler extends BaseHandler
 
         $this->deleteOldLogo();
         $this->upsertSetting('brand_logo', $outName);
+        $this->upsertSetting('brand_logo_state', 'custom');
 
         FaoximaResponse::ok(self::buildBrandPayload() + ['message' => 'لوگو ذخیره شد']);
     }
@@ -184,8 +228,11 @@ final class BrandHandler extends BaseHandler
                   ON DUPLICATE KEY UPDATE value = VALUES(value)'
             );
             $stmt->execute([':n' => $name, ':v' => $value]);
+            if (function_exists('clearSelectCache')) {
+                clearSelectCache('shopSetting');
+            }
         } catch (Throwable $e) {
-            FaoximaLogger::userFacing('brand upsertSetting failed', ['err' => $e->getMessage(), 'name' => $name]);
+            FaoximaLogger::exception($e, 'brand upsertSetting failed', ['name' => $name]);
             FaoximaResponse::fail(500, 'cannot save brand setting');
         }
     }

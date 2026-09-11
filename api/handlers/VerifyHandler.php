@@ -93,23 +93,23 @@ final class VerifyHandler
 
         $GLOBALS['from_id'] = $userId;
 
-        if (($userRecord['joinchannel'] ?? '') !== 'active') {
-            $channelsId = select('channels', 'link', null, null, 'FETCH_COLUMN');
+        $adminIds = select('admin', 'id_admin', null, null, 'FETCH_COLUMN', ['cache' => false]);
+        $isAdmin = is_array($adminIds) && in_array($userId, array_map('intval', $adminIds), true);
+
+        if (!$isAdmin) {
+            $channelsId = select('channels', 'link', null, null, 'FETCH_COLUMN', ['cache' => false]);
             if (is_array($channelsId) && count($channelsId) > 0 && function_exists('channel')) {
                 $missing = channel($channelsId);
                 if (is_array($missing) && count($missing) > 0) {
+                    if (($userRecord['joinchannel'] ?? '') === 'active') {
+                        update('user', 'joinchannel', '0', 'id', $userId);
+                    }
                     $list = [];
                     foreach ($missing as $chan) {
-                        $row = select('channels', '*', 'link', $chan, 'select');
-                        if (!is_array($row)) {
-                            continue;
-                        }
-                        $title = $row['remark'] ?? null;
-                        $link  = $row['linkjoin'] ?? null;
-                        if ($title === null || $title === '' || $link === null || $link === '') {
-                            continue;
-                        }
-                        $list[] = ['title' => (string)$title, 'link' => (string)$link];
+                        $row = select('channels', '*', 'link', $chan, 'select', ['cache' => false]);
+                        $title = is_array($row) && !empty($row['remark']) ? (string)$row['remark'] : (string)$chan;
+                        $link  = is_array($row) && !empty($row['linkjoin']) ? (string)$row['linkjoin'] : ('https://t.me/' . ltrim((string)$chan, '@'));
+                        $list[] = ['title' => $title, 'link' => $link];
                     }
                     return [
                         'gate'     => 'force_join',
@@ -117,13 +117,12 @@ final class VerifyHandler
                         'msg'      => 'برای استفاده از مینی‌اپ، ابتدا در کانال‌های زیر عضو شوید.',
                     ];
                 }
-                update('user', 'joinchannel', 'active', 'id', $userId);
-                $userRecord['joinchannel'] = 'active';
+                if (($userRecord['joinchannel'] ?? '') !== 'active') {
+                    update('user', 'joinchannel', 'active', 'id', $userId);
+                    $userRecord['joinchannel'] = 'active';
+                }
             }
         }
-
-        $adminIds = select('admin', 'id_admin', null, null, 'FETCH_COLUMN', ['cache' => false]);
-        $isAdmin = is_array($adminIds) && in_array($userId, array_map('intval', $adminIds), true);
 
         $needPhone  = ((($setting['get_number'] ?? '') === 'onAuthenticationphone') || (($setting['iran_number'] ?? '') === 'onAuthenticationiran'))
             && (($userRecord['number'] ?? 'none') === 'none');

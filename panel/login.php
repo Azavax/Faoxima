@@ -120,11 +120,18 @@ if (isset($_POST['login'])) {
 <!DOCTYPE html>
 <html lang="fa" dir="rtl" data-theme="dark" data-color="blue">
 <head>
+    <script>
+    (function(){try{var t=localStorage.getItem('faoxima_theme');
+    if(t!=='light'&&t!=='dark')t='dark';
+    document.documentElement.setAttribute('data-theme',t);
+    var c=localStorage.getItem('faoxima_color');
+    if(c)document.documentElement.setAttribute('data-color',c);}catch(e){}})();
+    </script>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>ورود به پنل مدیریت | فاکسیما</title>
-    <link rel="stylesheet" href="css/theme.css">
-<script src="js/theme.js" defer>
+    <link rel="stylesheet" href="css/theme.css?v=flat47">
+<script src="js/theme.js?v=flat5" defer>
 
 </script>
 </head>
@@ -187,7 +194,7 @@ if (isset($_POST['login'])) {
             </p>
 
             
-            <div class="login-social" style="display:flex; gap:10px; justify-content:center; margin-top:18px; padding-top:14px; border-top:1px solid var(--border, rgba(255,255,255,0.08));">
+            <div class="login-social" style="display:flex; gap:10px; justify-content:center; margin-top:18px; padding-top:14px; border-top:1px solid var(--border-soft);">
                 <a href="https://t.me/faoxima" target="_blank" rel="noopener noreferrer"
                    aria-label="کانال تلگرام فاکسیما"
                    title="کانال تلگرام فاکسیما"
@@ -209,7 +216,7 @@ if (isset($_POST['login'])) {
             <p class="text-muted" style="text-align:center; font-size:11px; margin-top:14px; direction:ltr; font-family:'JetBrains Mono',monospace;">
                 <?php
                     $__loginVer = trim((string)@file_get_contents(__DIR__ . '/../version'));
-                    if ($__loginVer === '') $__loginVer = '0.0.2';
+                    if ($__loginVer === '') $__loginVer = '1.0.0';
                     echo 'v' . htmlspecialchars(ltrim($__loginVer, 'vV'), ENT_QUOTES, 'UTF-8');
                 ?>
             </p>

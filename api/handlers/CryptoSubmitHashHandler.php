@@ -9,7 +9,7 @@ final class CryptoSubmitHashHandler extends BaseHandler
 {
 
     private const REASON_FA = [
-        'invalid-hash'      => 'فرمت هش نامعتبر است. هش تراکنش باید 64 کاراکتر هگز باشد یا یک لینک معتبر Tronscan/Tonviewer',
+        'invalid-hash'      => 'هش معتبری در متن ارسالی پیدا نشد. لطفاً هش تراکنش (Hash / TxID) یا لینک آن را ارسال کنید — نه آدرس کیف‌پول.',
         'hash-already-used' => 'این هش قبلاً برای فاکتور دیگری ثبت شده است',
         'order-not-pending' => 'فاکتور دیگر در حالت انتظار نیست، یا قبلاً پردازش شده است',
         'db-update-failed'  => 'خطا در ذخیره — لطفاً دوباره تلاش کنید',
@@ -74,10 +74,24 @@ final class CryptoSubmitHashHandler extends BaseHandler
             'hash'  => substr((string)$result['hash'], 0, 10) . '...',
         ]);
 
+        $currency = (string)($report['crypto_currency'] ?? '');
+        $manualCurrencies = function_exists('crypto_manual_currencies') ? crypto_manual_currencies() : [];
+        $isManual = isset($manualCurrencies[$currency]);
+
+        if ($isManual) {
+            FaoximaResponse::ok([
+                'kind'            => 'hash_submitted_receipt_required',
+                'message'         => '⚠️ این شبکه به‌صورت خودکار بررسی نمی‌شود. برای ثبت درخواست بررسی توسط ادمین، حالا عکس رسید تراکنش را نیز آپلود کنید (اجباری).',
+                'hash'            => (string)$result['hash'],
+                'receipt_required' => true,
+            ]);
+        }
+
         FaoximaResponse::ok([
             'kind'    => 'hash_submitted',
             'message' => '✅ هش تراکنش ثبت شد. ربات شبکه را بررسی می‌کند…',
             'hash'    => (string)$result['hash'],
+            'receipt_required' => false,
         ]);
     }
 }

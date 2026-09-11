@@ -6,6 +6,10 @@ require_once __DIR__ . '/../config.php';
 require_once __DIR__ . '/../botapi.php';
 require_once __DIR__ . '/../function.php';
 
+if (!rx_cron_db_ready('statusday')) {
+    return;
+}
+
 $setting = select('setting', '*', null, null, 'select');
 
 $reportnightRow = select('topicid', 'idreport', 'report', 'reportnight', 'select');
@@ -114,7 +118,7 @@ $listagentuser = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
 
 $textagent = "لیست نمایندگانی که بیشترین خرید در امروز داشتند :\n";
 foreach ($listagentuser as $agent) {
-    $textagent .= "\nایدی عددی کاربر : {$agent['id']}\nنام کاربری کاربر : {$agent['username']}\nجمع کل خرید امروز : {$agent['total_spent']}\n---------------\n";
+    $textagent .= "\n<blockquote>ایدی عددی کاربر : {$agent['id']}</blockquote>\n<blockquote>نام کاربری کاربر : {$agent['username']}</blockquote>\n<blockquote>جمع کل خرید امروز : {$agent['total_spent']}</blockquote>\n---------------\n";
 }
 
 $panels    = select('marzban_panel', '*', null, null, 'fetchAll');

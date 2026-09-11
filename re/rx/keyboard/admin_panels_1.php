@@ -3,137 +3,90 @@
 $optionGuard = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
         [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("🔄 تغییر نوع پنل", 'admin_panel_guard')],
         [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_guard'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_guard', 'danger')],
-        [$rxAdminPanelBtn("🔐 ویرایش کلید", 'admin_panel_guard'), $rxAdminPanelBtn("⁉️ وضعیت اتصال به پنل", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("⚙️ تنظیم سرویس ها", 'admin_panel_guard'), $rxAdminPanelBtn("🎛️ تنظیمات سرویس", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_guard'), $rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_guard'), $rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("🔐 ویرایش کلید", 'admin_panel_guard'), $rxAdminPanelBtn("⁉️ اتصال به پنل", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("⚙️ تنظیم سرویس ها", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_guard'), $rxAdminPanelBtn("💡 ساخت نام کاربری", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("🚨 محدودیت اکانت", 'admin_panel_guard'), $rxAdminPanelBtn("📍 تغییر گروه", 'admin_panel_guard')],
         [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_guard'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_guard'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("⚙️ قیمت حجم دلخواه", 'admin_panel_guard'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_guard')],
         [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_guard'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("🌍 قیمت تغییر لوکیشن", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_guard'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_guard'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("🌍 قیمت تغییر مکان", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("📍 کف حجم دلخواه", 'admin_panel_guard'), $rxAdminPanelBtn("📍 سقف حجم دلخواه", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("📍 کف زمان دلخواه", 'admin_panel_guard'), $rxAdminPanelBtn("📍 سقف زمان دلخواه", 'admin_panel_guard')],
         [$rxAdminPanelBtn("⚙️  اینباند اکانت غیرفعال", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_guard'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_guard')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_guard', 'danger')],
+        [$rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("🫣 مخفی پنل برای کاربر", 'admin_panel_guard')],
+        [$rxAdminPanelBtn("❌ حذف از لیست مخفی", 'admin_panel_guard', 'danger')],
         [['text' => $textbotlang['Admin']['backadmin']], ['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
 ]));
-$optionibsng = rx_finalizeInlineAdminKb(json_encode([
+$optionRebecca = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
-        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_ibsng'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_ibsng', 'danger')],
-        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_ibsng'), $rxAdminPanelBtn("👤 ویرایش نام کاربری", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_ibsng'), $rxAdminPanelBtn('🎛 تنظیم نام گروه', 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_ibsng'), $rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_ibsng'), $rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_ibsng'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_ibsng'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_ibsng'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_ibsng'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_ibsng'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_ibsng')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_ibsng', 'danger')],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
+        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("🔄 تغییر نوع پنل", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_rebecca'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_rebecca', 'danger')],
+        [$rxAdminPanelBtn("🔐 ویرایش کلید", 'admin_panel_rebecca'), $rxAdminPanelBtn("⁉️ اتصال به پنل", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("⚙️ سرویس پیش‌فرض", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_rebecca'), $rxAdminPanelBtn("💡 ساخت نام کاربری", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("🚨 محدودیت اکانت", 'admin_panel_rebecca'), $rxAdminPanelBtn("📍 تغییر گروه", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_rebecca'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("⚙️ قیمت حجم دلخواه", 'admin_panel_rebecca'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_rebecca'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("🌍 قیمت تغییر مکان", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("📍 کف حجم دلخواه", 'admin_panel_rebecca'), $rxAdminPanelBtn("📍 سقف حجم دلخواه", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("📍 کف زمان دلخواه", 'admin_panel_rebecca'), $rxAdminPanelBtn("📍 سقف زمان دلخواه", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("🫣 مخفی پنل برای کاربر", 'admin_panel_rebecca')],
+        [$rxAdminPanelBtn("❌ حذف از لیست مخفی", 'admin_panel_rebecca', 'danger')],
+        [['text' => $textbotlang['Admin']['backadmin']], ['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
 ]));
-$option_mikrotik = rx_finalizeInlineAdminKb(json_encode([
+$optionPasarGuard = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
-        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_mikrotik'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_mikrotik', 'danger')],
-        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_mikrotik'), $rxAdminPanelBtn("👤 ویرایش نام کاربری", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_mikrotik'), $rxAdminPanelBtn('🎛 تنظیم نام گروه', 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_mikrotik'), $rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_mikrotik'), $rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_mikrotik'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_mikrotik'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_mikrotik'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_mikrotik'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_mikrotik'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_mikrotik')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_mikrotik', 'danger')],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
-    ],
-    'resize_keyboard' => true
-]));
-$options_ui = rx_finalizeInlineAdminKb(json_encode([
-    'keyboard' => [
-        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_s_ui'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_s_ui', 'danger')],
-        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_s_ui'), $rxAdminPanelBtn("👤 ویرایش نام کاربری", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_s_ui'), $rxAdminPanelBtn("⚙️ تنظیم پروتکل و اینباند", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_s_ui'), $rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_s_ui'), $rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_s_ui'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_s_ui'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_s_ui'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("🌍 قیمت تغییر لوکیشن", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_s_ui'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_s_ui'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("⚙️  اینباند اکانت غیرفعال", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_s_ui'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_s_ui')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_s_ui', 'danger')],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
+        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("🔄 تغییر نوع پنل", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_pasarguard'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_pasarguard', 'danger')],
+        [$rxAdminPanelBtn("🔐 ویرایش کلید", 'admin_panel_pasarguard'), $rxAdminPanelBtn("⁉️ اتصال به پنل", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_pasarguard'), $rxAdminPanelBtn("⚙️ پروتکل اینباند", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_pasarguard'), $rxAdminPanelBtn("💡 ساخت نام کاربری", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("🚨 محدودیت اکانت", 'admin_panel_pasarguard'), $rxAdminPanelBtn("📍 تغییر گروه", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_pasarguard'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("⚙️ قیمت حجم دلخواه", 'admin_panel_pasarguard'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_pasarguard'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("🌍 قیمت تغییر مکان", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("📍 کف حجم دلخواه", 'admin_panel_pasarguard'), $rxAdminPanelBtn("📍 سقف حجم دلخواه", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("📍 کف زمان دلخواه", 'admin_panel_pasarguard'), $rxAdminPanelBtn("📍 سقف زمان دلخواه", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("⚙️  اینباند اکانت غیرفعال", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("🫣 مخفی پنل برای کاربر", 'admin_panel_pasarguard')],
+        [$rxAdminPanelBtn("❌ حذف از لیست مخفی", 'admin_panel_pasarguard', 'danger')],
+        [['text' => $textbotlang['Admin']['backadmin']], ['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
 ]));
 $optionwg = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
         [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("🔄 تغییر نوع پنل", 'admin_panel_wg')],
         [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_wg'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_wg', 'danger')],
         [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_wg'), $rxAdminPanelBtn("💎 تنظیم شناسه اینباند", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_wg'), $rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_wg'), $rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_wg'), $rxAdminPanelBtn("💎 شناسه اینباند", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_wg'), $rxAdminPanelBtn("💡 ساخت نام کاربری", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("🚨 محدودیت اکانت", 'admin_panel_wg'), $rxAdminPanelBtn("📍 تغییر گروه", 'admin_panel_wg')],
         [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_wg'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_wg'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("⚙️ قیمت حجم دلخواه", 'admin_panel_wg'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_wg')],
         [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_wg'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("🌍 قیمت تغییر لوکیشن", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_wg'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_wg'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("🌍 قیمت تغییر مکان", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("📍 کف حجم دلخواه", 'admin_panel_wg'), $rxAdminPanelBtn("📍 سقف حجم دلخواه", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("📍 کف زمان دلخواه", 'admin_panel_wg'), $rxAdminPanelBtn("📍 سقف زمان دلخواه", 'admin_panel_wg')],
         [$rxAdminPanelBtn("⚙️  اینباند اکانت غیرفعال", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_wg'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_wg')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_wg', 'danger')],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
-    ],
-    'resize_keyboard' => true
-]));
-$optionmarzneshin = rx_finalizeInlineAdminKb(json_encode([
-    'keyboard' => [
-        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_marzneshin'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_marzneshin', 'danger')],
-        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_marzneshin'), $rxAdminPanelBtn("👤 ویرایش نام کاربری", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_marzneshin'), $rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("⚙️ تنظیمات سرویس", 'admin_panel_marzneshin'), $rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_marzneshin'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("🌍 قیمت تغییر لوکیشن", 'admin_panel_marzneshin'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_marzneshin'), $rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_marzneshin'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_marzneshin'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_marzneshin'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_marzneshin')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_marzneshin', 'danger')],
+        [$rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("🫣 مخفی پنل برای کاربر", 'admin_panel_wg')],
+        [$rxAdminPanelBtn("❌ حذف از لیست مخفی", 'admin_panel_wg', 'danger')],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
@@ -141,16 +94,11 @@ $optionmarzneshin = rx_finalizeInlineAdminKb(json_encode([
 $optionManualsale = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
         [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_manualsale')],
+        [$rxAdminPanelBtn("🔄 تغییر نوع پنل", 'admin_panel_manualsale')],
         [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_manualsale'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_manualsale', 'danger')],
-        [$rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_manualsale')],
-        [$rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_manualsale'), $rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_manualsale')],
-        [$rxAdminPanelBtn("➕ اضافه کردن کانفیگ", 'admin_panel_manualsale', 'success'), $rxAdminPanelBtn("❌ حذف کانفیگ ", 'admin_panel_manualsale', 'danger')],
-        [$rxAdminPanelBtn("✏️ ویرایش کانفیگ", 'admin_panel_manualsale')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_manualsale')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_manualsale')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_manualsale'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_manualsale')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_manualsale')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_manualsale', 'danger')],
+        [$rxAdminPanelBtn("💡 ساخت نام کاربری", 'admin_panel_manualsale')],
+        [$rxAdminPanelBtn("🚨 محدودیت اکانت", 'admin_panel_manualsale'), $rxAdminPanelBtn("📍 تغییر گروه", 'admin_panel_manualsale')],
+        [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_manualsale'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_manualsale')],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
@@ -158,72 +106,23 @@ $optionManualsale = rx_finalizeInlineAdminKb(json_encode([
 $optionX_ui_single = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
         [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("🔄 تغییر نوع پنل", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("🔄 تغییر حالت API", 'admin_panel_x_ui_single')],
         [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_x_ui_single', 'danger')],
-        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("👤 ویرایش نام کاربری", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("👤 ویرایش نام", 'admin_panel_x_ui_single')],
         [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("💎 تنظیم شناسه اینباند", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_x_ui_single'), $rxAdminPanelBtn('🔗 دامنه لینک ساب', 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("💎 شناسه اینباند", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("💡 ساخت نام کاربری", 'admin_panel_x_ui_single'), $rxAdminPanelBtn('🔗 دامنه لینک ساب', 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("📍 تغییر گروه", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("🚨 محدودیت اکانت", 'admin_panel_x_ui_single')],
         [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("🌍 قیمت تغییر لوکیشن", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("🌍 قیمت تغییر مکان", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("⚙️ قیمت حجم دلخواه", 'admin_panel_x_ui_single')],
         [$rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_x_ui_single')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_x_ui_single', 'danger')],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
-    ],
-    'resize_keyboard' => true
-]));
-$optionalireza_single = rx_finalizeInlineAdminKb(json_encode([
-    'keyboard' => [
-        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_alireza_single'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_alireza_single', 'danger')],
-        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_alireza_single'), $rxAdminPanelBtn("👤 ویرایش نام کاربری", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_alireza_single'), $rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("💎 تنظیم شناسه اینباند", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn('🔗 دامنه لینک ساب', 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_alireza_single'), $rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_alireza_single'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("🌍 قیمت تغییر لوکیشن", 'admin_panel_alireza_single'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_alireza_single'), $rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_alireza_single'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_alireza_single'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_alireza_single'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_alireza_single')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_alireza_single', 'danger')],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
-    ],
-    'resize_keyboard' => true
-]));
-$optionhiddfy = rx_finalizeInlineAdminKb(json_encode([
-    'keyboard' => [
-        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_hiddify'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_hiddify', 'danger')],
-        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_hiddify'), $rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn('🔗 دامنه لینک ساب', 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_hiddify'), $rxAdminPanelBtn("🔗 uuid admin", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_hiddify'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("🌍 قیمت تغییر لوکیشن", 'admin_panel_hiddify'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_hiddify'), $rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_hiddify'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_hiddify'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_hiddify'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_hiddify')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_hiddify', 'danger')],
+        [$rxAdminPanelBtn("📍 کف حجم دلخواه", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("📍 سقف حجم دلخواه", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("📍 کف زمان دلخواه", 'admin_panel_x_ui_single'), $rxAdminPanelBtn("📍 سقف زمان دلخواه", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("🫣 مخفی پنل برای کاربر", 'admin_panel_x_ui_single')],
+        [$rxAdminPanelBtn("❌ حذف از لیست مخفی", 'admin_panel_x_ui_single', 'danger')],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
@@ -233,7 +132,7 @@ if($setting['statussupportpv'] == "onpvsupport"){
         'inline_keyboard' => [
             [
                 ['text' => $datatextbot['text_fq'], 'callback_data' => "fqQuestions"] ,
-                ['text' => "🎟 ارسال پیام به پشتیبانی", 'url' => "https://t.me/{$setting['id_support']}"    ],
+                ['text' => "🎟 پیام پشتیبانی", 'url' => "https://t.me/{$setting['id_support']}"    ],
             ],[
                 ['text' => "🔙 بازگشت به منوی اصلی" ,'callback_data' => "backuser"]
             ],
@@ -245,7 +144,7 @@ $supportoption = json_encode([
         'inline_keyboard' => [
             [
                 ['text' => $datatextbot['text_fq'], 'callback_data' => "fqQuestions"] ,
-                ['text' => "🎟 ارسال پیام به پشتیبانی", 'callback_data' => "support"],
+                ['text' => "🎟 پیام پشتیبانی", 'callback_data' => "support"],
             ],[
                 ['text' => "🔙 بازگشت به منوی اصلی" ,'callback_data' => "backuser"]
             ],
@@ -260,14 +159,43 @@ $adminrule = json_encode([
     ],
     'resize_keyboard' => true
 ]);
-$affiliates =  json_encode([
+$rxAffiliatesSettingsRow = select("affiliates", "*", null, null, "select");
+$rxAffiliatesMenuMode = (is_array($rxAffiliatesSettingsRow) && ($rxAffiliatesSettingsRow['menu_keyboard_mode'] ?? '') === 'inline_menu') ? 'inline_menu' : 'reply_menu';
+
+$affiliatesReplyRows = [
+    [['text' => "🖼 مشاهده بنر فعال"]],
+    [['text' => "🏞 تنظیم عکس بنر"], ['text' => "✏️ ویرایش متن بنر"]],
+    [['text' => "🗑 حذف بنر"], ['text' => "♻️ بازگردانی بنر پیش‌فرض"]],
+    [['text' => "🧮 تنظیم درصد زیرمجموعه"], ['text' => "🌟 مبلغ هدیه استارت"]],
+    [['text' => "🎁 هدیه استارت"], ['text' => "🎁 پورسانت بعد از خرید"]],
+    [['text' => "🎉 پورسانت فقط برای خرید اول"]],
+    [['text' => "🛡 حفاظت از سواستفاده"]],
+    [['text' => "📊 گزارشات زیرمجموعه"]],
+    [['text' => $textbotlang['Admin']['backmenu']], ['text' => $textbotlang['Admin']['backadmin']]]
+];
+
+$affiliatesInlineRows = [
+    [['text' => "🖼 مشاهده بنر فعال", 'callback_data' => "affiliates_view_banner"]],
+    [['text' => "🏞 تنظیم عکس بنر", 'callback_data' => "affiliates_edit_banner_image"], ['text' => "✏️ ویرایش متن بنر", 'callback_data' => "affiliates_edit_banner_text"]],
+    [['text' => "🗑 حذف بنر", 'callback_data' => "affiliates_delete_banner"], ['text' => "♻️ بازگردانی بنر پیش‌فرض", 'callback_data' => "affiliates_reset_banner"]],
+    [['text' => "🧮 تنظیم درصد زیرمجموعه", 'callback_data' => "affiliates_set_percentage"], ['text' => "🌟 مبلغ هدیه استارت", 'callback_data' => "affiliates_set_start_amount"]],
+    [['text' => "🎁 هدیه استارت", 'callback_data' => "affiliates_toggle_start_gift"], ['text' => "🎁 پورسانت بعد از خرید", 'callback_data' => "affiliates_toggle_commission"]],
+    [['text' => "🎉 پورسانت فقط برای خرید اول", 'callback_data' => "affiliates_toggle_first_buy_only"]],
+    [['text' => "🛡 حفاظت از سواستفاده", 'callback_data' => "affiliates_antifraud_menu"]],
+    [['text' => "📊 گزارشات زیرمجموعه", 'callback_data' => "affiliates_reports"]],
+    [['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => "backmenu"]]
+];
+
+$affiliates = $rxAffiliatesMenuMode === 'inline_menu'
+    ? json_encode(['inline_keyboard' => $affiliatesInlineRows])
+    : json_encode(['keyboard' => $affiliatesReplyRows, 'resize_keyboard' => true]);
+
+$affiliatesAntiFraud = json_encode([
     'keyboard' => [
-        [['text' => "🧮 تنظیم درصد زیرمجموعه"]],
-        [['text' => "🏞 تنظیم بنر زیرمجموعه گیری"]],
-        [['text' => "🎁 پورسانت بعد از خرید"],['text' => "🎁 هدیه استارت"]],
-        [['text' => "🎉 پورسانت فقط برای خرید اول"]],
-        [['text' => "🌟 مبلغ هدیه استارت"]],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
+        [['text' => "☎️ الزام تایید شماره"]],
+        [['text' => "⏳ حداقل سن اکانت"]],
+        [['text' => "📅 سقف روزانه معرفی"], ['text' => "🗓 سقف ماهانه معرفی"]],
+        [['text' => $textbotlang['Admin']['backmenu']], ['text' => $textbotlang['Admin']['backadmin']]]
     ],
     'resize_keyboard' => true
 ]);
@@ -283,6 +211,7 @@ $helpedit =  json_encode([
     'keyboard' => [
         [['text' =>"ویرایش نام"],['text' =>"ویرایش توضیحات"]],
         [['text' => "ویرایش رسانه"],['text' => "ویرایش دسته بندی"]],
+        [['text' => "ویرایش لینک برنامه"]],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
@@ -294,6 +223,7 @@ $Methodextend = json_encode([
         [['text'=> "ریست زمان و اضافه کردن حجم قبلی"]],
         [['text' => "ریست شدن حجم و اضافه شدن زمان"]],
         [['text' => "اضافه شدن زمان و تبدیل حجم کل به حجم باقی مانده"]],
+        [['text' => "رزرو اشتراک"]],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
@@ -309,28 +239,34 @@ $keyboardtimereset = json_encode([
 $keyboardtypepanel = json_encode([
     'inline_keyboard' => [
         [
-            ['text' => "مرزبان" , 'callback_data' => "typepanel#marzban"],
-            ['text' => "🎛 پاسارگارد" , 'callback_data' => "typepanel#pasargard"]
+            ['text' => "Marzban", 'callback_data' => 'typepanel#marzban'],
+            ['text' => "Rebecca", 'callback_data' => 'typepanel#rebecca'],
+            ['text' => "PasarGuard" , 'callback_data' => "typepanel#pasargard"]
         ],
         [
-            ['text' => "مرزنشین" , 'callback_data' => "typepanel#marzneshin"],
-            ['text' => "هیدیفای" , 'callback_data' => 'typepanel#hiddify']
+            ['text' => "Remnawave", 'callback_data' => 'typepanel#remnawave'],
+            ['text' => "Guard", 'callback_data' => 'typepanel#guard'],
+            ['text' => '3x-ui', 'callback_data' => 'typepanel#x-ui_single']
         ],
         [
-            ['text' => 'ثنایی تک پورت', 'callback_data' => 'typepanel#x-ui_single'],
-            ['text' => 'علیرضا تک پورت' , 'callback_data' => 'typepanel#alireza_single']
+            ['text' => "فروش دستی" , 'callback_data' => 'typepanel#Manualsale']
         ],
         [
-            ['text' => "فروش دستی" , 'callback_data' => 'typepanel#Manualsale'],
-            ['text' => "Guard (GuardCore)", 'callback_data' => 'typepanel#guard']
+            ['text' => $textbotlang['Admin']['backadmin'] , 'callback_data' => 'admin']
+        ]
+    ],
+]);
+$keyboardswitchtype = json_encode([
+    'inline_keyboard' => [
+        [
+            ['text' => "Marzban", 'callback_data' => 'switchtype#marzban'],
+            ['text' => "Rebecca", 'callback_data' => 'switchtype#rebecca'],
+            ['text' => "PasarGuard" , 'callback_data' => "switchtype#pasargard"]
         ],
         [
-            ['text' => "WGDashboard", 'callback_data' => 'typepanel#WGDashboard'],
-            ['text' => "s_ui", 'callback_data' => 'typepanel#s_ui']
-        ],
-        [
-            ['text' => "ibsng", 'callback_data' => 'typepanel#ibsng'],
-            ['text' => "میکروتیک", 'callback_data' => 'typepanel#mikrotik']
+            ['text' => "Remnawave", 'callback_data' => 'switchtype#remnawave'],
+            ['text' => "Guard", 'callback_data' => 'switchtype#guard'],
+            ['text' => '3x-ui', 'callback_data' => 'switchtype#x-ui_single']
         ],
         [
             ['text' => $textbotlang['Admin']['backadmin'] , 'callback_data' => 'admin']
@@ -344,7 +280,7 @@ if($setting['inlinebtnmain'] == "oninline"){
     'inline_keyboard' => [
         [
             ['text' => "🗂 خرید انبوه", 'callback_data' => "kharidanbuh"],
-            ['text' => "👤 انتخاب نام دلخواه", 'callback_data' => "selectname"]
+            ['text' => "👤 نام دلخواه", 'callback_data' => "selectname"]
         ],
         [
             ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"]
@@ -358,7 +294,7 @@ if($panelechekc == 0){
 }else{
 $keyboardagent = [
     'keyboard' => [
-        [['text' => "🗂 خرید انبوه"],['text' => "👤 انتخاب نام دلخواه"]],
+        [['text' => "🗂 خرید انبوه"],['text' => "👤 نام دلخواه"]],
         [['text' => $textbotlang['users']['backbtn']]]
     ],
     'resize_keyboard' => true
@@ -368,36 +304,26 @@ if($panelechekc == 0){
 }
 }
 $keyboardagent = json_encode($keyboardagent);
-$Swapinokey = json_encode([
-    'keyboard' => [
-        [['text' => "تنظیم api"]],
-        [['text' => "🗂 نام درگاه ارزی ریالی"]],
-        [['text' => "💰 کش بک ارزی ریالی"],['text' => "📚 تنظیم آموزش ارزی ریالی اول"]],
-        [['text' => "⬇️ حداقل مبلغ ارزی ریالی"],['text' => "⬆️ حداکثر مبلغ ارزی ریالی"]],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
-    ],
-    'resize_keyboard' => true
-]);
 
 $tronnowpayments = json_encode([
     'keyboard' => [
-        [['text' => "🗂 نام درگاه رمز ارز آفلاین"]],
-        [['text' => "⬇️ حداقل مبلغ رمزارز آفلاین"],['text' => "⬆️ حداکثر مبلغ رمزارز آفلاین"]],
-        [['text' => "📚 تنظیم آموزش  ارزی افلاین"]],
+        [['text' => "🏷️ نام نمایشی درگاه رمز ارز آفلاین"]],
+        [['text' => "⬇️ کف رمزارز آفلاین"],['text' => "⬆️ سقف رمزارز آفلاین"]],
+        [['text' => "📚 آموزش  ارزی افلاین"]],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
 ]);
 $optionathmarzban = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
-        [$rxAdminPanelBtn("🔧 ساخت کانفیگ دستی", 'admin_panel_athmarzban'), $rxAdminPanelBtn("🖥 مدیریت نود ها", 'admin_panel_athmarzban')],
+        [$rxAdminPanelBtn("🔧 کانفیگ دستی", 'admin_panel_athmarzban'), $rxAdminPanelBtn("🖥 مدیریت نود ها", 'admin_panel_athmarzban')],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
 ]));
 $optionathx_ui = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
-        [$rxAdminPanelBtn("🔧 ساخت کانفیگ دستی", 'admin_panel_athx_ui')],
+        [$rxAdminPanelBtn("🔧 کانفیگ دستی", 'admin_panel_athx_ui')],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
@@ -412,10 +338,10 @@ $configedit = json_encode([
 $iranpaykeyboard = json_encode([
     'keyboard' => [
         [['text' => "api  درگاه ارزی ریالی"]],
-        [['text' => "🗂 نام درگاه ارزی ریالی سوم"]],
-        [['text' => "⬇️ حداقل مبلغ ارزی ریالی سوم"],['text' => "⬆️ حداکثر مبلغ ارزی ریالی سوم"]],
-        [['text' => "💰 کش بک ارزی ریالی سوم"]],
-        [['text' => "📚 تنظیم آموزش ارزی ریالی سوم"]],
+        [['text' => "🗂 نام درگاه ریالی سوم"]],
+        [['text' => "⬇️ کف ریالی سوم"],['text' => "⬆️ سقف ریالی سوم"]],
+        [['text' => "💰 کش بک ریالی سوم"]],
+        [['text' => "📚 آموزش ریالی سوم"]],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
@@ -488,14 +414,34 @@ $lottery =  json_encode([
     'keyboard' => [
         [['text' => "1️⃣ تنظیم جایزه نفر اول"],['text' => "2️⃣ تنظیم جایزه نفر دوم"]],
         [['text' => "3️⃣ تنظیم جایزه نفر سوم"]],
-        [['text' => $textbotlang['Admin']['backadmin']]]
+        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
 ]);
 $wheelkeyboard =  json_encode([
     'keyboard' => [
         [['text' => "🎲 مبلغ برنده شدن کاربر"]],
-        [['text' => $textbotlang['Admin']['backadmin']]]
+        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true
-]);
+]);$option_remnawave = rx_finalizeInlineAdminKb(json_encode([
+    'keyboard' => [
+        [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("🔄 تغییر نوع پنل", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("🔄 تست اتصال مجدد", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_remnawave'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_remnawave', 'danger')],
+        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_remnawave'), $rxAdminPanelBtn("🔑 تنظیم توکن API", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("🛡 تنظیم شناسه Squad", 'admin_panel_remnawave'), $rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("🖥 داشبورد نودها", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("💡 ساخت نام کاربری", 'admin_panel_remnawave'), $rxAdminPanelBtn("📍 تغییر گروه", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("🚨 محدودیت اکانت", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_remnawave'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("⚙️ قیمت حجم دلخواه", 'admin_panel_remnawave'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_remnawave'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("📍 کف حجم دلخواه", 'admin_panel_remnawave'), $rxAdminPanelBtn("📍 سقف حجم دلخواه", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("📍 کف زمان دلخواه", 'admin_panel_remnawave'), $rxAdminPanelBtn("📍 سقف زمان دلخواه", 'admin_panel_remnawave')],
+        [$rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_remnawave')],
+        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu']]]
+    ],
+    'resize_keyboard' => true
+]));

@@ -40,13 +40,19 @@ if (is_string($forwardedProto) && $forwardedProto !== '') {
 $host = $_SERVER['HTTP_HOST'] ?? 'localhost';
 $apiUrl = rtrim($scheme . '://' . $host, '/') . $apiPath;
 
-$brandAppVersion = trim((string)@file_get_contents(__DIR__ . '/version')) ?: '0.0.2';
+$brandAppVersion = trim((string)@file_get_contents(__DIR__ . '/version')) ?: '1.0.0';
 
 
-$brandName = 'Faoxima';
+const FX_DEFAULT_BRAND_NAME = 'faoxima';
+const FX_DEFAULT_LOGO_URL = 'https://avatars.githubusercontent.com/u/238855591?s=400&u=059d14b3c8c0993bd7211e6fc4bd7d297df4da35&v=4';
+
+$brandName = FX_DEFAULT_BRAND_NAME;
 $brandMark = 'M';
+$brandTitle = '';
 $brandLogoUrl = '';
+$brandLogoState = 'default';
 $brandAccent = '';
+$brandMode = 'dark';
 
 
 
@@ -57,8 +63,11 @@ if (is_file(__DIR__ . '/../config.php') && is_file(__DIR__ . '/../function.php')
         try {
             $nameRow = select('shopSetting', '*', 'Namevalue', 'brand_name', 'select');
             $markRow = select('shopSetting', '*', 'Namevalue', 'brand_mark', 'select');
+            $titleRow = select('shopSetting', '*', 'Namevalue', 'brand_title', 'select');
             $logoRow = select('shopSetting', '*', 'Namevalue', 'brand_logo', 'select');
+            $logoStateRow = select('shopSetting', '*', 'Namevalue', 'brand_logo_state', 'select');
             $accentRow = select('shopSetting', '*', 'Namevalue', 'brand_accent', 'select');
+            $qrDisabledRow = select('shopSetting', '*', 'Namevalue', 'qr_disabled', 'select');
             if (is_array($accentRow) && isset($accentRow['value']) && preg_match('/^#[0-9a-fA-F]{6}$/', (string)$accentRow['value'])) {
                 $brandAccent = strtolower((string)$accentRow['value']);
             }
@@ -68,12 +77,21 @@ if (is_file(__DIR__ . '/../config.php') && is_file(__DIR__ . '/../function.php')
             if (is_array($markRow) && isset($markRow['value']) && $markRow['value'] !== '') {
                 $brandMark = (string)$markRow['value'];
             }
+            if (is_array($titleRow) && isset($titleRow['value']) && $titleRow['value'] !== '') {
+                $brandTitle = (string)$titleRow['value'];
+            }
             if (is_array($logoRow) && isset($logoRow['value']) && $logoRow['value'] !== '') {
                 $logoBasename = basename((string)$logoRow['value']);
                 $logoPath = __DIR__ . '/assets/branding/' . $logoBasename;
                 if (is_file($logoPath)) {
                     $brandLogoUrl = $assetPrefix . 'assets/branding/' . $logoBasename . '?v=' . @filemtime($logoPath);
                 }
+            }
+            if (is_array($logoStateRow) && isset($logoStateRow['value'])) {
+                $brandLogoState = (string)$logoStateRow['value'];
+            }
+            if (is_array($qrDisabledRow) && ((string)($qrDisabledRow['value'] ?? '0')) === '1') {
+                $qrEnabled = false;
             }
         } catch (\Throwable $rxBrandLoadError) {
 
@@ -82,7 +100,28 @@ if (is_file(__DIR__ . '/../config.php') && is_file(__DIR__ . '/../function.php')
 }
 
 
+if (!in_array($brandLogoState, ['default', 'custom', 'initials'], true)) $brandLogoState = 'default';
+
+// A custom logo file always wins the state; if it's missing, fall back to initials
+// (never default) once the user has left the DEFAULT state.
+if ($brandLogoUrl !== '') {
+    $brandLogoState = 'custom';
+} elseif ($brandLogoState === 'custom') {
+    $brandLogoState = 'initials';
+}
+
+$brandIsDefaultLogo = ($brandLogoState === 'default');
+if ($brandIsDefaultLogo) $brandLogoUrl = FX_DEFAULT_LOGO_URL;
+
 $version = $brandAppVersion;
+$qrEnabled = $qrEnabled ?? true;
+
+$hardR = preg_replace('/[^A-Za-z0-9]/', '', (string)($_GET['_r'] ?? ''));
+$versionSafe = preg_replace('/[^A-Za-z0-9._-]/', '', (string)$version);
+function fx_asset_v(string $absPath, string $versionSafe, string $hardR): string {
+    $stamp = (string) @filemtime($absPath);
+    return $versionSafe . '.' . $stamp . ($hardR !== '' ? '.' . $hardR : '');
+}
 
 $config = [
     'basename'    => $basename,
@@ -90,42 +129,41 @@ $config = [
     'apiUrl'      => $apiUrl,
     'assetPrefix' => $assetPrefix,
     'version'     => $version,
+    'qrEnabled'   => $qrEnabled,
+    'forceDark'   => ($brandMode === 'dark'),
     'brand'       => [
-        'name'     => $brandName,
-        'mark'     => $brandMark,
-        'logo_url' => $brandLogoUrl,
-        'accent'   => $brandAccent,
+        'name'            => $brandName,
+        'mark'            => $brandMark,
+        'title'           => $brandTitle,
+        'logo_url'        => $brandLogoUrl,
+        'avatar_state'    => $brandLogoState,
+        'is_default_logo' => $brandIsDefaultLogo,
+        'accent'          => $brandAccent,
+        'mode'            => $brandMode,
     ],
 ];
 
-
-$buildStamp = (string) @filemtime(__FILE__);
-if (!isset($version) || !is_string($version) || $version === '') {
-    $version = $brandAppVersion ?? '0.0.2';
-}
-$cacheBust = preg_replace('/[^A-Za-z0-9._-]/', '', (string)$version) . '.' . $buildStamp;
-
-$sdkLocal    = htmlspecialchars($assetPrefix . 'js/telegram-web-app.js?v=' . $cacheBust, ENT_QUOTES);
+$sdkLocal    = htmlspecialchars($assetPrefix . 'js/telegram-web-app.js?v=' . fx_asset_v(__DIR__ . '/js/telegram-web-app.js', $versionSafe, $hardR), ENT_QUOTES);
 $sdkFallback = 'https://telegram.org/js/telegram-web-app.js';
-$cssUrl      = htmlspecialchars($assetPrefix . 'assets/css/app.css?v=' . $cacheBust, ENT_QUOTES);
+$cssUrl      = htmlspecialchars($assetPrefix . 'assets/css/app.css?v=' . fx_asset_v(__DIR__ . '/assets/css/app.css', $versionSafe, $hardR), ENT_QUOTES);
 
 
-$jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cacheBust, ENT_QUOTES);
+$jsUrl       = htmlspecialchars($assetPrefix . 'assets/v1.0.0/app.js?v=' . fx_asset_v(__DIR__ . '/assets/v1.0.0/app.js', $versionSafe, $hardR), ENT_QUOTES);
 ?>
 <!DOCTYPE html>
 <html lang="fa" dir="rtl">
 <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <meta name="theme-color" content="#0a0a14" />
-    <style>:root{color-scheme:dark}html,body{background-color:#0a0a14}</style>
+    <meta name="theme-color" content="<?php echo $brandMode === 'light' ? '#eef2f8' : '#1b1b1d'; ?>" />
+    <style>:root{color-scheme:<?php echo $brandMode; ?>}html,body{background-color:<?php echo $brandMode === 'light' ? '#eef2f8' : '#1b1b1d'; ?>}</style>
     <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate" />
     <meta http-equiv="Pragma" content="no-cache" />
     <meta http-equiv="Expires" content="0" />
     <title>فاکسیما — Faoxima</title>
     <base href="<?php echo htmlspecialchars($prefix, ENT_QUOTES); ?>" />
 
-    
+
     <script>
     (function () {
         var THEMES = {
@@ -170,13 +208,15 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
             s.setProperty('--accent-ink',    darken(t.c, 0.5));
             s.setProperty('--border',        rgba(t.c, 0.12));
             s.setProperty('--border-strong', rgba(t.c, 0.28));
-            document.documentElement.dataset.theme = key;
+            document.documentElement.dataset.color = key;
 
             var mode = 'dark';
-            document.documentElement.dataset.mode = mode;
+            document.documentElement.dataset.theme = mode;
+            window.__FAOXIMA_MODE__ = mode;
             var mc = document.querySelector('meta[name="theme-color"]');
-            if (mc) mc.setAttribute('content', '#0a0a14');
-        } catch (e) {  }
+            if (mc) mc.setAttribute('content', '#1b1b1d');
+        } catch (e) {
+        }
     })();
 </script>
 
@@ -196,36 +236,23 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
         } catch (e) {  }
       })();
 </script>
+    <script>
+      (function () {
+        var w = window.Telegram && window.Telegram.WebApp;
+        if (!w) return;
+        try { w.ready(); } catch (e) {}
+        try { w.expand(); } catch (e) {}
+        try { w.setHeaderColor('#1b1b1d'); } catch (e) {}
+        try { w.setBackgroundColor('#1b1b1d'); } catch (e) {}
+      })();
+</script>
 
     <script>
       window.__APP_CONFIG__ = <?php echo json_encode($config, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
 </script>
 
-    
     <script>
     (function () {
-        var posted = {};
-        function postLog(level, msg, where, stack) {
-            var key = level + '|' + msg + '|' + (where || '');
-            if (posted[key]) return;
-            posted[key] = true;
-            try {
-                var apiUrl = (window.__APP_CONFIG__ && window.__APP_CONFIG__.apiUrl) || '';
-                if (!apiUrl) return;
-                fetch(apiUrl + '/clientlog.php', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        level: level, msg: String(msg || ''), where: String(where || ''),
-                        stack: String(stack || ''),
-                        diag: { href: location.href, ua: navigator.userAgent,
-                                bootStarted: !!window.__FAOXIMA_APP_STARTED__ }
-                    }),
-                    keepalive: true
-                }).catch(function () {});
-            } catch (e) {  }
-        }
-
         function escapeHtml(s) {
             var d = document.createElement('div');
             d.textContent = String(s == null ? '' : s);
@@ -254,7 +281,6 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
             var where = (e.filename || '') + ':' + (e.lineno || '?');
             var msg = (e.error && e.error.message) || e.message || 'Script error';
             var stack = (e.error && e.error.stack) || '';
-            postLog('error', msg, where, stack);
             if (!window.__FAOXIMA_APP_STARTED__) {
                 showFallback('خطا در بارگذاری برنامه', msg + ' (' + where + ')', stack);
             }
@@ -264,7 +290,6 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
             var r = e.reason;
             var msg = (r && r.message) || String(r || 'Unhandled rejection');
             var stack = (r && r.stack) || '';
-            postLog('error', msg, 'unhandledrejection', stack);
             if (!window.__FAOXIMA_APP_STARTED__) {
                 showFallback('خطا در بارگذاری برنامه', msg, stack);
             }
@@ -273,9 +298,6 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
 
         setTimeout(function () {
             if (!window.__FAOXIMA_APP_STARTED__) {
-                postLog('error',
-                    'Module entry never executed within 6s — likely a JS module 404 or static-import error.',
-                    'watchdog', '');
                 showFallback('بارگذاری برنامه ناموفق بود',
                     'یکی از فایل‌های JS بارگذاری نشد یا خطای پیوند ماژول داشت.', '');
             }
@@ -285,32 +307,55 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
 </head>
 <body>
     <div id="app" class="app-shell">
-        <header class="app-header">
-            <a href="#/" class="brand" data-route="/">
-                <span class="brand-mark" aria-hidden="true"<?php echo $brandLogoUrl !== '' ? ' style="background:transparent;padding:0;overflow:hidden"' : ''; ?>><?php
-                    if ($brandLogoUrl !== '') {
-                        echo '<img src="' . htmlspecialchars($brandLogoUrl, ENT_QUOTES) . '" alt="logo" style="width:100%;height:100%;object-fit:cover;border-radius:inherit" />';
-                    } else {
-                        echo htmlspecialchars($brandMark, ENT_QUOTES);
-                    }
-                ?></span>
-                <span class="brand-name"><?php echo htmlspecialchars($brandName, ENT_QUOTES); ?></span>
-            </a>
-            <button id="reload-btn" class="icon-btn" aria-label="Reload" title="Reload (پاکسازی کش)"
-                    onclick="window.__hardReload && window.__hardReload();">
-                <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 4v5h-5"/></svg>
-            </button>
-<script>
+        <script>
 (function () {
     window.__hardReload = function () {
         var btn = document.getElementById('reload-btn');
-        if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
+        if (btn && btn.disabled) return;
+        if (btn) {
+            btn.disabled = true;
+            btn.style.transition = 'opacity .2s';
+            btn.style.opacity = '0.4';
+            var svg = btn.querySelector('svg');
+            if (svg) {
+                svg.style.transformOrigin = 'center';
+                svg.style.animation = 'hardReloadSpin .7s linear infinite';
+            }
+        }
+
+        // Toast بازخورد
+        try {
+            var existing = document.getElementById('__hard-reload-toast');
+            if (existing) existing.remove();
+            var toast = document.createElement('div');
+            toast.id = '__hard-reload-toast';
+            toast.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);'
+                + 'background:rgba(30,30,30,.92);color:#fff;font:13px/1.5 system-ui,sans-serif;'
+                + 'padding:8px 18px;border-radius:20px;z-index:99999;pointer-events:none;'
+                + 'box-shadow:0 2px 12px rgba(0,0,0,.35);white-space:nowrap;direction:rtl;'
+                + 'transition:opacity .3s';
+            toast.textContent = 'در حال بروزرسانی…';
+            document.body.appendChild(toast);
+        } catch (e) {}
+
+        // inject spin keyframe once
+        try {
+            if (!document.getElementById('__hard-reload-style')) {
+                var st = document.createElement('style');
+                st.id = '__hard-reload-style';
+                st.textContent = '@keyframes hardReloadSpin{to{transform:rotate(360deg)}}';
+                document.head.appendChild(st);
+            }
+        } catch (e) {}
 
         var tasks = [];
 
+        // پاکسازی sessionStorage
         try { sessionStorage.clear(); } catch (e) {}
+
+        // پاکسازی localStorage با حفظ لاگین و تم
         try {
-            var preserveKeys = ['faoxima.theme.accent', 'faoxima.initData'];
+            var preserveKeys = ['faoxima.theme.accent', 'faoxima.theme.mode', 'faoxima.initData', 'faoxima.initDataUnsafe'];
             var keep = {};
             for (var i = 0; i < preserveKeys.length; i++) {
                 try { keep[preserveKeys[i]] = localStorage.getItem(preserveKeys[i]); } catch (e) {}
@@ -323,6 +368,7 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
             }
         } catch (e) {}
 
+        // پاکسازی Cache API
         if (typeof caches !== 'undefined' && caches && typeof caches.keys === 'function') {
             tasks.push(
                 caches.keys().then(function (keys) {
@@ -331,6 +377,7 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
             );
         }
 
+        // unregister Service Worker
         if (navigator.serviceWorker && typeof navigator.serviceWorker.getRegistrations === 'function') {
             tasks.push(
                 navigator.serviceWorker.getRegistrations().then(function (regs) {
@@ -341,22 +388,23 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v0.0.2/app.js?v=' . $cach
 
         Promise.all(tasks).catch(function () {}).then(function () {
             try {
+                // URL تمیز: حذف ?_r قدیمی، اضافه کردن یکی جدید
                 var u = new URL(location.href);
-
+                u.searchParams.delete('_r');
                 u.searchParams.set('_r', Date.now().toString(36));
                 location.replace(u.toString());
             } catch (e) {
-                location.reload();
+                location.reload(true);
             }
         });
 
+        // پشتیبان: اگر بعد از ۲ ثانیه هنوز reload نشده
         setTimeout(function () {
-            try { location.reload(); } catch (e) {}
-        }, 1500);
+            try { location.reload(true); } catch (e) {}
+        }, 2000);
     };
 })();
 </script>
-        </header>
 
         <main id="view" class="view" aria-live="polite">
             <article class="card card-window">

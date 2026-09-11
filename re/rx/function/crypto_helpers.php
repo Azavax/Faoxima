@@ -291,12 +291,13 @@ if (!function_exists('crypto_check_payment')) {
 if (!function_exists('crypto_explorer_url')) {
     function crypto_explorer_url(string $currency, string $hash): string
     {
+        if ($hash === '') return '';
         if ($currency === 'TRX' || $currency === 'USDT_TRC20') {
             return 'https://tronscan.org/#/transaction/' . $hash;
         }
         if ($currency === 'TON' || $currency === 'USDT_TON') {
             return 'https://tonviewer.com/transaction/' . $hash;
         }
-        return $hash;
+        return '';
     }
 }

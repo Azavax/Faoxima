@@ -27,19 +27,18 @@ final class TimeRangesHandler extends BaseHandler
 
         global $textbotlang;
 
-        if (($this->setting['statuscategory'] ?? '') === 'offcategory') {
-            FaoximaResponse::ok([]);
-        }
-
         $codePanel = $this->resolveCountryId();
         if ($codePanel === '') {
             FaoximaResponse::badRequest('country_id is required');
         }
         $panel = $this->loadPanelByCode($codePanel);
+        if (!panel_feature_enabled($panel, 'categorytime')) {
+            FaoximaResponse::ok([]);
+        }
 
         $userAgent = $this->user['agent'] ?? 'f';
         $rawTimes = array_map('strval', array_column(FaoximaDb::fetchAll(
-            "SELECT Service_time FROM product WHERE (Location = :location OR Location = '/all') AND (agent = :agent OR agent = 'all')",
+            "SELECT Service_time FROM product WHERE (FIND_IN_SET(:location, Location) > 0 OR Location = '/all') AND (agent = :agent OR agent = 'all')",
             [':location' => $panel['name_panel'], ':agent' => $userAgent]
         ), 'Service_time'));
         $rawTimes = array_values(array_unique($rawTimes));

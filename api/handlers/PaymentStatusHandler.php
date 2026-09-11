@@ -40,13 +40,33 @@ final class PaymentStatusHandler extends BaseHandler
             FaoximaResponse::badRequest('order_id is required');
         }
 
-        $report = FaoximaDb::fetchOne(
-            'SELECT * FROM Payment_report WHERE id_order = :o AND id_user = :u AND source = \'miniapp\' LIMIT 1',
-            [
-                ':o' => $orderId,
-                ':u' => (string)$this->user['id'],
-            ]
-        );
+        $rxPayCacheKey = 'faoxima:paystatus:' . (string)$orderId . ':' . (string)$this->user['id'];
+        $report = null;
+        if (function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+            $rxPayCached = rx_redis_get($rxPayCacheKey);
+            if ($rxPayCached !== null) {
+                $rxPayDecoded = json_decode($rxPayCached, true);
+                if (json_last_error() === JSON_ERROR_NONE) {
+                    $report = $rxPayDecoded;
+                }
+            }
+        }
+
+        if ($report === null) {
+            $report = FaoximaDb::fetchOne(
+                'SELECT * FROM Payment_report WHERE id_order = :o AND id_user = :u AND source = \'miniapp\' LIMIT 1',
+                [
+                    ':o' => $orderId,
+                    ':u' => (string)$this->user['id'],
+                ]
+            );
+            if (is_array($report) && function_exists('rx_redis_is_active') && rx_redis_is_active()) {
+                $rxPayEncoded = json_encode($report, JSON_UNESCAPED_UNICODE);
+                if ($rxPayEncoded !== false) {
+                    rx_redis_set($rxPayCacheKey, $rxPayEncoded, 3);
+                }
+            }
+        }
         if ($report === null) {
             FaoximaResponse::notFound('Payment not found');
         }
@@ -80,22 +100,32 @@ final class PaymentStatusHandler extends BaseHandler
 
 
         $createdAt = $this->parseTimestamp((string)($report['time'] ?? ''));
-        $ttlSec = $this->resolveTtl($report);
-        $expiresAt = $createdAt > 0 ? ($createdAt + $ttlSec) : 0;
-
         $hashAt = (int)($report['crypto_hash_at'] ?? 0);
+        $isCrypto = trim((string)($report['crypto_currency'] ?? '')) !== '';
+
+        if ($isCrypto && $hashAt > 0) {
+            $expiresAt = $hashAt + 1800;
+        } elseif ($isCrypto) {
+            $expiresAt = 0;
+        } else {
+            $ttlSec = $this->resolveTtl($report);
+            $expiresAt = $createdAt > 0 ? ($createdAt + $ttlSec) : 0;
+        }
 
         $rawInvoiceField = (string)($report['id_invoice'] ?? '');
         $hasPurchaseTarget = false;
+        $pendingActionTag = '';
         if ($rawInvoiceField !== '' && strpos($rawInvoiceField, '|') !== false) {
             $parts = explode('|', $rawInvoiceField, 2);
             $tag    = isset($parts[0]) ? trim((string)$parts[0]) : '';
             $target = isset($parts[1]) ? trim((string)$parts[1]) : '';
             if ($tag === 'getconfigafterpay' && $target !== '') {
                 $hasPurchaseTarget = true;
+            } elseif (in_array($tag, ['getextenduser', 'getextratimeuser', 'getextravolumeuser'], true) && $target !== '') {
+                $pendingActionTag = $tag;
             }
         }
-        $flow = $hasPurchaseTarget ? 'direct_buy' : 'recharge';
+        $flow = $hasPurchaseTarget ? 'direct_buy' : ($pendingActionTag !== '' ? 'pending_action' : 'recharge');
 
         $payload = [
             'order_id'         => $orderId,
@@ -110,9 +140,11 @@ final class PaymentStatusHandler extends BaseHandler
             'expires_at'       => $expiresAt,
             'hash_at'          => $hashAt > 0 ? $hashAt : null,
             'flow'             => $flow,
+            'pending_action'   => $pendingActionTag !== '' ? $pendingActionTag : null,
             'currency_code'    => trim((string)($report['crypto_currency'] ?? '')) ?: null,
             'crypto_amount'    => trim((string)($report['crypto_amount']   ?? '')) ?: null,
             'wallet_to'        => trim((string)($report['crypto_wallet_to'] ?? '')) ?: null,
+            'gateway_url'      => trim((string)($report['tronado_payment_url'] ?? '')) ?: (trim((string)($report['tonpay_invoice_url'] ?? '')) ?: (trim((string)($report['cubepay_payment_link'] ?? '')) ?: (trim((string)($report['blupal_payment_link'] ?? '')) ?: (trim((string)($report['atlaspay_payment_url'] ?? '')) ?: (trim((string)($report['tetrapay_payment_link'] ?? '')) ?: null))))),
         ];
 
         FaoximaResponse::ok($payload);
@@ -130,7 +162,13 @@ final class PaymentStatusHandler extends BaseHandler
             if (strpos($rawInvoiceField, '|') !== false) {
                 $parts = explode('|', $rawInvoiceField, 2);
                 if (isset($parts[1]) && $parts[1] !== '') {
-                    $candidateUsernames[] = $parts[1];
+                    $target = $parts[1];
+                    if (strpos($target, '%') !== false) {
+                        $target = explode('%', $target, 2)[0];
+                    }
+                    if ($target !== '') {
+                        $candidateUsernames[] = $target;
+                    }
                 }
             }
 
@@ -157,13 +195,17 @@ final class PaymentStatusHandler extends BaseHandler
 
     private function resolveReason(string $paymentStatus, string $reasonRaw): ?string
     {
-        if ($paymentStatus !== 'reject' && $paymentStatus !== 'expire') {
+        if ($paymentStatus !== 'reject' && $paymentStatus !== 'expire' && $paymentStatus !== 'cancelled') {
             return null;
         }
+        if ($paymentStatus === 'expire') {
+            return 'فاکتور منقضی شده است';
+        }
+        if ($paymentStatus === 'cancelled') {
+            return 'فاکتور توسط شما لغو شده است';
+        }
         if ($reasonRaw === '') {
-            return $paymentStatus === 'expire'
-                ? 'فاکتور منقضی شده است'
-                : 'پرداخت تایید نشد';
+            return 'پرداخت تایید نشد';
         }
 
         if (preg_match('/^\s*([a-z0-9\-_]+)/i', $reasonRaw, $m)) {
@@ -210,6 +252,15 @@ final class PaymentStatusHandler extends BaseHandler
 
     private function resolveTtl(array $report): int
     {
+        if ((string)($report['Payment_Method'] ?? '') === 'cubepay') {
+            return 3600;
+        }
+        if ((string)($report['Payment_Method'] ?? '') === 'atlaspay') {
+            return 1200;
+        }
+        if ((string)($report['Payment_Method'] ?? '') === 'tetrapay') {
+            return 600;
+        }
         return 1800;
     }
 }

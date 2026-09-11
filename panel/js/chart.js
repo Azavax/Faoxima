@@ -50,9 +50,7 @@
         if (rounded - maxV < 0.1 * step) rounded += step;
         maxV = rounded;
 
-        // محور عمودی: مبلغِ کامل به تومان (جداکنندهٔ هزارگان + ارقام فارسی)
         function fmtToman(v) { return persianNum(Math.round(v).toLocaleString('en-US')); }
-        // پهنای ستونِ چپ را با بلندترین برچسب هماهنگ کن تا عددِ تومان بریده نشود
         padL = Math.max(56, fmtToman(maxV).length * 8 + 18);
 
         var plotW = W - padL - padR;
@@ -87,7 +85,7 @@
             var gy = padT + plotH - (g / 4) * plotH;
             var gv = minV + (g / 4) * (maxV - minV);
             gridLines.push('<line x1="' + padL + '" y1="' + gy.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + gy.toFixed(1) + '" stroke="' + gridColor + '" stroke-width="1" stroke-dasharray="2,4"/>');
-            yLabels.push('<text x="' + (padL - 8) + '" y="' + (gy + 4).toFixed(1) + '" fill="' + textMuted + '" font-size="11" text-anchor="end" font-family="Arad, sans-serif">' + fmtToman(gv) + '</text>');
+            yLabels.push('<text x="' + (padL - 8) + '" y="' + (gy + 4).toFixed(1) + '" fill="' + textMuted + '" font-size="11" text-anchor="end" font-family="Vazirmatn, sans-serif">' + fmtToman(gv) + '</text>');
         }
 
 
@@ -95,7 +93,7 @@
         var labelEvery = Math.max(1, Math.ceil(n / 8));
         for (var k = 0; k < n; k++) {
             if (k % labelEvery !== 0 && k !== n - 1) continue;
-            xLabels.push('<text x="' + x(k).toFixed(1) + '" y="' + (H - padB + 22) + '" fill="' + textMuted + '" font-size="11" text-anchor="middle" font-family="Arad, sans-serif">' + labelFmt(labels[k] || '') + '</text>');
+            xLabels.push('<text x="' + x(k).toFixed(1) + '" y="' + (H - padB + 22) + '" fill="' + textMuted + '" font-size="11" text-anchor="middle" font-family="Vazirmatn, sans-serif">' + labelFmt(labels[k] || '') + '</text>');
         }
 
 

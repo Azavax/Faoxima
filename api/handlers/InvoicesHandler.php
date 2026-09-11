@@ -45,10 +45,122 @@ final class InvoicesHandler extends BaseHandler
         );
 
 
-        foreach ($rows as &$row) {
-            if (!isset($row['status']) && isset($row['Status'])) {
-                $row['status'] = $row['Status'];
+        $queuedUsernames = [];
+        if (!empty($rows)) {
+            $usernames = array_values(array_unique(array_map(static fn($r) => (string)$r['username'], $rows)));
+            $placeholders = [];
+            $queuedParams = [];
+            foreach ($usernames as $i => $uname) {
+                $ph = ":qu{$i}";
+                $placeholders[] = $ph;
+                $queuedParams[$ph] = $uname;
             }
+            $queuedRows = FaoximaDb::fetchAll(
+                "SELECT DISTINCT username FROM queued_renewal WHERE status = 'pending' AND username IN (" . implode(',', $placeholders) . ")",
+                $queuedParams
+            );
+            foreach ($queuedRows as $qr) {
+                $queuedUsernames[(string)$qr['username']] = true;
+            }
+        }
+
+        foreach ($rows as &$row) {
+            $cachedUserInfo = null;
+            if (!empty($row['user_info'])) {
+                $cachedUserInfo = json_decode((string)$row['user_info'], true);
+            }
+
+            if (is_array($cachedUserInfo)) {
+                $exp = is_numeric($cachedUserInfo['expire'] ?? null) ? (int)$cachedUserInfo['expire'] : 0;
+                $dl  = is_numeric($cachedUserInfo['data_limit'] ?? null) ? (float)$cachedUserInfo['data_limit'] : 0.0;
+                $ut  = is_numeric($cachedUserInfo['used_traffic'] ?? null) ? (float)$cachedUserInfo['used_traffic'] : 0.0;
+                $st  = strtolower((string)($cachedUserInfo['status'] ?? ''));
+
+                if ($st === 'expired' || ($exp > 0 && $exp <= time())) {
+                    if (($row['Status'] ?? '') !== 'end_of_time') {
+                        update('invoice', 'Status', 'end_of_time', 'id_invoice', $row['id_invoice']);
+                        $row['Status'] = 'end_of_time';
+                    }
+                    $row['status'] = 'end_of_time';
+                } elseif ($st === 'limited' || ($dl > 0.0 && $ut >= $dl)) {
+                    if (($row['Status'] ?? '') !== 'end_of_volume') {
+                        update('invoice', 'Status', 'end_of_volume', 'id_invoice', $row['id_invoice']);
+                        $row['Status'] = 'end_of_volume';
+                    }
+                    $row['status'] = 'end_of_volume';
+                } elseif ($st === 'on_hold') {
+                    if (($row['Status'] ?? '') !== 'send_on_hold') {
+                        update('invoice', 'Status', 'send_on_hold', 'id_invoice', $row['id_invoice']);
+                        $row['Status'] = 'send_on_hold';
+                    }
+                    $row['status'] = 'send_on_hold';
+                } elseif ($st === 'disabled') {
+                    if (($row['Status'] ?? '') !== 'disablebyadmin') {
+                        update('invoice', 'Status', 'disablebyadmin', 'id_invoice', $row['id_invoice']);
+                        $row['Status'] = 'disablebyadmin';
+                    }
+                    $row['status'] = 'disablebyadmin';
+                } elseif ($st === 'active') {
+                    $row['status'] = $row['Status'] ?? 'active';
+                }
+            }
+
+            if (($row['Status'] ?? '') === 'active') {
+                $timeSell = is_numeric($row['time_sell'] ?? null) ? (int)$row['time_sell'] : 0;
+                $serviceTime = is_numeric($row['Service_time'] ?? null) ? (int)$row['Service_time'] : 0;
+                $calcExpire = ($timeSell > 0 && $serviceTime > 0) ? ($timeSell + ($serviceTime * 86400)) : 0;
+
+                if ($calcExpire > 0 && $calcExpire <= time()) {
+                    try {
+                        $managePanel = new ManagePanel();
+                        $liveData = $managePanel->DataUser($row['Service_location'], $row['username']);
+                        if (is_array($liveData) && !empty($liveData['status']) && $liveData['status'] !== 'Unsuccessful') {
+                            $liveSt = strtolower((string)$liveData['status']);
+                            $liveExp = is_numeric($liveData['expire'] ?? null) ? (int)$liveData['expire'] : 0;
+                            $liveDl = is_numeric($liveData['data_limit'] ?? null) ? (float)$liveData['data_limit'] : 0.0;
+                            $liveUt = is_numeric($liveData['used_traffic'] ?? null) ? (float)$liveData['used_traffic'] : 0.0;
+                            if ($liveExp > 0 && $liveExp <= time()) {
+                                $liveSt = 'expired';
+                                $liveData['status'] = 'expired';
+                            } elseif ($liveDl > 0.0 && $liveUt >= $liveDl) {
+                                $liveSt = 'limited';
+                                $liveData['status'] = 'limited';
+                            }
+                            update('invoice', 'user_info', json_encode($liveData, JSON_UNESCAPED_UNICODE), 'id_invoice', $row['id_invoice']);
+                            if ($liveSt === 'expired') {
+                                update('invoice', 'Status', 'end_of_time', 'id_invoice', $row['id_invoice']);
+                                $row['Status'] = 'end_of_time';
+                                $row['status'] = 'end_of_time';
+                            } elseif ($liveSt === 'limited') {
+                                update('invoice', 'Status', 'end_of_volume', 'id_invoice', $row['id_invoice']);
+                                $row['Status'] = 'end_of_volume';
+                                $row['status'] = 'end_of_volume';
+                            } elseif ($liveSt === 'on_hold') {
+                                update('invoice', 'Status', 'send_on_hold', 'id_invoice', $row['id_invoice']);
+                                $row['Status'] = 'send_on_hold';
+                                $row['status'] = 'send_on_hold';
+                            } else {
+                                update('invoice', 'Status', 'end_of_time', 'id_invoice', $row['id_invoice']);
+                                $row['Status'] = 'end_of_time';
+                                $row['status'] = 'end_of_time';
+                            }
+                        } else {
+                            update('invoice', 'Status', 'end_of_time', 'id_invoice', $row['id_invoice']);
+                            $row['Status'] = 'end_of_time';
+                            $row['status'] = 'end_of_time';
+                        }
+                    } catch (Throwable $e) {
+                        update('invoice', 'Status', 'end_of_time', 'id_invoice', $row['id_invoice']);
+                        $row['Status'] = 'end_of_time';
+                        $row['status'] = 'end_of_time';
+                    }
+                }
+            }
+
+            if (!isset($row['status'])) {
+                $row['status'] = $row['Status'] ?? 'active';
+            }
+            $row['has_queued_renewal'] = isset($queuedUsernames[(string)$row['username']]);
         }
         unset($row);
 

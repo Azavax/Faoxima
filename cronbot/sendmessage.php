@@ -13,7 +13,9 @@ $isCron = ($isCLI || !isset($_SERVER['HTTP_HOST']));
 ignore_user_abort(true);
 
 date_default_timezone_set('Asia/Tehran');
-@putenv('TZ=Asia/Tehran');
+if (function_exists('putenv') && !preg_match('/(^|,)\s*putenv\s*(,|$)/', strtolower((string) ini_get('disable_functions')))) {
+    @putenv('TZ=Asia/Tehran');
+}
 
 
 if (function_exists('fastcgi_finish_request') && !$isCLI) {
@@ -28,6 +30,8 @@ if (function_exists('fastcgi_finish_request') && !$isCLI) {
 }
 
 $baseDir = dirname(__FILE__);
+require_once $baseDir . '/_init.php';
+
 $__required_files = [
     $baseDir . '/../config.php',
     $baseDir . '/../botapi.php',
@@ -47,6 +51,9 @@ foreach ($__required_files as $__f) {
 }
 unset($__required_files, $__f);
 
+if (!rx_cron_db_ready('sendmessage')) {
+    return;
+}
 
 $workerId = (int) ($_GET['worker'] ?? $_SERVER['BROADCAST_WORKER_ID'] ?? 0);
 $workerId = max(0, min(15, $workerId));
@@ -316,7 +323,7 @@ try {
         'affiliatesbtn'=> json_encode(['inline_keyboard' => [[rx_cron_btn('cron_affiliates',  ['text' => $datatextbot['text_affiliates'],'callback_data' => 'affiliatesbtn'])]]]),
         'addbalance'   => json_encode(['inline_keyboard' => [[rx_cron_btn('cron_addbalance',  ['text' => $datatextbot['text_Add_Balance'],'callback_data' => 'Add_Balance'])]]]),
     ];
-    $cancelmessage = json_encode(['inline_keyboard' => [[rx_cron_btn('cron_cancel', ['text' => "لغو عملیات", 'callback_data' => 'cancel_sendmessage'])]]]);
+    $cancelmessage = json_encode(['inline_keyboard' => [[['text' => "لغو عملیات", 'callback_data' => 'cancel_sendmessage']]]]);
 
 
     $batchStart    = microtime(true);
@@ -373,18 +380,20 @@ try {
 
         $processed++;
 
+        $resp = null;
         if ($info['type'] === 'unpinmessage') {
-            unpinmessage($userId);
-            $bSuccess++;
+            $resp = unpinmessage($userId);
+            handleResponse($resp, $userId, $info, $orphanCheckStmt, $deleteStmt,
+                $bSuccess, $bBlocked, $bDeleted, $bFailed, $bChatNotFound, $rxBcLog);
         } elseif ($info['type'] === 'sendmessage' || $info['type'] === 'xdaynotmessage') {
             $kb = $keyboards[$info['btnmessage'] ?? 'none'] ?? null;
             $resp = sendmessage($userId, $info['message'], $kb, 'HTML');
             handleResponse($resp, $userId, $info, $orphanCheckStmt, $deleteStmt,
-                $bSuccess, $bBlocked, $bDeleted, $bFailed, $bChatNotFound);
+                $bSuccess, $bBlocked, $bDeleted, $bFailed, $bChatNotFound, $rxBcLog);
         } elseif ($info['type'] === 'forwardmessage') {
             $resp = forwardMessage($info['id_admin'], $info['message'], $userId);
             handleResponse($resp, $userId, $info, $orphanCheckStmt, $deleteStmt,
-                $bSuccess, $bBlocked, $bDeleted, $bFailed, $bChatNotFound);
+                $bSuccess, $bBlocked, $bDeleted, $bFailed, $bChatNotFound, $rxBcLog);
         }
 
         @file_put_contents($sentFile, $userId . "\n", FILE_APPEND | LOCK_EX);
@@ -462,7 +471,8 @@ try {
 function handleResponse(
     $resp, string $userId, array $info,
     PDOStatement $orphanCheckStmt, PDOStatement $deleteStmt,
-    int &$bSuccess, int &$bBlocked, int &$bDeleted, int &$bFailed, int &$bChatNotFound
+    int &$bSuccess, int &$bBlocked, int &$bDeleted, int &$bFailed, int &$bChatNotFound,
+    ?callable $rxBcLog = null
 ): void {
     if (isset($resp['ok']) && !$resp['ok']) {
         $errorDesc = $resp['description'] ?? 'unknown error';
@@ -486,9 +496,32 @@ function handleResponse(
     } elseif (isset($resp['ok']) && $resp['ok']) {
         $bSuccess++;
         if (($info['pingmessage'] ?? '') === 'yes' && isset($resp['result']['message_id'])) {
-            try { pinmessage($userId, $resp['result']['message_id']); } catch (Throwable $e) {}
+            try {
+                pinmessage($userId, $resp['result']['message_id']);
+                savePinnedMessageRecord($userId, (int) $resp['result']['message_id'], (string) ($info['pinduration'] ?? 'none'));
+            } catch (Throwable $e) {
+                if ($rxBcLog) {
+                    $rxBcLog('PIN FAILED — userId=' . $userId . ' message_id=' . $resp['result']['message_id'] . ' — ' . $e->getMessage());
+                }
+            }
         }
     }
+}
+
+function savePinnedMessageRecord(string $chatId, int $messageId, string $duration): void
+{
+    global $pdo;
+    $durationSeconds = ['24' => 86400, '48' => 172800][$duration] ?? null;
+    $unpinAt = $durationSeconds !== null ? (time() + $durationSeconds) : null;
+    $stmt = $pdo->prepare(
+        "INSERT INTO pinned_messages (chat_id, message_id, unpin_at, created_at) VALUES (:chat_id, :message_id, :unpin_at, :created_at)"
+    );
+    $stmt->execute([
+        ':chat_id'    => $chatId,
+        ':message_id' => $messageId,
+        ':unpin_at'   => $unpinAt,
+        ':created_at' => time(),
+    ]);
 }
 
 function migrateLegacyJsonToTxt(string $jsonPath, string $txtPath): int

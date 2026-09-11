@@ -1,44 +1,52 @@
 #!/usr/bin/env bash
-# ============================================================================
-#  Faoxima Bot Installer
-# ----------------------------------------------------------------------------
-#  Version : v0.0.2
-#  GitHub  : https://github.com/Mmd-Amir/Faoxima
-#  Telegram: https://t.me/faoxima
-# ----------------------------------------------------------------------------
-#  This script installs, updates, removes, and manages a Faoxima bot stack
-#  (Apache 2 + PHP 8.2 + MySQL + phpMyAdmin) on Ubuntu/Debian, with optional
-#  side-by-side support for an existing Marzban panel (Docker MySQL).
-# ============================================================================
 # shellcheck shell=bash
 # shellcheck disable=SC2155,SC2034,SC2317
 
 set -o pipefail
 
-# ─── METADATA ──────────────────────────────────────────────────────────────
-readonly FAOXIMA_VERSION="v0.0.2"
+if locale -a 2>/dev/null | grep -qi '^C\.utf8$'; then
+    export LC_ALL=C.UTF-8
+elif locale -a 2>/dev/null | grep -qi '^C\.UTF-8$'; then
+    export LC_ALL=C.UTF-8
+fi
+
+readonly FAOXIMA_VERSION="v1.0.0"
 readonly FAOXIMA_REPO="Mmd-Amir/Faoxima"
 readonly FAOXIMA_GITHUB="https://github.com/${FAOXIMA_REPO}"
 readonly FAOXIMA_TELEGRAM="https://t.me/faoxima"
 
-# ─── PATHS ─────────────────────────────────────────────────────────────────
-readonly BOT_DIR="/var/www/html/faoxima"
-readonly CRED_DIR="/root/conffaoxima"
-readonly CRED_FILE="${CRED_DIR}/dbrootfaoxima.txt"
+readonly DEFAULT_PROJECT_DIR="/opt/faoxima"
+_script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+readonly STAGING_SOURCE_DIR="$_script_dir"
+if [ "$_script_dir" = "$DEFAULT_PROJECT_DIR" ] && { [ -f "${_script_dir}/docker-compose.yml" ] || [ -f "${_script_dir}/config.php" ]; }; then
+    readonly PROJECT_DIR="$_script_dir"
+else
+    readonly PROJECT_DIR="$DEFAULT_PROJECT_DIR"
+fi
+unset _script_dir
+readonly BOT_DIR="$PROJECT_DIR"
+readonly COMPOSE_FILE="${PROJECT_DIR}/docker-compose.yml"
+readonly ENV_FILE="${PROJECT_DIR}/.env"
+readonly ENV_EXAMPLE="${PROJECT_DIR}/.env.example"
 readonly LOG_FILE="/var/log/faoxima_installer.log"
 readonly TMP_DOWNLOAD="/tmp/faoxima_download"
 readonly TMP_UPDATE="/tmp/faoxima_update"
+readonly CACHE_DIR="/tmp/faoxima_menu_cache"
 readonly DEFAULT_DB_NAME="faoxima"
-readonly INSTALL_SCRIPT_PATH="/root/install.sh"
+readonly INSTALL_SCRIPT_PATH="${PROJECT_DIR}/install.sh"
 readonly INSTALL_SCRIPT_LINK="/usr/local/bin/faoxima"
+readonly NGINX_CONF_DIR="${PROJECT_DIR}/nginx/conf.d"
+readonly NGINX_TEMPLATE="${PROJECT_DIR}/docker/nginx/nginx.conf.template"
+readonly BOT_NGINX_TEMPLATE="${PROJECT_DIR}/docker/nginx/bot.conf.template"
+readonly NGINX_BOTS_CONF_DIR="${PROJECT_DIR}/nginx/conf.d/bots"
+readonly BOTS_DIR="$(dirname "$PROJECT_DIR")/bots"
+readonly BOT_COMPOSE_PREFIX="${PROJECT_DIR}/docker-compose.bot-"
 
-# ─── ROOT GUARD ────────────────────────────────────────────────────────────
 if [ "$(id -u)" -ne 0 ]; then
     printf '\033[1;31m[ERROR]\033[0m This script must be run as \033[1mroot\033[0m.\n' >&2
     exit 1
 fi
 
-# ─── ANSI COLOR PALETTE ────────────────────────────────────────────────────
 readonly C_RESET=$'\033[0m'
 readonly C_BOLD=$'\033[1m'
 readonly C_DIM=$'\033[2m'
@@ -53,15 +61,12 @@ readonly C_GRAY=$'\033[38;5;245m'
 readonly C_PINK=$'\033[38;5;205m'
 readonly C_ORANGE=$'\033[38;5;215m'
 
-# ============================================================================
-#  UI LIBRARY — rounded panels, key/value tables, tips
-# ----------------------------------------------------------------------------
-#  Inspired by Python's `rich` library. Uses Unicode box-drawing characters
-#  to render a modern terminal UI even over plain SSH.
-# ============================================================================
 
-# Determine usable terminal width, clamped to a sane range.
 ui_term_width() {
+    if [ -n "$UI_FIXED_WIDTH" ]; then
+        printf '%d' "$UI_FIXED_WIDTH"
+        return
+    fi
     local w
     w=$(tput cols 2>/dev/null || echo 80)
     [[ -z "$w" || "$w" -lt 60 ]] && w=80
@@ -69,14 +74,55 @@ ui_term_width() {
     printf '%d' "$w"
 }
 
-# Strip ANSI sequences from a string and print its visible length.
 ui_strlen() {
     local stripped
     stripped=$(printf '%s' "$1" | sed -E $'s/\033\\[[0-9;]*[A-Za-z]//g')
     printf '%d' "${#stripped}"
 }
 
-# Repeat a UTF-8 character N times.
+ui_content_width() {
+    local title="$1" min_content="${#title}" line len term_w
+    shift
+    for line in "$@"; do
+        len=$(ui_strlen "$line")
+        [ "$len" -gt "$min_content" ] && min_content=$len
+    done
+    term_w=$(ui_term_width)
+    local wanted=$((min_content + 6))
+    [ "$wanted" -lt 40 ] && wanted=40
+    [ "$wanted" -gt "$term_w" ] && wanted=$term_w
+    printf '%d' "$wanted"
+}
+
+ui_wrap_line() {
+    local line="$1" max_len="$2"
+    local prefix="" suffix="" plain="$line"
+    if [[ "$line" =~ ^($'\033'\[[0-9\;]*m)(.*)$ ]]; then
+        prefix="${BASH_REMATCH[1]}"
+        plain="${BASH_REMATCH[2]}"
+    fi
+    if [[ "$plain" == *$'\033['*m ]]; then
+        suffix=$(printf '%s' "$plain" | grep -oE $'\033\\[[0-9;]*m' | tail -1)
+        plain=$(printf '%s' "$plain" | sed -E $'s/\033\\[[0-9;]*m//g')
+    fi
+    if [ "${#plain}" -le "$max_len" ]; then
+        printf '%s\n' "$line"
+        return
+    fi
+    local word cur=""
+    for word in $plain; do
+        if [ -z "$cur" ]; then
+            cur="$word"
+        elif [ "$(( ${#cur} + 1 + ${#word} ))" -le "$max_len" ]; then
+            cur="${cur} ${word}"
+        else
+            printf '%s%s%s\n' "$prefix" "$cur" "$suffix"
+            cur="$word"
+        fi
+    done
+    [ -n "$cur" ] && printf '%s%s%s\n' "$prefix" "$cur" "$suffix"
+}
+
 ui_repeat() {
     local ch="$1" n="$2" out="" i=0
     while [ "$i" -lt "$n" ]; do
@@ -86,12 +132,8 @@ ui_repeat() {
     printf '%s' "$out"
 }
 
-# Print spaces N times.
 ui_spaces() { printf '%*s' "$1" ''; }
 
-# ─── PANEL PRIMITIVES ──────────────────────────────────────────────────────
-# Top border with centered title.
-# Args: $1=title $2=title_color $3=border_color $4=width
 ui_box_top() {
     local title="$1" title_color="$2" border_color="$3" width="$4"
     local inner=$((width - 2))
@@ -110,23 +152,19 @@ ui_box_top() {
         "$C_RESET"
 }
 
-# Plain top border (no title).
 ui_box_top_plain() {
     local border_color="$1" width="$2"
     printf '%s╭%s╮%s\n' "$border_color" "$(ui_repeat '─' $((width - 2)))" "$C_RESET"
 }
 
-# Empty padded line.
 ui_box_blank() {
     local border_color="$1" width="$2"
     printf '%s│%s│%s\n' "$border_color" "$(ui_spaces $((width - 2)))" "$C_RESET"
 }
 
-# Content line with given (already-colored) text.
-# Args: $1=border_color $2=width $3=content
 ui_box_line() {
     local border_color="$1" width="$2" content="$3"
-    local inner=$((width - 4))           # 2 borders + 2 padding spaces
+    local inner=$((width - 4))
     local visible_len pad
     visible_len=$(ui_strlen "$content")
     pad=$((inner - visible_len))
@@ -137,42 +175,43 @@ ui_box_line() {
         "$border_color" "$C_RESET"
 }
 
-# Divider line (├─┤) inside a panel.
 ui_box_divider() {
     local border_color="$1" width="$2"
     printf '%s├%s┤%s\n' "$border_color" "$(ui_repeat '─' $((width - 2)))" "$C_RESET"
 }
 
-# Bottom border (╰──╯).
 ui_box_bottom() {
     local border_color="$1" width="$2"
     printf '%s╰%s╯%s\n' "$border_color" "$(ui_repeat '─' $((width - 2)))" "$C_RESET"
 }
 
-# ─── HIGH-LEVEL PANEL ──────────────────────────────────────────────────────
-# Print a rounded panel with a title and one or more lines of content.
-# Args:
-#   $1 = title
-#   $2 = title color
-#   $3 = border color
-#   $@ (rest) = content lines (may include ANSI colors)
 ui_panel() {
     local title="$1" title_color="$2" border_color="$3"
     shift 3
+    local term_w max_w=90
+    term_w=$(ui_term_width)
+    [ "$term_w" -lt "$max_w" ] && max_w=$term_w
+
+    local wrapped_lines=() line wrapped
+    for line in "$@"; do
+        wrapped=$(ui_wrap_line "$line" $((max_w - 6)))
+        while IFS= read -r w; do
+            wrapped_lines+=("$w")
+        done <<< "$wrapped"
+    done
+
     local width
-    width=$(ui_term_width)
+    width=$(ui_content_width "$title" "${wrapped_lines[@]}")
 
     ui_box_top "$title" "$title_color" "$border_color" "$width"
     ui_box_blank "$border_color" "$width"
-    local line
-    for line in "$@"; do
+    for line in "${wrapped_lines[@]}"; do
         ui_box_line "$border_color" "$width" "$line"
     done
     ui_box_blank "$border_color" "$width"
     ui_box_bottom "$border_color" "$width"
 }
 
-# Print a panel with a single one-line tip (used for short hints).
 ui_tip() {
     local message="$1"
     local width
@@ -182,52 +221,145 @@ ui_tip() {
     ui_box_bottom "$C_GREEN" "$width"
 }
 
-# Print a key/value status table inside a panel.
-# Usage:  ui_status_table "TITLE" "border_color" "Key1|Value1" "Key2|Value2" ...
 ui_status_table() {
     local title="$1" border_color="$2"
     shift 2
-    local width pair key val key_w=0
-    width=$(ui_term_width)
+    local pair key val key_w=0
 
-    # Find the widest key to align the colons.
-    local pair
     for pair in "$@"; do
         key="${pair%%|*}"
         [ "${#key}" -gt "$key_w" ] && key_w=${#key}
     done
     [ "$key_w" -gt 24 ] && key_w=24
 
-    ui_box_top "$title" "$C_CYAN" "$border_color" "$width"
-    ui_box_blank "$border_color" "$width"
+    local rendered_lines=() padded_key
     for pair in "$@"; do
         key="${pair%%|*}"
         val="${pair#*|}"
-        local padded_key
         padded_key=$(printf '%-*s' "$key_w" "$key")
-        ui_box_line "$border_color" "$width" "${C_CYAN}${padded_key}${C_RESET}  ${C_WHITE}${val}${C_RESET}"
+        rendered_lines+=("${C_CYAN}${padded_key}${C_RESET}  ${C_WHITE}${val}${C_RESET}")
+    done
+
+    local width
+    width=$(ui_content_width "$title" "${rendered_lines[@]}")
+
+    ui_box_top "$title" "$C_CYAN" "$border_color" "$width"
+    ui_box_blank "$border_color" "$width"
+    local line
+    for line in "${rendered_lines[@]}"; do
+        ui_box_line "$border_color" "$width" "$line"
     done
     ui_box_blank "$border_color" "$width"
     ui_box_bottom "$border_color" "$width"
 }
 
-# ─── INLINE STATUS LINES ───────────────────────────────────────────────────
+ui_section() {
+    local title="$1"
+    shift
+    printf '%s│%s %s%s%s\n' "$C_ORANGE" "$C_RESET" "$C_BOLD" "$title" "$C_RESET"
+    printf '%s%s%s\n' "$C_BLUE" "$(ui_repeat '─' 60)" "$C_RESET"
+    printf '\n'
+    local key_w=0 pair key
+    for pair in "$@"; do
+        key="${pair%%|*}"
+        [ "${#key}" -gt "$key_w" ] && key_w=${#key}
+    done
+    local val padded_key
+    for pair in "$@"; do
+        key="${pair%%|*}"
+        val="${pair#*|}"
+        padded_key=$(printf '%-*s' "$key_w" "$key")
+        printf '  %s%s%s : %b\n' "$C_CYAN" "$padded_key" "$C_RESET" "$val"
+    done
+    printf '\n'
+}
+
+ui_menu_list() {
+    local title="$1"
+    shift
+    printf '%s│%s %s%s%s\n' "$C_ORANGE" "$C_RESET" "$C_BOLD" "$title" "$C_RESET"
+    printf '%s%s%s\n' "$C_BLUE" "$(ui_repeat '─' 60)" "$C_RESET"
+    printf '\n'
+    local item
+    for item in "$@"; do
+        printf '  %b\n' "$item"
+    done
+    printf '\n'
+}
+
+ui_pick_from_list() {
+    local prompt_label="$1"
+    shift
+    local items=("$@")
+    local total="${#items[@]}"
+    local page_size=20
+    local page=0
+    local last_page=$(( (total - 1) / page_size ))
+
+    while true; do
+        local start=$((page * page_size))
+        local end=$((start + page_size))
+        [ "$end" -gt "$total" ] && end="$total"
+
+        printf '\n'
+        local i
+        for ((i = start; i < end; i++)); do
+            printf '  %s%2d)%s %s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${items[$i]}"
+        done
+
+        if [ "$last_page" -gt 0 ]; then
+            printf '\n  %s(page %d of %d)%s\n' "$C_DIM" "$((page + 1))" "$((last_page + 1))" "$C_RESET"
+        fi
+
+        local nav_hint=""
+        [ "$page" -lt "$last_page" ] && nav_hint="${nav_hint}n) next page  "
+        [ "$page" -gt 0 ] && nav_hint="${nav_hint}p) previous page  "
+
+        printf '\n  %s❯%s %s (%sEnter to cancel): ' "$C_YELLOW" "$C_RESET" "$prompt_label" "$nav_hint"
+        local pick
+        read -r pick
+
+        case "$pick" in
+            "")
+                UI_PICK_RESULT=""
+                return 1
+                ;;
+            n|N)
+                if [ "$page" -lt "$last_page" ]; then
+                    page=$((page + 1))
+                fi
+                continue
+                ;;
+            p|P)
+                if [ "$page" -gt 0 ]; then
+                    page=$((page - 1))
+                fi
+                continue
+                ;;
+        esac
+
+        if [[ ! "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "$total" ]; then
+            ui_err "Invalid selection."
+            continue
+        fi
+
+        UI_PICK_RESULT=$((pick - 1))
+        return 0
+    done
+}
+
 ui_info()    { printf '  %s●%s %s\n' "$C_BLUE"   "$C_RESET" "$*"; }
 ui_ok()      { printf '  %s✓%s %s\n' "$C_GREEN"  "$C_RESET" "$*"; }
 ui_warn()    { printf '  %s!%s %s\n' "$C_YELLOW" "$C_RESET" "$*"; }
 ui_err()     { printf '  %s✗%s %s\n' "$C_RED"    "$C_RESET" "$*"; }
 ui_action()  { printf '  %s→%s %s\n' "$C_CYAN"   "$C_RESET" "$*"; }
 
-# Section divider — single thin rule across the screen.
 ui_rule() {
     local width
     width=$(ui_term_width)
     printf '%s%s%s\n' "$C_GRAY" "$(ui_repeat '─' "$width")" "$C_RESET"
 }
 
-# ============================================================================
-#  LOGGING
-# ============================================================================
 init_logging() {
     local log_dir
     log_dir="$(dirname "$LOG_FILE")"
@@ -260,71 +392,243 @@ log_error()  { log_message "ERROR"  "$@"; }
 init_logging
 log_info "Faoxima installer ${FAOXIMA_VERSION} initialized (PID $$)"
 
-# ============================================================================
-#  ANIMATIONS — kept light and skippable on slow terminals
-# ============================================================================
-type_text() {
-    local text="$1"
-    local delay="${2:-0.02}"
-    local i=0
-    while [ "$i" -lt "${#text}" ]; do
-        printf '%s' "${text:$i:1}"
-        sleep "$delay" 2>/dev/null || true
-        i=$((i + 1))
-    done
-    printf '\n'
-}
-
-type_text_colored() {
-    local color="$1" text="$2" delay="${3:-0.02}"
-    printf '%b' "$color"
-    type_text "$text" "$delay"
-    printf '%b' "$C_RESET"
-}
-
-# ============================================================================
-#  BRAND LOGO + HEADER
-# ============================================================================
 show_animated_logo() {
+    local latest_line="$1"
     clear
     printf '\n'
-    type_text_colored "$C_RED"     "███████╗  █████╗   ██████╗  ██╗  ██╗ ██╗ ███╗   ███╗  █████╗ " 0.002
-    type_text_colored "$C_RED"     "██╔════╝ ██╔══██╗ ██╔═══██╗ ╚██╗██╔╝ ██║ ████╗ ████║ ██╔══██╗" 0.002
-    type_text_colored "$C_PINK"    "█████╗   ███████║ ██║   ██║  ╚███╔╝  ██║ ██╔████╔██║ ███████║" 0.002
-    type_text_colored "$C_PINK"    "██╔══╝   ██╔══██║ ██║   ██║  ██╔██╗  ██║ ██║╚██╔╝██║ ██╔══██║" 0.002
-    type_text_colored "$C_MAGENTA" "██║      ██║  ██║ ╚██████╔╝ ██╔╝ ██╗ ██║ ██║ ╚═╝ ██║ ██║  ██║" 0.002
-    type_text_colored "$C_MAGENTA" "╚═╝      ╚═╝  ╚═╝  ╚═════╝  ╚═╝  ╚═╝ ╚═╝ ╚═╝     ╚═╝ ╚═╝  ╚═╝" 0.002
+    printf '%s███████╗  █████╗   ██████╗  ██╗  ██╗ ██╗ ███╗   ███╗  █████╗ %s\n' "$C_GREEN" "$C_RESET"
+    printf '%s██╔════╝ ██╔══██╗ ██╔═══██╗ ╚██╗██╔╝ ██║ ████╗ ████║ ██╔══██╗%s\n' "$C_GREEN" "$C_RESET"
+    printf '%s█████╗   ███████║ ██║   ██║  ╚███╔╝  ██║ ██╔████╔██║ ███████║%s\n' "$C_WHITE" "$C_RESET"
+    printf '%s██╔══╝   ██╔══██║ ██║   ██║  ██╔██╗  ██║ ██║╚██╔╝██║ ██╔══██║%s\n' "$C_WHITE" "$C_RESET"
+    printf '%s██║      ██║  ██║ ╚██████╔╝ ██╔╝ ██╗ ██║ ██║ ╚═╝ ██║ ██║  ██║%s\n' "$C_RED" "$C_RESET"
+    printf '%s╚═╝      ╚═╝  ╚═╝  ╚═════╝  ╚═╝  ╚═╝ ╚═╝ ╚═╝     ╚═╝ ╚═╝  ╚═╝%s\n' "$C_RED" "$C_RESET"
     printf '\n'
-    type_text_colored "$C_YELLOW"  "                    Faoxima Bot Installer ${FAOXIMA_VERSION}" 0.01
-    type_text_colored "$C_CYAN"    "                    GitHub  : ${FAOXIMA_GITHUB}" 0.01
-    type_text_colored "$C_CYAN"    "                    Telegram: ${FAOXIMA_TELEGRAM}" 0.01
+
+    local width=55
+    ui_box_top "Version" "$C_ORANGE$C_BOLD" "$C_ORANGE" "$width"
+    ui_box_blank "$C_ORANGE" "$width"
+    ui_box_line "$C_ORANGE" "$width" "${C_CYAN}Installed${C_RESET} : ${C_GREEN}${FAOXIMA_VERSION}${C_RESET}"
+    [ -n "$latest_line" ] && ui_box_line "$C_ORANGE" "$width" "$latest_line"
+    ui_box_line "$C_ORANGE" "$width" "${C_CYAN}GitHub${C_RESET}    : ${C_WHITE}${FAOXIMA_GITHUB}${C_RESET}"
+    ui_box_line "$C_ORANGE" "$width" "${C_CYAN}Telegram${C_RESET}  : ${C_WHITE}${FAOXIMA_TELEGRAM}${C_RESET}"
+    ui_box_bottom "$C_ORANGE" "$width"
     printf '\n'
 }
 
-show_logo() { show_animated_logo; }
+show_logo() { show_animated_logo "$@"; }
 
-# ============================================================================
-#  STATUS CHECKS (SSL, bot install state)
-# ============================================================================
+dc() {
+    local files=(-f "$COMPOSE_FILE") f
+    for f in "${BOT_COMPOSE_PREFIX}"*.yml; do
+        [ -f "$f" ] && files+=(-f "$f")
+    done
+    docker compose "${files[@]}" --env-file "$ENV_FILE" "$@"
+}
+
+get_cert_enddate() {
+    local domain="$1"
+    local project volume_name mountpoint cert_path
+    project=$(env_get COMPOSE_PROJECT_NAME)
+    [ -z "$project" ] && project="faoxima"
+    volume_name="${project}_certs"
+
+    mountpoint=$(docker volume inspect --format '{{.Mountpoint}}' "$volume_name" 2>/dev/null)
+    if [ -n "$mountpoint" ]; then
+        cert_path="${mountpoint}/live/${domain}/cert.pem"
+        if [ -f "$cert_path" ]; then
+            openssl x509 -enddate -noout -in "$cert_path" 2>/dev/null | cut -d= -f2 | tr -d '\r'
+        fi
+        return
+    fi
+
+    dc run --rm --no-deps --entrypoint sh certbot -c \
+        "test -f /etc/letsencrypt/live/${domain}/cert.pem && openssl x509 -enddate -noout -in /etc/letsencrypt/live/${domain}/cert.pem" \
+        2>/dev/null | cut -d= -f2 | tr -d '\r'
+}
+
+ensure_envsubst() {
+    command -v envsubst >/dev/null 2>&1 && return 0
+    local output
+    if ! output=$(apt-get install -y gettext-base 2>&1); then
+        ui_err "Failed to install gettext-base (needed for envsubst)."
+        printf '%s\n' "$output"
+        return 1
+    fi
+    if ! command -v envsubst >/dev/null 2>&1; then
+        ui_err "gettext-base installed but the envsubst binary still isn't on PATH."
+        return 1
+    fi
+}
+
+render_vhost() {
+    local domain="$1" outfile="$2"
+    ensure_envsubst || { ui_err "envsubst is not available and could not be installed."; return 1; }
+    mkdir -p "$(dirname "$outfile")" || { ui_err "Failed to create directory for ${outfile}."; return 1; }
+    if [ ! -f "$NGINX_TEMPLATE" ]; then
+        ui_err "Nginx template not found at ${NGINX_TEMPLATE}."
+        return 1
+    fi
+    DOMAIN="$domain" \
+        envsubst '${DOMAIN}' < "$NGINX_TEMPLATE" > "$outfile" \
+        || { ui_err "Failed to render nginx config to ${outfile}."; return 1; }
+}
+
+render_bot_location() {
+    local docroot="$1" upstream="$2" outfile="$3" urlpath="$4"
+    ensure_envsubst || { ui_err "envsubst is not available and could not be installed."; return 1; }
+    mkdir -p "$(dirname "$outfile")" || { ui_err "Failed to create directory for ${outfile}."; return 1; }
+    if [ ! -f "$BOT_NGINX_TEMPLATE" ]; then
+        ui_err "Bot nginx template not found at ${BOT_NGINX_TEMPLATE}."
+        return 1
+    fi
+    DOC_ROOT="$docroot" APP_UPSTREAM="$upstream" URL_PATH="$urlpath" \
+        envsubst '${DOC_ROOT} ${APP_UPSTREAM} ${URL_PATH}' < "$BOT_NGINX_TEMPLATE" > "$outfile" \
+        || { ui_err "Failed to render bot nginx config to ${outfile}."; return 1; }
+}
+
+ensure_dummy_cert() {
+    local domain="$1"
+    dc run --rm --no-deps --entrypoint sh certbot -c "
+        set -e
+        dir=/etc/letsencrypt/live/${domain}
+        if [ -f \"\${dir}/fullchain.pem\" ]; then exit 0; fi
+        mkdir -p \"\${dir}\"
+        openssl req -x509 -nodes -newkey rsa:2048 -days 1 \
+            -keyout \"\${dir}/privkey.pem\" \
+            -out \"\${dir}/fullchain.pem\" \
+            -subj \"/CN=${domain}\"
+    "
+}
+
+discard_dummy_cert() {
+    local domain="$1"
+    dc run --rm --no-deps --entrypoint sh certbot -c "
+        set -e
+        renewal_conf=/etc/letsencrypt/renewal/${domain}.conf
+        if [ -f \"\${renewal_conf}\" ]; then exit 0; fi
+        rm -rf \"/etc/letsencrypt/live/${domain}\" \"/etc/letsencrypt/archive/${domain}\"
+    " || { ui_err "Failed to remove the temporary self-signed certificate for ${domain}."; return 1; }
+}
+
+issue_certificate() {
+    local domain="$1"
+    if dc run --rm --entrypoint certbot certbot certonly --webroot -w /var/www/certbot --agree-tos --non-interactive \
+            -m "admin@${domain}" -d "$domain"; then
+        dc exec nginx nginx -s reload 2>/dev/null || true
+        return 0
+    fi
+
+    ui_warn "Certificate issuance via webroot failed for ${domain} — port 80 may be blocked by something other than our own nginx. Retrying by stopping nginx and binding port 80 directly..."
+    dc stop nginx || { ui_err "Failed to stop nginx for the standalone issuance attempt."; return 1; }
+
+    if dc run --rm -p 80:80 --entrypoint certbot certbot certonly --standalone --agree-tos --non-interactive \
+            -m "admin@${domain}" -d "$domain"; then
+        dc start nginx && dc exec nginx nginx -s reload 2>/dev/null
+        return 0
+    fi
+
+    dc start nginx || ui_err "nginx failed to restart after the failed standalone attempt — start it manually with 'docker compose start nginx'."
+    return 1
+}
+
+env_get() {
+    local key="$1"
+    [ -f "$ENV_FILE" ] || return 1
+    grep -E "^${key}=" "$ENV_FILE" | tail -1 | cut -d'=' -f2-
+}
+
+env_set() {
+    local key="$1" value="$2"
+    if [ ! -f "$ENV_FILE" ]; then
+        touch "$ENV_FILE" || { ui_err "Failed to create ${ENV_FILE}."; exit 1; }
+    fi
+    if grep -qE "^${key}=" "$ENV_FILE"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$ENV_FILE" || { ui_err "Failed to update ${key} in ${ENV_FILE}."; exit 1; }
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$ENV_FILE" || { ui_err "Failed to append ${key} to ${ENV_FILE}."; exit 1; }
+    fi
+}
+
+cache_get() {
+    local key="$1" max_age="$2"
+    local file="${CACHE_DIR}/${key}"
+    [ -f "$file" ] || return 1
+    local age
+    age=$(( $(date +%s) - $(stat -c %Y "$file" 2>/dev/null || echo 0) ))
+    [ "$age" -gt "$max_age" ] && return 1
+    cat "$file"
+}
+
+cache_set() {
+    local key="$1" value="$2"
+    mkdir -p "$CACHE_DIR" 2>/dev/null || return 1
+    printf '%s' "$value" > "${CACHE_DIR}/${key}"
+}
+
+docker_installed() {
+    command -v docker >/dev/null 2>&1 && docker compose version >/dev/null 2>&1
+}
+
+install_docker() {
+    if docker_installed; then
+        ui_ok "Docker Engine + Compose v2 already installed."
+        return 0
+    fi
+
+    ui_action "Docker not found (or Compose v2 plugin missing) — installing via Docker's official apt repo..."
+
+    apt-get update || { ui_err "apt-get update failed."; exit 1; }
+    apt-get install -y ca-certificates curl gnupg || { ui_err "Failed to install apt prerequisites."; exit 1; }
+
+    install -m 0755 -d /etc/apt/keyrings || { ui_err "Failed to create /etc/apt/keyrings."; exit 1; }
+    if [ ! -f /etc/apt/keyrings/docker.gpg ]; then
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /etc/apt/keyrings/docker.gpg || {
+            ui_err "Failed to fetch Docker's GPG key."
+            exit 1
+        }
+        chmod a+r /etc/apt/keyrings/docker.gpg
+    fi
+
+    local arch codename
+    arch="$(dpkg --print-architecture)"
+    codename="$(. /etc/os-release && echo "${VERSION_CODENAME:-jammy}")"
+    echo "deb [arch=${arch} signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu ${codename} stable" \
+        | tee /etc/apt/sources.list.d/docker.list > /dev/null
+
+    apt-get update || { ui_err "apt-get update failed after adding Docker's repo."; exit 1; }
+    apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin || {
+        ui_err "Failed to install Docker Engine + Compose v2 plugin."
+        exit 1
+    }
+
+    systemctl enable --now docker || { ui_err "Failed to enable/start the Docker service."; exit 1; }
+
+    if ! docker_installed; then
+        ui_err "Docker installation finished but 'docker compose version' still fails."
+        exit 1
+    fi
+    ui_ok "Docker Engine + Compose v2 installed and running."
+}
+
 check_ssl_status() {
-    local config="${BOT_DIR}/config.php"
-    if [ ! -f "$config" ]; then
-        ui_warn "Bot config.php not found — SSL status unknown."
+    if [ ! -f "$ENV_FILE" ]; then
+        ui_warn ".env not found — SSL status unknown."
         return 0
     fi
     local domain
-    domain=$(grep '^\$domainhosts' "$config" 2>/dev/null | cut -d"'" -f2 | cut -d'/' -f1)
+    domain=$(env_get DOMAIN)
     if [ -z "$domain" ]; then
-        ui_warn "Domain could not be parsed from config.php."
+        ui_warn "DOMAIN could not be read from .env."
         return 0
     fi
-    local cert="/etc/letsencrypt/live/${domain}/cert.pem"
-    if [ ! -f "$cert" ]; then
+    local cert
+    cert="$(dc exec -T nginx sh -c "test -f /etc/letsencrypt/live/${domain}/cert.pem && echo yes" 2>/dev/null | tr -d '\r')"
+    if [ "$cert" != "yes" ]; then
         ui_warn "SSL certificate not found for domain ${domain}."
         return 0
     fi
-    local expiry_date current_date expiry_ts days_remaining
-    expiry_date=$(openssl x509 -enddate -noout -in "$cert" | cut -d= -f2)
+    local expiry_date expiry_ts current_date days_remaining
+    expiry_date=$(dc exec -T nginx sh -c "openssl x509 -enddate -noout -in /etc/letsencrypt/live/${domain}/cert.pem" 2>/dev/null | cut -d= -f2 | tr -d '\r')
     current_date=$(date +%s)
     expiry_ts=$(date -d "$expiry_date" +%s 2>/dev/null || echo 0)
     days_remaining=$(( (expiry_ts - current_date) / 86400 ))
@@ -336,934 +640,639 @@ check_ssl_status() {
 }
 
 check_bot_status() {
-    if [ -f "${BOT_DIR}/config.php" ]; then
-        ui_ok "Faoxima Bot is installed at ${BOT_DIR}"
+    if [ -f "$ENV_FILE" ] && [ -f "$COMPOSE_FILE" ]; then
+        ui_ok "Faoxima Bot is installed at ${PROJECT_DIR}"
         check_ssl_status
     else
         ui_err "Faoxima Bot is not installed"
     fi
 }
 
-# ============================================================================
-#  APACHE / SSL HELPERS
-# ============================================================================
-configure_apache_vhost() {
-    local domain="$1"
-    local docroot="${2:-/var/www/html}"
-    local conf="/etc/apache2/sites-available/${domain}.conf"
-
-    if [ -z "$domain" ]; then
-        ui_err "Domain name missing while configuring Apache."
-        return 1
-    fi
-
-    ui_action "Configuring Apache 2 virtual host for ${domain} (DocumentRoot: ${docroot})"
-    tee "$conf" >/dev/null <<EOF
-<VirtualHost *:80>
-    ServerName $domain
-    DocumentRoot $docroot
-
-    <Directory $docroot>
-        AllowOverride All
-        Require all granted
-    </Directory>
-
-    ErrorLog \${APACHE_LOG_DIR}/${domain}-error.log
-    CustomLog \${APACHE_LOG_DIR}/${domain}-access.log combined
-</VirtualHost>
-EOF
-
-    if ! a2ensite "${domain}.conf" >/dev/null 2>&1; then
-        ui_err "Failed to enable Apache 2 site for ${domain}."
-        return 1
-    fi
-    if ! apache2ctl configtest >/dev/null 2>&1; then
-        ui_err "Apache 2 configuration test failed after adding ${domain}."
-        return 1
-    fi
-    return 0
-}
-
-cleanup_apache_state() {
-    if pgrep -x apache2 >/dev/null 2>&1 && ! systemctl is-active --quiet apache2; then
-        ui_info "Detected Apache 2 running outside systemd — stopping stale process."
-        apachectl stop >/dev/null 2>&1 || pkill -TERM apache2 >/dev/null 2>&1 || true
-        rm -f /var/run/apache2/apache2.pid >/dev/null 2>&1 || true
-    fi
-}
-
-restore_apache_service() {
-    cleanup_apache_state
-    ui_action "Re-enabling Apache 2 service..."
-    systemctl enable apache2 >/dev/null 2>&1 || ui_info "Apache 2 service was already disabled."
-    ui_action "Starting Apache 2 service..."
-    if ! systemctl start apache2; then
-        ui_warn "Apache 2 failed to start cleanly — retrying after cleanup..."
-        cleanup_apache_state
-        if ! systemctl start apache2; then
-            ui_err "Failed to start Apache 2 service!"
+wait_for_healthy() {
+    local service="$1" timeout="${2:-180}" interval=3 waited=0 cid status
+    while [ "$waited" -lt "$timeout" ]; do
+        cid=$(dc ps -q "$service" 2>/dev/null)
+        if [ -n "$cid" ]; then
+            status=$(docker inspect --format='{{.State.Health.Status}}' "$cid" 2>/dev/null)
+            [ "$status" = "healthy" ] && return 0
         fi
-    fi
-}
-
-wait_for_certbot() {
-    local timeout="${1:-180}"
-    local interval=5
-    local waited=0
-    local lock_paths=(
-        "/var/log/letsencrypt/.certbot.lock"
-        "/var/lib/letsencrypt/.certbot.lock"
-    )
-
-    while true; do
-        local lock_found=0
-        local lock_file
-        for lock_file in "${lock_paths[@]}"; do
-            if [ -f "$lock_file" ]; then
-                lock_found=1
-                break
-            fi
-        done
-        if ! pgrep -x certbot >/dev/null 2>&1 && [ "$lock_found" -eq 0 ]; then
-            return 0
-        fi
-        if [ "$waited" -ge "$timeout" ]; then
-            log_error "Certbot lock has been held for more than ${timeout}s. Please ensure no other Certbot process is running."
-            return 1
-        fi
-        log_warn "Certbot is already running; waiting for it to finish..."
         sleep "$interval"
         waited=$((waited + interval))
     done
-}
-
-# ============================================================================
-#  MARZBAN HELPERS
-# ============================================================================
-check_marzban_installed() {
-    [ -f "/opt/marzban/docker-compose.yml" ]
-}
-
-detect_database_type() {
-    local compose="/opt/marzban/docker-compose.yml"
-    if [ ! -f "$compose" ]; then
-        printf 'unknown'
-        return 1
-    fi
-    if grep -q "^[[:space:]]*mysql:" "$compose"; then
-        printf 'mysql'
-        return 0
-    elif grep -q "^[[:space:]]*mariadb:" "$compose"; then
-        printf 'mariadb'
-        return 1
-    fi
-    printf 'sqlite'
     return 1
 }
 
-find_free_port() {
-    local port
-    for port in {3300..3330}; do
-        if ! ss -tuln | grep -q ":${port} "; then
-            printf '%d' "$port"
-            return 0
-        fi
-    done
-    ui_err "No free port found between 3300 and 3330."
-    exit 1
+db_ready_check() {
+    local service="${1:-app}" db_host="$2" db_name="$3" db_user="$4" db_pass="$5"
+    [ -z "$db_host" ] && { db_host=$(env_get DB_HOST); db_host="${db_host:-db}"; }
+    [ -z "$db_name" ] && db_name=$(env_get MYSQL_DATABASE)
+    [ -z "$db_user" ] && db_user=$(env_get MYSQL_USER)
+    [ -z "$db_pass" ] && db_pass=$(env_get MYSQL_PASSWORD)
+    dc exec -T "$service" php -r '
+        $h = $argv[1]; $d = $argv[2]; $u = $argv[3]; $p = $argv[4];
+        try {
+            $pdo = new PDO("mysql:host={$h};dbname={$d};charset=utf8mb4", $u, $p, [PDO::ATTR_TIMEOUT => 3]);
+            $pdo->query("SELECT 1");
+            echo "OK\n";
+            exit(0);
+        } catch (Throwable $e) {
+            fwrite(STDERR, $e->getMessage() . "\n");
+            exit(1);
+        }
+    ' "$db_host" "$db_name" "$db_user" "$db_pass"
 }
 
-fix_update_issues() {
-    ui_warn "Trying to fix update issues by changing apt mirrors..."
-    cp /etc/apt/sources.list /etc/apt/sources.list.backup
-
-    local UBUNTU_CODENAME
-    if [ -f /etc/os-release ]; then
-        # shellcheck source=/dev/null
-        . /etc/os-release
-        UBUNTU_CODENAME="${UBUNTU_CODENAME:-${VERSION_CODENAME:-}}"
-    else
-        ui_err "Could not detect Ubuntu version."
-        return 1
-    fi
-
-    local mirrors=(
-        "archive.ubuntu.com"
-        "us.archive.ubuntu.com"
-        "fr.archive.ubuntu.com"
-        "de.archive.ubuntu.com"
-        "mirrors.digitalocean.com"
-        "mirrors.linode.com"
-    )
-    local mirror
-    for mirror in "${mirrors[@]}"; do
-        ui_action "Trying mirror: ${mirror}"
-        cat > /etc/apt/sources.list <<EOF
-deb http://${mirror}/ubuntu/ ${UBUNTU_CODENAME} main restricted universe multiverse
-deb http://${mirror}/ubuntu/ ${UBUNTU_CODENAME}-updates main restricted universe multiverse
-deb http://${mirror}/ubuntu/ ${UBUNTU_CODENAME}-security main restricted universe multiverse
-EOF
-        if apt-get update 2>/dev/null; then
-            ui_ok "Successfully updated using mirror: ${mirror}"
+wait_for_db_ready() {
+    local timeout="${1:-90}" service="${2:-app}" db_host="$3" db_name="$4" db_user="$5" db_pass="$6"
+    local interval=3 waited=0
+    while [ "$waited" -lt "$timeout" ]; do
+        if db_ready_check "$service" "$db_host" "$db_name" "$db_user" "$db_pass" >/dev/null 2>&1; then
             return 0
         fi
+        sleep "$interval"
+        waited=$((waited + interval))
     done
-
-    mv /etc/apt/sources.list.backup /etc/apt/sources.list
-    ui_err "All mirrors failed. Restored original sources.list"
     return 1
 }
 
-# ============================================================================
-#  VIEW ERROR LOGS — show PHP/Apache error_log files created under the bot dir
-#  AND under every additional bot directory in /var/www/html/<bot>/ that has
-#  a config.php (so each additional bot is auto-discovered by its folder name).
-# ============================================================================
-view_error_logs() {
-    show_logo
-    ui_panel "VIEW ERROR LOGS" "$C_BOLD$C_GREEN" "$C_GREEN" \
-        "${C_WHITE}Shows error_log / *.log files for the main bot and every additional bot.${C_RESET}" \
-        "${C_DIM}Scans ${BOT_DIR} plus any /var/www/html/<bot>/ directory containing config.php.${C_RESET}"
-
-    # Build the list of bot directories to scan: main bot + every additional
-    # bot directory under /var/www/html/ that has its own config.php. Using
-    # config.php as the marker means we skip unrelated folders (phpmyadmin,
-    # static sites, etc.) and auto-pick up any additional bot by folder name.
-    local SCAN_DIRS=()
-    [ -d "$BOT_DIR" ] && SCAN_DIRS+=("$BOT_DIR")
-
-    local d
-    for d in /var/www/html/*/; do
-        d="${d%/}"
-        [ "$d" = "$BOT_DIR" ] && continue
-        [ -f "${d}/config.php" ] || continue
-        SCAN_DIRS+=("$d")
-    done
-
-    if [ "${#SCAN_DIRS[@]}" -eq 0 ]; then
-        ui_err "No bot directories found under /var/www/html (looked for config.php)."
-        printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-        show_menu; return 1
-    fi
-
-    local sd
-    for sd in "${SCAN_DIRS[@]}"; do
-        ui_action "Scanning ${sd} for log files..."
-    done
-
-    # Also include the per-bot Apache vhost logs in /var/log/apache2 that are
-    # named after each bot's domain (the additional-bot installer writes them
-    # as <domain>-error.log / <domain>-access.log).
-    local LOGS=()
-    local combined_find_paths=("${SCAN_DIRS[@]}")
-    mapfile -t LOGS < <(find "${combined_find_paths[@]}" -type f \( -name 'error_log' -o -name '*.log' \) 2>/dev/null | sort)
-
-    local sd2 domain vhost_err vhost_acc
-    for sd2 in "${SCAN_DIRS[@]}"; do
-        [ -f "${sd2}/config.php" ] || continue
-        domain=$(grep '^\$domainhosts' "${sd2}/config.php" 2>/dev/null | cut -d"'" -f2 | cut -d'/' -f1)
-        [ -z "$domain" ] && continue
-        vhost_err="/var/log/apache2/${domain}-error.log"
-        vhost_acc="/var/log/apache2/${domain}-access.log"
-        [ -f "$vhost_err" ] && LOGS+=("$vhost_err")
-        [ -f "$vhost_acc" ] && LOGS+=("$vhost_acc")
-    done
-
-    if [ "${#LOGS[@]}" -eq 0 ]; then
-        ui_ok "No error log files found under ${BOT_DIR} — nothing to show."
-        printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-        show_menu; return 0
-    fi
-
-    ui_ok "Found ${#LOGS[@]} log file(s):"
-    printf '\n'
-    local idx=1 f size
-    for f in "${LOGS[@]}"; do
-        size=$(du -h "$f" 2>/dev/null | awk '{print $1}')
-        printf '  %s%2d)%s %s  %s(%s)%s\n' "$C_YELLOW" "$idx" "$C_RESET" "$f" "$C_DIM" "${size:-?}" "$C_RESET"
-        ((idx++))
-    done
-    printf '  %s%2d)%s Show ALL (last 50 lines of each)\n' "$C_YELLOW" "$idx" "$C_RESET"
-
-    printf '\n  %s❯%s Select a file number (or %d for all, Enter to cancel): ' "$C_YELLOW" "$C_RESET" "$idx"
-    local choice; read -r choice
-    [ -z "$choice" ] && { show_menu; return 0; }
-
-    local TO_SHOW=()
-    if [ "$choice" = "$idx" ]; then
-        TO_SHOW=("${LOGS[@]}")
-    elif [[ "$choice" =~ ^[0-9]+$ ]] && [ "$choice" -ge 1 ] && [ "$choice" -lt "$idx" ]; then
-        TO_SHOW=("${LOGS[$((choice-1))]}")
-    else
-        ui_err "Invalid selection."
-        printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-        show_menu; return 0
-    fi
-
-    local lf
-    for lf in "${TO_SHOW[@]}"; do
-        ui_rule
-        printf '  %s● %s%s  %s(last 50 lines)%s\n' "$C_CYAN" "$lf" "$C_RESET" "$C_DIM" "$C_RESET"
-        ui_rule
-        tail -n 50 "$lf" 2>/dev/null || ui_err "Could not read ${lf}"
-        printf '\n'
-    done
-
-    printf '  %s❯%s Clear (empty) the shown log file(s)? (y/N): ' "$C_YELLOW" "$C_RESET"
-    local clr; read -r clr
-    if [[ "${clr,,}" == "y" ]]; then
-        for lf in "${TO_SHOW[@]}"; do
-            : > "$lf" 2>/dev/null && ui_ok "Cleared ${lf}" || ui_warn "Could not clear ${lf}"
-        done
-    fi
-
-    printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-    show_menu
-}
-
-# ============================================================================
-#  INCREASE UPLOAD LIMIT — raise PHP upload size (for phpMyAdmin DB imports)
-# ============================================================================
-faoxima_set_ini() {
-    local key="$1" val="$2" file="$3"
-    if grep -qE "^[[:space:]]*;?[[:space:]]*${key}[[:space:]]*=" "$file"; then
-        sed -i -E "s|^[[:space:]]*;?[[:space:]]*${key}[[:space:]]*=.*|${key} = ${val}|" "$file"
-    else
-        printf '%s = %s\n' "$key" "$val" >> "$file"
-    fi
-}
-
-increase_upload_limit() {
-    show_logo
-    ui_panel "INCREASE phpMyAdmin UPLOAD LIMIT" "$C_BOLD$C_GREEN" "$C_GREEN" \
-        "${C_WHITE}Raises the PHP upload size so large database backups import via phpMyAdmin.${C_RESET}" \
-        "${C_DIM}The default is usually only 2 MB.${C_RESET}"
-
-    local size_mb
-    printf '\n  %s❯%s Enter the new max upload size in MB (e.g. 100): ' "$C_YELLOW" "$C_RESET"
-    read -r size_mb
-    if ! [[ "$size_mb" =~ ^[0-9]+$ ]] || [ "$size_mb" -lt 1 ]; then
-        ui_err "Invalid number. Please enter a positive integer (MB)."
-        printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-        show_menu; return 1
-    fi
-    local post_mb=$(( size_mb + 16 ))
-    local mem_mb=$(( post_mb + 64 ))
-
-    ui_action "Locating PHP configuration files..."
-    local INIS=()
-    mapfile -t INIS < <(find /etc/php -type f -name php.ini \( -path '*/apache2/*' -o -path '*/fpm/*' -o -path '*/cli/*' \) 2>/dev/null)
-    if [ "${#INIS[@]}" -eq 0 ]; then
-        local cli_ini
-        cli_ini=$(php -i 2>/dev/null | awk -F'=> ' '/Loaded Configuration File/{print $2}' | tr -d ' ')
-        [ -n "$cli_ini" ] && [ -f "$cli_ini" ] && INIS+=("$cli_ini")
-    fi
-    if [ "${#INIS[@]}" -eq 0 ]; then
-        ui_err "No php.ini files found under /etc/php."
-        printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-        show_menu; return 1
-    fi
-
-    local ini changed=0
-    for ini in "${INIS[@]}"; do
-        [ -f "$ini" ] || continue
-        cp "$ini" "${ini}.faoxima.bak" 2>/dev/null || true
-        faoxima_set_ini "upload_max_filesize" "${size_mb}M" "$ini"
-        faoxima_set_ini "post_max_size"       "${post_mb}M" "$ini"
-        faoxima_set_ini "memory_limit"        "${mem_mb}M"  "$ini"
-        faoxima_set_ini "max_execution_time"  "600"         "$ini"
-        faoxima_set_ini "max_input_time"      "600"         "$ini"
-        ui_ok "Updated ${ini}"
-        ((changed++))
-    done
-
-    ui_action "Restarting web server to apply changes..."
-    systemctl restart apache2 2>/dev/null || ui_warn "Could not restart apache2 (is it installed?)."
-    local fpm
-    for fpm in $(systemctl list-units --type=service --no-legend 'php*-fpm.service' 2>/dev/null | awk '{print $1}'); do
-        systemctl restart "$fpm" 2>/dev/null || true
-    done
-    ui_ok "Upload limit set to ${size_mb}M (post_max_size ${post_mb}M, memory_limit ${mem_mb}M) in ${changed} file(s)."
-
-    # Read DB credentials from config.php so the user knows how to log into phpMyAdmin
-    local CONFIG_PATH="${BOT_DIR}/config.php" DB_USER DB_PASS DB_NAME DOMAIN DOMAIN_HOST
-    if [ -f "$CONFIG_PATH" ]; then
-        DB_USER=$(grep '^\$usernamedb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-        DB_PASS=$(grep '^\$passworddb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-        DB_NAME=$(grep '^\$dbname'     "$CONFIG_PATH" | awk -F"'" '{print $2}')
-        DOMAIN=$(grep  '^\$domainhosts' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-        DOMAIN_HOST="${DOMAIN#http://}"; DOMAIN_HOST="${DOMAIN_HOST#https://}"; DOMAIN_HOST="${DOMAIN_HOST%%/*}"
-        printf '\n'
-        ui_status_table "phpMyAdmin LOGIN" "$C_GREEN" \
-            "phpMyAdmin URL|${C_BLUE}https://${DOMAIN_HOST}/phpmyadmin${C_RESET}" \
-            "Database|${C_CYAN}${DB_NAME}${C_RESET}" \
-            "Username|${C_CYAN}${DB_USER}${C_RESET}" \
-            "Password|${C_CYAN}${DB_PASS}${C_RESET}"
-    else
-        ui_warn "config.php not found at ${CONFIG_PATH}; skipping DB credential display."
-    fi
-
-    ui_tip "You can now import database backups up to ${size_mb} MB in phpMyAdmin."
-    printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-    show_menu
-}
-
-# ============================================================================
-#  MAIN MENU
-# ============================================================================
-show_menu() {
-    show_logo
-
-    # Status panel (SSL + bot install state) above the menu.
-    local bot_state ssl_state
-    if [ -f "${BOT_DIR}/config.php" ]; then
-        bot_state="${C_GREEN}● installed${C_RESET}  ${C_DIM}${BOT_DIR}${C_RESET}"
-    else
-        bot_state="${C_RED}● not installed${C_RESET}"
-    fi
-    local domain cert days
-    domain=""
-    if [ -f "${BOT_DIR}/config.php" ]; then
-        domain=$(grep '^\$domainhosts' "${BOT_DIR}/config.php" 2>/dev/null | cut -d"'" -f2 | cut -d'/' -f1)
-    fi
-    if [ -n "$domain" ] && [ -f "/etc/letsencrypt/live/${domain}/cert.pem" ]; then
-        local exp ts now
-        exp=$(openssl x509 -enddate -noout -in "/etc/letsencrypt/live/${domain}/cert.pem" 2>/dev/null | cut -d= -f2)
-        ts=$(date -d "$exp" +%s 2>/dev/null || echo 0)
-        now=$(date +%s)
-        days=$(( (ts - now) / 86400 ))
-        if [ "$days" -gt 0 ]; then
-            ssl_state="${C_GREEN}● valid${C_RESET}  ${C_DIM}${days} days remaining (${domain})${C_RESET}"
-        else
-            ssl_state="${C_RED}● expired${C_RESET}  ${C_DIM}${domain}${C_RESET}"
+wait_for_config_templated() {
+    local timeout="${1:-60}" service="${2:-app}"
+    local interval=1 waited=0
+    while [ "$waited" -lt "$timeout" ]; do
+        if dc exec -T "$service" php -r '
+            chdir("/var/www/faoxima");
+            require "config.php";
+            exit(($GLOBALS["pdo"] ?? null) instanceof PDO ? 0 : 1);
+        ' >/dev/null 2>&1; then
+            return 0
         fi
-    elif [ -n "$domain" ]; then
-        ssl_state="${C_YELLOW}● not found${C_RESET}  ${C_DIM}${domain}${C_RESET}"
-    else
-        ssl_state="${C_DIM}—${C_RESET}"
+        sleep "$interval"
+        waited=$((waited + interval))
+    done
+    return 1
+}
+
+repair_db_user() {
+    local db_name db_user db_pass root_pass output
+    db_name=$(env_get MYSQL_DATABASE)
+    db_user=$(env_get MYSQL_USER)
+    db_pass=$(env_get MYSQL_PASSWORD)
+    root_pass=$(env_get MYSQL_ROOT_PASSWORD)
+    [ -z "$root_pass" ] && return 1
+
+    output=$(dc exec -T db mysql -uroot -p"${root_pass}" -e \
+        "CREATE DATABASE IF NOT EXISTS \`${db_name}\`; \
+         CREATE USER IF NOT EXISTS '${db_user}'@'%' IDENTIFIED WITH mysql_native_password BY '${db_pass}'; \
+         ALTER USER '${db_user}'@'%' IDENTIFIED WITH mysql_native_password BY '${db_pass}'; \
+         GRANT ALL PRIVILEGES ON \`${db_name}\`.* TO '${db_user}'@'%'; \
+         FLUSH PRIVILEGES;" 2>&1)
+    local status=$?
+    printf '%s\n' "$output"
+    if [ "$status" -ne 0 ] && printf '%s' "$output" | grep -q "Access denied for user 'root'"; then
+        return 2
     fi
+    return "$status"
+}
 
-    ui_status_table "Faoxima Status" "$C_CYAN" \
-        "Version|${C_YELLOW}${FAOXIMA_VERSION}${C_RESET}" \
-        "Bot|${bot_state}" \
-        "SSL|${ssl_state}"
+reset_db_volume() {
+    ui_warn "The 'db_data' volume appears to be from an earlier install with different credentials (root login itself is being rejected) — resetting it..."
+    dc rm -f -s db || { ui_err "Failed to stop/remove the 'db' container."; return 1; }
+    local project volume_name
+    project=$(env_get COMPOSE_PROJECT_NAME)
+    [ -z "$project" ] && project="faoxima"
+    volume_name="${project}_db_data"
+    docker volume rm "$volume_name" >/dev/null 2>&1 || { ui_err "Failed to remove the 'db_data' volume (${volume_name})."; return 1; }
+    dc up -d db || { ui_err "Failed to recreate the 'db' service after resetting its volume."; return 1; }
+    wait_for_healthy db 180 || { ui_err "Database did not become healthy after the volume reset."; return 1; }
+}
 
+diagnose_ssl_failure() {
+    local domain="$1"
+    ui_warn "Diagnosing why the SSL certificate could not be issued for ${domain}..."
     printf '\n'
 
-    # Menu panel.
-    local width
-    width=$(ui_term_width)
-    ui_box_top "MAIN MENU" "$C_GREEN$C_BOLD" "$C_GREEN" "$width"
-    ui_box_blank "$C_GREEN" "$width"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}1)${C_RESET}  Install Faoxima Bot"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}2)${C_RESET}  Update Faoxima Bot"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}3)${C_RESET}  Remove Faoxima Bot"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}4)${C_RESET}  Export Database"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}5)${C_RESET}  Import Database"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}6)${C_RESET}  Configure Automated Backup"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}7)${C_RESET}  Renew SSL Certificates"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}8)${C_RESET}  Change Domain"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}9)${C_RESET}  Additional Bot Management"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}10)${C_RESET} View Error Logs"
-    ui_box_line "$C_GREEN" "$width"  "${C_WHITE}11)${C_RESET} Increase Upload Limit (phpMyAdmin)"
-    ui_box_line "$C_GREEN" "$width"  "${C_RED}12)${C_RESET} Remove Domain"
-    ui_box_line "$C_GREEN" "$width"  "${C_RED}13)${C_RESET} Delete Cron Jobs"
-    ui_box_line "$C_GREEN" "$width"  "${C_RED}14)${C_RESET} Exit"
-    ui_box_blank "$C_GREEN" "$width"
-    ui_box_bottom "$C_GREEN" "$width"
+    ui_rule
+    printf '  %s● Writing a test challenge file into the shared webroot%s\n' "$C_CYAN" "$C_RESET"
+    ui_rule
+    dc run --rm --entrypoint sh certbot -c \
+        "mkdir -p /var/www/certbot/.well-known/acme-challenge && echo diagnostic-ok > /var/www/certbot/.well-known/acme-challenge/diagnostic-test" 2>&1
 
     printf '\n'
-    local option
-    printf '  %s❯%s Select an option [1-14]: ' "$C_YELLOW" "$C_RESET"
-    read -r option
-    case "$option" in
-        1)  install_bot ;;
-        2)  update_bot ;;
-        3)  remove_bot ;;
-        4)  export_database ;;
-        5)  import_database ;;
-        6)  auto_backup ;;
-        7)  renew_ssl ;;
-        8)  change_domain ;;
-        9)  manage_additional_bots ;;
-        10) view_error_logs ;;
-        11) increase_upload_limit ;;
-        12) remove_domain ;;
-        13) delete_cron_jobs ;;
-        14)
-            ui_ok "Exiting... goodbye!"
-            exit 0
+    ui_rule
+    printf '  %s● Testing INTERNALLY (inside the nginx container — bypasses DNS/firewall/internet)%s\n' "$C_CYAN" "$C_RESET"
+    ui_rule
+    dc exec -T nginx sh -c "wget -qO- http://127.0.0.1/.well-known/acme-challenge/diagnostic-test 2>&1 || echo 'INTERNAL REQUEST FAILED — nginx is not serving the webroot correctly.'"
+
+    printf '\n'
+    ui_rule
+    printf '  %s● Testing EXTERNALLY (from this host, via the public domain over port 80)%s\n' "$C_CYAN" "$C_RESET"
+    ui_rule
+    curl -s -o /dev/null -w 'HTTP status: %{http_code}\n' --max-time 10 "http://${domain}/.well-known/acme-challenge/diagnostic-test" \
+        || echo "EXTERNAL REQUEST FAILED (timeout or connection error) — check DNS/firewall/port forwarding."
+
+    printf '\n'
+    ui_rule
+    printf '  %s● DNS resolution for %s%s\n' "$C_CYAN" "$domain" "$C_RESET"
+    ui_rule
+    getent hosts "$domain" 2>/dev/null || host "$domain" 2>/dev/null || nslookup "$domain" 2>/dev/null || echo "Could not resolve DNS for ${domain} — check the domain's A record."
+
+    printf '\n'
+    ui_rule
+    printf '  %s● What is actually bound to host port 80 right now%s\n' "$C_CYAN" "$C_RESET"
+    ui_rule
+    local occupant kind ident name project
+    occupant=$(describe_port_occupant 80)
+    IFS='|' read -r kind ident name project <<< "$occupant"
+    case "$kind" in
+        docker)
+            printf 'Docker container: %s (project: %s, id: %s)\n' "$name" "$project" "${ident:0:12}"
+            ;;
+        host)
+            printf 'Host process (NOT Docker): %s (pid %s)\n' "$name" "$ident"
+            printf '%sThis is very likely why external requests never reach nginx — some other web server on this host is intercepting port 80 before Docker gets a chance.%s\n' "$C_YELLOW" "$C_RESET"
             ;;
         *)
-            ui_err "Invalid option. Please try again."
-            sleep 2
-            show_menu
+            printf 'Could not identify what is bound to port 80.\n'
             ;;
     esac
+
+    printf '\n'
+    ui_rule
+    printf '  %s● nginx container (last 200 lines)%s\n' "$C_CYAN" "$C_RESET"
+    ui_rule
+    dc logs --tail=200 nginx 2>/dev/null
+    printf '\n'
 }
 
-# ============================================================================
-#  FILE PERMISSIONS — make the bot files writable by the web server / installer
-#  (replaces the standalone "Immigration" option; now reused by install/update)
-# ============================================================================
-grant_file_permissions() {
-    local path="${1:-$BOT_DIR}"
-    [ -d "$path" ] || return 0
-    ui_action "Setting file permissions for ${path} (recursive)..."
+diagnose_db_failure() {
+    local service="${1:-app}" db_host="$2" db_name="$3" db_user="$4" db_pass="$5"
+    ui_warn "Diagnosing why ${service} couldn't reach the database..."
+    printf '\n'
+    ui_rule
+    printf '  %s● Connection attempt (%s → db)%s\n' "$C_CYAN" "$service" "$C_RESET"
+    ui_rule
+    db_ready_check "$service" "$db_host" "$db_name" "$db_user" "$db_pass"
+    printf '\n'
+    ui_rule
+    printf '  %s● db container (last 200 lines)%s\n' "$C_CYAN" "$C_RESET"
+    ui_rule
+    dc logs --tail=200 db 2>/dev/null
+    printf '\n'
+    ui_rule
+    printf '  %s● %s container (last 200 lines)%s\n' "$C_CYAN" "$service" "$C_RESET"
+    ui_rule
+    dc logs --tail=200 "$service" 2>/dev/null
+    printf '\n'
+}
 
-    # 1) Recursive ownership to the web-server user for EVERY file in the root.
-    chown -R www-data:www-data "$path" 2>/dev/null
+verify_tables_created() {
+    local db_name="$1" db_user="$2" db_pass="$3"
+    [ -z "$db_name" ] && db_name=$(env_get MYSQL_DATABASE)
+    [ -z "$db_user" ] && db_user=$(env_get MYSQL_USER)
+    [ -z "$db_pass" ] && db_pass=$(env_get MYSQL_PASSWORD)
+    dc exec -T db mysql -u"$db_user" -p"$db_pass" -e "USE \`${db_name}\`; SHOW TABLES LIKE 'setting';" 2>/dev/null | grep -q "setting"
+}
 
-    # 2) Sane baseline: directories 755, files 644 across the whole tree.
-    find "$path" -type d -exec chmod 755 {} + 2>/dev/null
-    find "$path" -type f -exec chmod 644 {} + 2>/dev/null
+diagnose_table_failure() {
+    local service="${1:-app}" code_dir="${2:-$PROJECT_DIR}"
+    ui_warn "Diagnosing why table.php did not create the database schema..."
+    printf '\n'
+    ui_rule
+    printf '  %s● Re-running table.php directly (full output, nothing suppressed)%s\n' "$C_CYAN" "$C_RESET"
+    ui_rule
+    dc exec -T "$service" php table.php
+    printf '\n'
+    ui_rule
+    printf '  %s● %s/error_log (last 200 lines, if present)%s\n' "$C_CYAN" "$code_dir" "$C_RESET"
+    ui_rule
+    if [ -f "${code_dir}/error_log" ]; then
+        tail -n 200 "${code_dir}/error_log"
+    else
+        printf 'No error_log file found at %s/error_log.\n' "$code_dir"
+    fi
+    printf '\n'
+    ui_rule
+    printf '  %s● %s/logs/runtime.log (last 200 lines, if present)%s\n' "$C_CYAN" "$code_dir" "$C_RESET"
+    ui_rule
+    if [ -f "${code_dir}/logs/runtime.log" ]; then
+        tail -n 200 "${code_dir}/logs/runtime.log"
+    else
+        printf 'No runtime.log file found at %s/logs/runtime.log.\n' "$code_dir"
+    fi
+    printf '\n'
+    ui_rule
+    printf '  %s● %s/logs/php-error.log (last 200 lines, if present)%s\n' "$C_CYAN" "$code_dir" "$C_RESET"
+    ui_rule
+    if [ -f "${code_dir}/logs/php-error.log" ]; then
+        tail -n 200 "${code_dir}/logs/php-error.log"
+    else
+        printf 'No php-error.log file found at %s/logs/php-error.log.\n' "$code_dir"
+    fi
+    printf '\n'
+    ui_rule
+    printf '  %s● %s container (last 200 lines)%s\n' "$C_CYAN" "$service" "$C_RESET"
+    ui_rule
+    dc logs --tail=200 "$service" 2>/dev/null
+    printf '\n'
+}
 
-    # 3) Writable bot config — the bot rewrites it from PHP.
-    [ -f "${path}/config.php" ] && chmod 666 "${path}/config.php" 2>/dev/null
+port_is_free() {
+    local port="$1"
+    ! ss -tuln 2>/dev/null | grep -q ":${port} "
+}
 
-    # 4) Runtime writable directories — must be web-writable so the bot can
-    #    drop logs, cached pages, session blobs, payment receipts, etc.
-    local writable_dirs=(logs storage cache tmp sessions cron cronbot sub payment re vpnbot infocard_fonts)
-    local d
-    for d in "${writable_dirs[@]}"; do
-        if [ -d "${path}/${d}" ]; then
-            find "${path}/${d}" -type d -exec chmod 775 {} + 2>/dev/null
-            find "${path}/${d}" -type f -exec chmod 664 {} + 2>/dev/null
+ensure_firewall_ports_open() {
+    local ports=("$@")
+    local port
+
+    if command -v ufw >/dev/null 2>&1; then
+        if ufw status 2>/dev/null | grep -qi '^Status: active'; then
+            ui_action "ufw is active — opening ${ports[*]}/tcp..."
+            for port in "${ports[@]}"; do
+                ufw allow "${port}/tcp" >/dev/null 2>&1 \
+                    || ui_warn "Failed to add a ufw rule for port ${port} — you may need to open it manually."
+            done
+            ui_ok "ufw rules ensured for: ${ports[*]}/tcp."
         fi
-    done
+    fi
 
-    # 5) Shell scripts at the root remain executable.
-    find "$path" -maxdepth 2 -type f -name '*.sh' -exec chmod 755 {} + 2>/dev/null
-
-    ui_ok "File permissions applied to all files under ${path}"
+    if command -v firewall-cmd >/dev/null 2>&1; then
+        if firewall-cmd --state >/dev/null 2>&1; then
+            ui_action "firewalld is active — opening ${ports[*]}/tcp..."
+            for port in "${ports[@]}"; do
+                firewall-cmd --permanent --add-port="${port}/tcp" >/dev/null 2>&1 \
+                    || ui_warn "Failed to add a firewalld rule for port ${port} — you may need to open it manually."
+            done
+            firewall-cmd --reload >/dev/null 2>&1 \
+                || ui_warn "Failed to reload firewalld — the new rules may not be active yet."
+            ui_ok "firewalld rules ensured for: ${ports[*]}/tcp."
+        fi
+    fi
 }
 
-# ============================================================================
-#  INSTALL BOT — standalone (no Marzban detected)
-# ============================================================================
-install_bot() {
-    show_logo
-    ui_panel "INSTALLATION — STANDALONE" "$C_BOLD$C_GREEN" "$C_GREEN" \
-        "${C_WHITE}Installing Apache 2 + PHP 8.2 + MySQL + phpMyAdmin${C_RESET}" \
-        "${C_DIM}A fresh stack will be deployed under ${BOT_DIR}${C_RESET}"
+describe_port_occupant() {
+    local port="$1" cid cname cproject line pid pname
 
-    if check_marzban_installed; then
-        ui_warn "Marzban detected on this server — switching to Marzban-compatible installer."
-        install_bot_with_marzban "$@"
+    cid=$(docker ps --format '{{.ID}}\t{{.Ports}}' 2>/dev/null | grep -E "0\.0\.0\.0:${port}->|:::${port}->" | cut -f1 | head -1)
+    if [ -n "$cid" ]; then
+        cname=$(docker inspect --format='{{.Name}}' "$cid" 2>/dev/null | sed 's#^/##')
+        cproject=$(docker inspect --format='{{ index .Config.Labels "com.docker.compose.project" }}' "$cid" 2>/dev/null)
+        printf 'docker|%s|%s|%s' "$cid" "${cname:-unknown}" "${cproject:-unknown}"
         return 0
     fi
 
-    # ── PPA: ondrej/php ────────────────────────────────────────────────────
-    add_php_ppa() {
-        add-apt-repository -y ppa:ondrej/php || {
-            ui_err "Failed to add PPA ondrej/php."
-            return 1
-        }
-    }
-    add_php_ppa_with_locale() {
-        LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php || {
-            ui_err "Failed to add PPA ondrej/php with locale override."
-            return 1
-        }
-    }
-
-    if ! add_php_ppa; then
-        ui_warn "Default locale failed, retrying with locale override..."
-        if ! add_php_ppa_with_locale; then
-            ui_err "Failed to add PPA even with locale override. Exiting..."
-            exit 1
-        fi
+    line=$(ss -tulnp 2>/dev/null | grep -E ":${port} " | head -1)
+    pid=$(printf '%s' "$line" | grep -oE 'pid=[0-9]+' | head -1 | cut -d= -f2)
+    pname=$(printf '%s' "$line" | grep -oE 'users:\(\("[^"]+"' | head -1 | sed -E 's/users:\(\("//; s/"//')
+    if [ -n "$pid" ] || [ -n "$pname" ]; then
+        printf 'host|%s|%s|' "${pid:-?}" "${pname:-unknown process}"
+        return 0
     fi
 
-    # ── apt update + upgrade ───────────────────────────────────────────────
-    if ! (apt update && apt upgrade -y); then
-        ui_warn "Update/upgrade failed. Attempting alternative mirrors..."
-        if fix_update_issues; then
-            if apt update && apt upgrade -y; then
-                ui_ok "Server updated successfully after fixing mirrors."
+    printf 'unknown|||'
+    return 1
+}
+
+grant_file_permissions() {
+    local service="${1:-app}"
+    if ! dc ps -q "$service" >/dev/null 2>&1; then
+        ui_warn "${service} container is not running — cannot apply in-container permissions right now."
+        return 0
+    fi
+    ui_action "Re-applying file permissions inside the ${service} container..."
+    local output
+    if output=$(dc exec -T "$service" /usr/local/bin/entrypoint.sh true 2>&1); then
+        ui_ok "File permissions re-applied."
+    else
+        ui_err "Failed to re-apply file permissions inside the ${service} container."
+        printf '%s\n' "$output"
+        return 1
+    fi
+}
+
+prompt_version_selection() {
+    local tags=()
+    {
+        mapfile -t tags < <(curl -s "https://api.github.com/repos/${FAOXIMA_REPO}/releases" 2>/dev/null \
+            | grep '"tag_name"' | cut -d'"' -f4)
+    } >&2
+
+    if [ "${#tags[@]}" -eq 0 ]; then
+        ui_err "Could not fetch the release list from GitHub." >&2
+        return 1
+    fi
+
+    {
+        printf '\n'
+        local i
+        for ((i = 0; i < ${#tags[@]}; i++)); do
+            if [ "$i" -eq 0 ]; then
+                printf '  %s%2d)%s %s %s(last)%s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${tags[$i]}" "$C_GREEN" "$C_RESET"
             else
-                ui_err "Failed to update even after trying alternative mirrors."
-                exit 1
+                printf '  %s%2d)%s %s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${tags[$i]}"
             fi
-        else
-            ui_err "Failed to update/upgrade packages and mirror fix failed."
-            exit 1
-        fi
+        done
+        printf '  %s%2d)%s Beta (latest main branch, no official release)\n' "$C_YELLOW" "$((${#tags[@]} + 1))" "$C_RESET"
+    } >&2
+
+    local pick
+    printf '\n  %s❯%s Select a version [1-%d]: ' "$C_YELLOW" "$C_RESET" "$((${#tags[@]} + 1))" >&2
+    read -r pick
+
+    if [[ ! "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "$((${#tags[@]} + 1))" ]; then
+        ui_err "Invalid selection." >&2
+        return 1
+    fi
+
+    if [ "$pick" -eq "$((${#tags[@]} + 1))" ]; then
+        printf 'beta'
     else
-        ui_ok "Server packages updated successfully."
+        printf '%s' "${tags[$((pick - 1))]}"
     fi
+}
 
-    apt-get install -y software-properties-common || {
-        ui_err "Failed to install software-properties-common."
-        exit 1
-    }
-
-    apt install -y git unzip curl || {
-        ui_err "Failed to install required packages."
-        exit 1
-    }
-
-    DEBIAN_FRONTEND=noninteractive apt install -y php8.2 php8.2-fpm php8.2-mysql || {
-        ui_err "Failed to install PHP 8.2 and related packages."
-        exit 1
-    }
-
-    # ── LAMP stack + Apache 2 modules ──────────────────────────────────────
-    local PKG=(
-        lamp-server^
-        libapache2-mod-php
-        mysql-server
-        apache2
-        php-mbstring
-        php-zip
-        php-gd
-        php-json
-        php-curl
-    )
-    local pkg
-    for pkg in "${PKG[@]}"; do
-        if dpkg -s "$pkg" &>/dev/null; then
-            ui_info "${pkg} is already installed"
-        else
-            if ! DEBIAN_FRONTEND=noninteractive apt install -y "$pkg"; then
-                ui_err "Error installing ${pkg}. Exiting..."
-                exit 1
-            fi
-        fi
-    done
-    ui_ok "Packages installed, continuing..."
-
-    # ── phpMyAdmin pre-seed + install ──────────────────────────────────────
-    echo 'phpmyadmin phpmyadmin/dbconfig-install boolean true'                | debconf-set-selections
-    echo 'phpmyadmin phpmyadmin/app-password-confirm password faoximahipass'  | debconf-set-selections
-    echo 'phpmyadmin phpmyadmin/mysql/admin-pass password faoximahipass'      | debconf-set-selections
-    echo 'phpmyadmin phpmyadmin/mysql/app-pass password faoximahipass'        | debconf-set-selections
-    echo 'phpmyadmin phpmyadmin/reconfigure-webserver multiselect apache2'    | debconf-set-selections
-
-    apt-get install -y phpmyadmin || {
-        ui_err "Failed to install phpMyAdmin."
-        exit 1
-    }
-    if [ -f /etc/apache2/conf-available/phpmyadmin.conf ]; then
-        rm -f /etc/apache2/conf-available/phpmyadmin.conf
-        ui_ok "Removed existing phpMyAdmin configuration."
-    fi
-    ln -s /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf || {
-        ui_err "Failed to create symlink for phpMyAdmin configuration."
-        exit 1
-    }
-    a2enconf phpmyadmin.conf || { ui_err "Failed to enable phpMyAdmin configuration."; exit 1; }
-    systemctl restart apache2 || { ui_err "Failed to restart Apache 2 service."; exit 1; }
-
-    apt-get install -y php-soap || { ui_err "Failed to install php-soap."; exit 1; }
-    apt-get install -y libapache2-mod-php || { ui_err "Failed to install libapache2-mod-php."; exit 1; }
-
-    systemctl enable mysql.service || { ui_err "Failed to enable MySQL service."; exit 1; }
-    systemctl start  mysql.service || { ui_err "Failed to start MySQL service.";  exit 1; }
-    systemctl enable apache2       || { ui_err "Failed to enable Apache 2 service."; exit 1; }
-    systemctl start  apache2       || { ui_err "Failed to start Apache 2 service.";  exit 1; }
-
-    apt-get install -y ufw || { ui_err "Failed to install UFW."; exit 1; }
-    ufw allow 'Apache' || { ui_err "Failed to allow Apache 2 in UFW."; exit 1; }
-    systemctl restart apache2 || { ui_err "Failed to restart Apache 2 after UFW update."; exit 1; }
-
-    apt-get install -y git wget unzip || { ui_err "Failed to install git/wget/unzip."; exit 1; }
-    apt install -y curl                || { ui_err "Failed to install cURL."; exit 1; }
-    apt-get install -y php-ssh2        || { ui_err "Failed to install php-ssh2."; exit 1; }
-    apt-get install -y libssh2-1-dev libssh2-1 || { ui_err "Failed to install libssh2."; exit 1; }
-    apt install -y jq                  || { ui_err "Failed to install jq."; exit 1; }
-
-    systemctl restart apache2.service || { ui_err "Failed to restart Apache 2 service."; exit 1; }
-
-    # ── Bot directory ──────────────────────────────────────────────────────
-    if [ -d "$BOT_DIR" ]; then
-        ui_warn "Directory ${BOT_DIR} already exists — removing..."
-        rm -rf "$BOT_DIR" || { ui_err "Failed to remove existing directory ${BOT_DIR}."; exit 1; }
-    fi
-    mkdir -p "$BOT_DIR"
-    [ -d "$BOT_DIR" ] || { ui_err "Failed to create directory ${BOT_DIR}."; exit 1; }
-
-    # ── Download Faoxima source ────────────────────────────────────────────
-    local ZIP_URL
-    ZIP_URL=$(curl -s "https://api.github.com/repos/${FAOXIMA_REPO}/releases/latest" | grep "zipball_url" | cut -d '"' -f 4)
-    if [[ "$1" == "-v" && "$2" == "beta" ]] || [[ "$1" == "-beta" ]] || [[ "$1" == "-" && "$2" == "beta" ]]; then
-        ZIP_URL="${FAOXIMA_GITHUB}/archive/refs/heads/main.zip"
-    elif [[ "$1" == "-v" && -n "$2" ]]; then
-        ZIP_URL="${FAOXIMA_GITHUB}/archive/refs/tags/$2.zip"
-    fi
-    if [ -z "$ZIP_URL" ]; then
-        # Fallback to main branch if no release exists yet.
-        ZIP_URL="${FAOXIMA_GITHUB}/archive/refs/heads/main.zip"
-        ui_warn "No published release found — falling back to main branch."
-    fi
-
-    mkdir -p "$TMP_DOWNLOAD"
-    wget -O "${TMP_DOWNLOAD}/bot.zip" "$ZIP_URL" || {
-        ui_err "Failed to download Faoxima from ${ZIP_URL}."
-        exit 1
-    }
-    unzip -q "${TMP_DOWNLOAD}/bot.zip" -d "$TMP_DOWNLOAD"
-    local extracted_dir
-    extracted_dir=$(find "$TMP_DOWNLOAD" -mindepth 1 -maxdepth 1 -type d | head -1)
-    mv "${extracted_dir}"/* "$BOT_DIR" || { ui_err "Failed to move extracted files."; exit 1; }
-    rm -rf "$TMP_DOWNLOAD"
-
-    chown -R www-data:www-data "$BOT_DIR"
-    chmod -R 755 "$BOT_DIR"
-    ui_ok "Faoxima source files installed under ${BOT_DIR}"
-
-    # ── Root credentials store ─────────────────────────────────────────────
-    wait
-    if [ ! -d "$CRED_DIR" ]; then
-        mkdir "$CRED_DIR" || { ui_err "Failed to create ${CRED_DIR}."; exit 1; }
-        sleep 1
-        touch "$CRED_FILE" || { ui_err "Failed to create ${CRED_FILE}."; exit 1; }
-        chmod 600 "$CRED_FILE" || true
-        sleep 1
-
-        local randomdbpasstxt
-        randomdbpasstxt=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-        local ASAS='$'
-        {
-            echo "${ASAS}user = 'root';"
-            echo "${ASAS}pass = '${randomdbpasstxt}';"
-            echo "${ASAS}path = '${RANDOM_NUMBER:-faoxima}';"
-        } > "$CRED_FILE"
-
-        sleep 1
-
-        local passs userrr
-        passs=$(grep '$pass' "$CRED_FILE" | cut -d"'" -f2)
-        userrr=$(grep '$user' "$CRED_FILE" | cut -d"'" -f2)
-
-        mysql -u "$userrr" -p"$passs" -e "alter user '${userrr}'@'localhost' identified with mysql_native_password by '${passs}';FLUSH PRIVILEGES;" || {
-            ui_warn "Failed to alter MySQL user — attempting recovery..."
-            sed -i '$ a skip-grant-tables' /etc/mysql/mysql.conf.d/mysqld.cnf
-            systemctl restart mysql
-            mysql <<EOF
-DROP USER IF EXISTS 'root'@'localhost';
-CREATE USER 'root'@'localhost' IDENTIFIED BY '${passs}';
-GRANT ALL PRIVILEGES ON *.* TO 'root'@'localhost' WITH GRANT OPTION;
-FLUSH PRIVILEGES;
-EOF
-            sed -i '/skip-grant-tables/d' /etc/mysql/mysql.conf.d/mysqld.cnf
-            systemctl restart mysql
-
-            echo "SELECT 1" | mysql -u"$userrr" -p"$passs" 2>/dev/null || {
-                ui_err "Recovery failed. MySQL login still not working."
-                exit 1
-            }
-        }
-        ui_ok "Root credentials saved to ${CRED_FILE}"
+resolve_zip_url() {
+    local arg1="$1" arg2="$2" zip_url
+    if [[ "$arg1" == "-v" && "$arg2" == "beta" ]] || [[ "$arg1" == "-beta" ]] || [[ "$arg1" == "-" && "$arg2" == "beta" ]]; then
+        zip_url="${FAOXIMA_GITHUB}/archive/refs/heads/main.zip"
+    elif [[ "$arg1" == "-v" && -n "$arg2" ]]; then
+        zip_url="${FAOXIMA_GITHUB}/archive/refs/tags/${arg2}.zip"
     else
-        ui_info "Credentials directory already exists at ${CRED_DIR}"
+        zip_url=$(curl -s "https://api.github.com/repos/${FAOXIMA_REPO}/releases/latest" | grep "zipball_url" | cut -d '"' -f 4)
+        [ -z "$zip_url" ] && zip_url="${FAOXIMA_GITHUB}/archive/refs/heads/main.zip"
     fi
+    printf '%s' "$zip_url"
+}
 
-    # ── SSL / domain ───────────────────────────────────────────────────────
-    clear
+install_bot() {
     show_logo
-    ui_panel "SSL CERTIFICATE" "$C_BOLD$C_GREEN" "$C_GREEN" \
-        "${C_WHITE}A free Let's Encrypt certificate will be issued for your domain.${C_RESET}" \
-        "${C_DIM}Make sure the domain's A record points to this server before continuing.${C_RESET}"
+    ui_panel "INSTALLATION — DOCKER STACK" "$C_BOLD$C_GREEN" "$C_GREEN" \
+        "${C_WHITE}Installing nginx + php-fpm + MySQL as a Docker Compose stack.${C_RESET}" \
+        "${C_DIM}The stack will be deployed from ${PROJECT_DIR}${C_RESET}"
+
+    install_docker
+
+    local install_source
+    install_source=$(env_get INSTALL_SOURCE)
+    [ -z "$install_source" ] && install_source="manual"
+
+    if [ "$STAGING_SOURCE_DIR" != "$PROJECT_DIR" ] && [ -f "${STAGING_SOURCE_DIR}/docker-compose.yml" ] && [ ! -f "$COMPOSE_FILE" ]; then
+        ui_action "Relocating Faoxima source from ${STAGING_SOURCE_DIR} to ${PROJECT_DIR}..."
+        mkdir -p "$PROJECT_DIR" || { ui_err "Failed to create project directory ${PROJECT_DIR}."; exit 1; }
+        cp -a "${STAGING_SOURCE_DIR}/." "${PROJECT_DIR}/" || { ui_err "Failed to copy Faoxima source into ${PROJECT_DIR}."; exit 1; }
+        cd "$PROJECT_DIR" || { ui_err "Failed to switch into ${PROJECT_DIR}."; exit 1; }
+        rm -rf "$STAGING_SOURCE_DIR" || ui_warn "Failed to remove the staging directory ${STAGING_SOURCE_DIR} — you can delete it manually."
+        ui_ok "Faoxima source relocated to ${PROJECT_DIR}."
+    fi
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        install_source="github"
+        local version_arg1="$1" version_arg2="$2"
+        if [ -z "$version_arg1" ]; then
+            local picked_version
+            picked_version=$(prompt_version_selection)
+            if [ -n "$picked_version" ]; then
+                if [ "$picked_version" = "beta" ]; then
+                    version_arg1="-beta"
+                else
+                    version_arg1="-v"
+                    version_arg2="$picked_version"
+                fi
+            fi
+        fi
+
+        ui_action "Downloading Faoxima source..."
+        local zip_url
+        zip_url=$(resolve_zip_url "$version_arg1" "$version_arg2")
+
+        mkdir -p "$TMP_DOWNLOAD" || { ui_err "Failed to create temporary directory ${TMP_DOWNLOAD}."; exit 1; }
+        wget -O "${TMP_DOWNLOAD}/bot.zip" "$zip_url" || { ui_err "Failed to download Faoxima from ${zip_url}."; exit 1; }
+        unzip -q "${TMP_DOWNLOAD}/bot.zip" -d "$TMP_DOWNLOAD" || { ui_err "Failed to extract the downloaded archive."; exit 1; }
+
+        local extracted_dir
+        extracted_dir=$(find "$TMP_DOWNLOAD" -mindepth 1 -maxdepth 1 -type d | head -1)
+        [ -n "$extracted_dir" ] || { ui_err "Could not locate the extracted Faoxima directory."; exit 1; }
+
+        mkdir -p "$PROJECT_DIR" || { ui_err "Failed to create project directory ${PROJECT_DIR}."; exit 1; }
+        cp -a "${extracted_dir}/." "${PROJECT_DIR}/" || { ui_err "Failed to copy Faoxima source into ${PROJECT_DIR}."; exit 1; }
+        rm -rf "$TMP_DOWNLOAD"
+        ui_ok "Faoxima source downloaded to ${PROJECT_DIR}."
+    fi
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "docker-compose.yml still not found at ${COMPOSE_FILE} after download — the release archive may be malformed."
+        exit 1
+    fi
+
+    if [ -f "$ENV_FILE" ]; then
+        ui_warn ".env already exists at ${ENV_FILE} — a stack may already be installed."
+        local overwrite
+        printf '  %s❯%s Overwrite and reinstall? (y/n): ' "$C_YELLOW" "$C_RESET"
+        read -r overwrite
+        if [[ "$overwrite" != "y" && "$overwrite" != "Y" ]]; then
+            ui_info "Installation aborted by user."
+            return 0
+        fi
+    fi
+
+    printf '\n'
+    ui_panel "BOT CONFIGURATION" "$C_BOLD$C_CYAN" "$C_CYAN" \
+        "${C_WHITE}Now we'll wire up your domain and Telegram bot credentials.${C_RESET}" \
+        "${C_DIM}Get the bot token from @BotFather and your numeric chat ID from @userinfobot.${C_RESET}"
 
     local domainname
-    printf '\n  %s❯%s Enter the domain: ' "$C_YELLOW" "$C_RESET"
+    printf '\n  %s❯%s Enter the domain (e.g. example.com): ' "$C_YELLOW" "$C_RESET"
     read -r domainname
     while [[ ! "$domainname" =~ ^[a-zA-Z0-9.-]+$ ]]; do
         ui_err "Invalid domain format. Please try again."
         printf '  %s❯%s Enter the domain: ' "$C_YELLOW" "$C_RESET"
         read -r domainname
     done
-    local DOMAIN_NAME="$domainname"
 
-    ufw allow 80  || { ui_err "Failed to allow port 80 in UFW.";  exit 1; }
-    ufw allow 443 || { ui_err "Failed to allow port 443 in UFW."; exit 1; }
-
-    ui_action "Stopping Apache 2 to free port 80 for certbot..."
-    systemctl stop apache2    || { ui_err "Failed to stop Apache 2.";    exit 1; }
-    systemctl disable apache2 || { ui_err "Failed to disable Apache 2."; exit 1; }
-    apt install -y letsencrypt|| { ui_err "Failed to install letsencrypt.";  exit 1; }
-    systemctl enable certbot.timer || { ui_err "Failed to enable certbot timer."; exit 1; }
-
-    if ! wait_for_certbot; then
-        ui_err "Certbot is busy. Please try again shortly."
-        exit 1
-    fi
-    certbot certonly --standalone --agree-tos --preferred-challenges http -d "$DOMAIN_NAME" || {
-        ui_err "Failed to generate SSL certificate."
-        exit 1
-    }
-    apt install -y python3-certbot-apache || { ui_err "Failed to install python3-certbot-apache."; exit 1; }
-    if ! wait_for_certbot; then
-        ui_err "Certbot is busy. Please try again shortly."
-        exit 1
-    fi
-    certbot --apache --agree-tos --preferred-challenges http -d "$DOMAIN_NAME" || {
-        ui_err "Failed to configure SSL with Certbot."
-        exit 1
-    }
-
-    ui_action "Re-enabling Apache 2..."
-    systemctl enable apache2 || { ui_err "Failed to enable Apache 2."; exit 1; }
-    systemctl start apache2  || { ui_err "Failed to start Apache 2.";  exit 1; }
-
-    # ── Bot configuration prompts ──────────────────────────────────────────
-    clear
-    show_logo
-    ui_panel "BOT CONFIGURATION" "$C_BOLD$C_CYAN" "$C_CYAN" \
-        "${C_WHITE}Now we'll wire up your Telegram bot credentials.${C_RESET}" \
-        "${C_DIM}Get the bot token from @BotFather and your numeric chat ID from @userinfobot.${C_RESET}"
-
-    local YOUR_BOT_TOKEN YOUR_CHAT_ID YOUR_BOTNAME YOUR_DOMAIN
-    printf '\n  %s❯%s Bot Token: ' "$C_YELLOW" "$C_RESET"
+    local YOUR_BOT_TOKEN
+    printf '  %s❯%s Bot Token: ' "$C_YELLOW" "$C_RESET"
     read -r YOUR_BOT_TOKEN
-    while [[ ! "$YOUR_BOT_TOKEN" =~ ^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$ ]]; do
+    while [[ ! "$YOUR_BOT_TOKEN" =~ ^[0-9]+:[a-zA-Z0-9_-]+$ ]]; do
         ui_err "Invalid bot token format. Please try again."
         printf '  %s❯%s Bot Token: ' "$C_YELLOW" "$C_RESET"
         read -r YOUR_BOT_TOKEN
     done
 
-    printf '  %s❯%s Chat ID (numeric): ' "$C_YELLOW" "$C_RESET"
+    local YOUR_CHAT_ID
+    printf '  %s❯%s Admin Telegram ID (numeric): ' "$C_YELLOW" "$C_RESET"
     read -r YOUR_CHAT_ID
     while [[ ! "$YOUR_CHAT_ID" =~ ^-?[0-9]+$ ]]; do
         ui_err "Invalid chat ID format. Please try again."
-        printf '  %s❯%s Chat ID (numeric): ' "$C_YELLOW" "$C_RESET"
+        printf '  %s❯%s Admin Telegram ID (numeric): ' "$C_YELLOW" "$C_RESET"
         read -r YOUR_CHAT_ID
     done
 
-    YOUR_DOMAIN="$DOMAIN_NAME"
+    ensure_firewall_ports_open 80 443
 
-    while true; do
-        printf '  %s❯%s Bot username (without @): ' "$C_YELLOW" "$C_RESET"
-        read -r YOUR_BOTNAME
-        if [ -n "$YOUR_BOTNAME" ]; then
-            break
-        fi
-        ui_err "Bot username cannot be empty. Please enter a valid username."
+    local http_port=80 https_port=443
+    local port
+    for port in 80 443; do
+        port_is_free "$port" && continue
+
+        local occupant kind ident name project
+        occupant=$(describe_port_occupant "$port")
+        IFS='|' read -r kind ident name project <<< "$occupant"
+
+        ui_warn "Port ${port} is already in use."
+        case "$kind" in
+            docker)
+                ui_warn "It's held by a Docker container: ${name} (image project: ${project}, id: ${ident:0:12})."
+                printf '  %s❯%s Stop this container now to free the port? (y/N): ' "$C_YELLOW" "$C_RESET"
+                local stopit; read -r stopit
+                if [[ "${stopit,,}" == "y" ]]; then
+                    docker stop "$ident" >/dev/null 2>&1 && ui_ok "Stopped ${name}." || ui_warn "Could not stop ${name} — you may need to do it manually."
+                fi
+                ;;
+            host)
+                ui_warn "It's held by a host process: ${name} (pid ${ident})."
+                printf '  %s❯%s Stop it now with '"'"'systemctl stop %s'"'"'? (y/N): ' "$C_YELLOW" "$C_RESET" "$name"
+                local stopit; read -r stopit
+                if [[ "${stopit,,}" == "y" ]]; then
+                    systemctl stop "$name" >/dev/null 2>&1 && ui_ok "Stopped ${name}." || ui_warn "Could not stop ${name} — you may need to do it manually."
+                fi
+                ;;
+            *)
+                ui_warn "Could not identify what's using port ${port}."
+                ;;
+        esac
     done
 
-    # ── Database ───────────────────────────────────────────────────────────
-    local ROOT_PASSWORD ROOT_USER
-    ROOT_PASSWORD=$(grep '$pass' "$CRED_FILE" | cut -d"'" -f2)
-    ROOT_USER="root"
-    echo "SELECT 1" | mysql -u"$ROOT_USER" -p"$ROOT_PASSWORD" 2>/dev/null || {
-        ui_err "MySQL connection failed."
+    if ! port_is_free 80 || ! port_is_free 443; then
+        ui_err "Port 80 and/or 443 is still in use — Faoxima requires both to be free (nginx serves the bot on 443, and Let's Encrypt needs port 80 reachable from the internet for certificate issuance)."
+        ui_err "Free both ports (stop whatever is using them) and re-run install."
+        exit 1
+    fi
+    ui_ok "Ports 80 and 443 are free."
+
+    [ -f "$ENV_FILE" ] || cp "$ENV_EXAMPLE" "$ENV_FILE"
+    local mysql_root_pass mysql_pass
+    mysql_root_pass=$(env_get MYSQL_ROOT_PASSWORD)
+    [[ -z "$mysql_root_pass" || "$mysql_root_pass" == "change_me_root_password" ]] && mysql_root_pass=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
+    mysql_pass=$(env_get MYSQL_PASSWORD)
+    [[ -z "$mysql_pass" || "$mysql_pass" == "change_me_db_password" ]] && mysql_pass=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
+
+    env_set "DOMAIN" "$domainname"
+    env_set "URL_PATH" "faoxima"
+    env_set "HTTP_PORT" "$http_port"
+    env_set "HTTPS_PORT" "$https_port"
+    env_set "MYSQL_ROOT_PASSWORD" "$mysql_root_pass"
+    env_set "MYSQL_DATABASE" "$DEFAULT_DB_NAME"
+    env_set "MYSQL_USER" "$DEFAULT_DB_NAME"
+    env_set "MYSQL_PASSWORD" "$mysql_pass"
+    env_set "DB_HOST" "db"
+    env_set "TELEGRAM_BOT_TOKEN" "$YOUR_BOT_TOKEN"
+    env_set "TELEGRAM_ADMIN_ID" "$YOUR_CHAT_ID"
+    env_set "COMPOSE_PROJECT_NAME" "faoxima"
+    env_set "PUID" "33"
+    env_set "PGID" "33"
+    env_set "BOTS_DIR" "$BOTS_DIR"
+    env_set "INSTALL_SOURCE" "$install_source"
+    ui_ok "Wrote ${ENV_FILE}"
+
+    mkdir -p "$NGINX_CONF_DIR" "$NGINX_BOTS_CONF_DIR" "$BOTS_DIR" || { ui_err "Failed to create ${NGINX_CONF_DIR}, ${NGINX_BOTS_CONF_DIR}, or ${BOTS_DIR}."; exit 1; }
+    render_vhost "$domainname" "${NGINX_CONF_DIR}/00-main.conf" || {
+        ui_err "Failed to render the nginx vhost for ${domainname}."
+        exit 1
+    }
+    render_bot_location "/var/www" "app:9000" "${NGINX_BOTS_CONF_DIR}/faoxima.conf" "faoxima" || {
+        ui_err "Failed to render the nginx location block for the main bot."
         exit 1
     }
 
-    local randomdbpass randomdbdb
-    randomdbpass=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-    randomdbdb=$(openssl rand -base64 10 | tr -dc 'a-zA-Z' | cut -c1-8)
+    ui_action "Building images (this can take a few minutes)..."
+    dc build app || { ui_err "docker compose build failed."; exit 1; }
 
-    local dbname dbuser dbpass
-    if mysql -u root -p"$ROOT_PASSWORD" -e "SHOW DATABASES LIKE '${DEFAULT_DB_NAME}'" | grep -q "$DEFAULT_DB_NAME"; then
-        clear
-        ui_warn "The database '${DEFAULT_DB_NAME}' already exists — please remove it first if you want a fresh install."
+    ui_action "Generating a temporary self-signed certificate so nginx can start..."
+    ensure_dummy_cert "$domainname" || ui_warn "Could not generate a temporary certificate — nginx may fail to start until SSL is issued."
+
+    ui_action "Starting the database first..."
+    dc up -d db || { ui_err "docker compose up (db) failed."; exit 1; }
+
+    ui_action "Waiting for the database to become healthy..."
+    if ! wait_for_healthy db 180; then
+        ui_err "Database did not become healthy in time. Check 'docker compose logs db'."
         exit 1
     fi
-    dbname="$DEFAULT_DB_NAME"
+    ui_ok "Database container is healthy."
 
-    clear
-    show_logo
-    ui_panel "DATABASE CREDENTIALS" "$C_BOLD$C_MAGENTA" "$C_MAGENTA" \
-        "${C_WHITE}A new MySQL database '${dbname}' will be created.${C_RESET}" \
-        "${C_DIM}Press Enter to accept the auto-generated defaults.${C_RESET}"
+    ui_action "Starting app, nginx, and supporting services..."
+    dc up -d --no-deps app nginx certbot phpmyadmin || { ui_err "docker compose up failed."; exit 1; }
 
-    printf '\n  %s❯%s Database username [default: %s%s%s]: ' \
-        "$C_YELLOW" "$C_RESET" "$C_CYAN" "$randomdbdb" "$C_RESET"
-    read -r dbuser
-    [ -z "$dbuser" ] && dbuser="$randomdbdb"
-
-    printf '  %s❯%s Database password [default: %s%s%s]: ' \
-        "$C_YELLOW" "$C_RESET" "$C_CYAN" "$randomdbpass" "$C_RESET"
-    read -r dbpass
-    [ -z "$dbpass" ] && dbpass="$randomdbpass"
-
-    mysql -u root -p"$ROOT_PASSWORD" \
-        -e "CREATE DATABASE ${dbname};" \
-        -e "CREATE USER '${dbuser}'@'%' IDENTIFIED WITH mysql_native_password BY '${dbpass}'; GRANT ALL PRIVILEGES ON *.* TO '${dbuser}'@'%'; FLUSH PRIVILEGES;" \
-        -e "CREATE USER '${dbuser}'@'localhost' IDENTIFIED WITH mysql_native_password BY '${dbpass}'; GRANT ALL PRIVILEGES ON *.* TO '${dbuser}'@'localhost'; FLUSH PRIVILEGES;" || {
-        ui_err "Failed to create database or user."
-        exit 1
-    }
-    ui_ok "Database '${dbname}' created."
-
-    # ── config.php ─────────────────────────────────────────────────────────
-    sleep 1
-    local file_path="${BOT_DIR}/config.php"
-    if [ -f "$file_path" ]; then
-        rm "$file_path" || { ui_err "Failed to delete old config.php."; exit 1; }
+    ui_action "Waiting for the app database user to accept connections..."
+    if ! wait_for_db_ready 60; then
+        ui_warn "App user connection failed — attempting to re-sync database credentials (e.g. a leftover volume from an earlier attempt)..."
+        repair_db_user
+        local repair_status=$?
+        if [ "$repair_status" -eq 2 ]; then
+            reset_db_volume || exit 1
+            repair_db_user
+        fi
+        if ! wait_for_db_ready 30; then
+            ui_err "The app database user still could not connect after re-syncing credentials."
+            diagnose_db_failure
+            exit 1
+        fi
     fi
-    sleep 1
+    ui_ok "Database is ready for connections."
 
-    local secrettoken
-    secrettoken=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-
-    local ASAS='$'
-    cat > "$file_path" <<EOF
-<?php
-${ASAS}APIKEY = '${YOUR_BOT_TOKEN}';
-${ASAS}usernamedb = '${dbuser}';
-${ASAS}passworddb = '${dbpass}';
-${ASAS}dbname = '${dbname}';
-${ASAS}domainhosts = '${YOUR_DOMAIN}/faoxima';
-${ASAS}adminnumber = '${YOUR_CHAT_ID}';
-${ASAS}usernamebot = '${YOUR_BOTNAME}';
-${ASAS}secrettoken = '${secrettoken}';
-${ASAS}connect = mysqli_connect('localhost', \$usernamedb, \$passworddb, \$dbname);
-if (${ASAS}connect->connect_error) {
-    die(' The connection to the database failed:' . ${ASAS}connect->connect_error);
-}
-mysqli_set_charset(${ASAS}connect, 'utf8mb4');
-\$options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    PDO::ATTR_EMULATE_PREPARES   => false,
-];
-\$dsn = "mysql:host=localhost;dbname=${ASAS}dbname;charset=utf8mb4";
-try {
-     \$pdo = new PDO(\$dsn, \$usernamedb, \$passworddb, \$options);
-} catch (\PDOException \$e) {
-     throw new \PDOException(\$e->getMessage(), (int)\$e->getCode());
-}
-?>
-EOF
-    sleep 1
-
-    # ── Telegram webhook + first message ───────────────────────────────────
-    curl -F "url=https://${YOUR_DOMAIN}/faoxima/index.php" \
-         -F "secret_token=${secrettoken}" \
-         "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook" || {
-        ui_err "Failed to set webhook for bot."
+    ui_action "Waiting for config.php to finish templating from environment..."
+    if ! wait_for_config_templated 60 app; then
+        ui_err "config.php was not templated in time — the app container may still be starting up."
+        diagnose_table_failure app "$PROJECT_DIR"
         exit 1
+    fi
+
+    ui_action "Initialising database tables via table.php..."
+    dc exec -T app php table.php >/dev/null 2>&1
+    if ! verify_tables_created; then
+        ui_err "table.php ran but the database schema was not created (the 'setting' table is missing)."
+        diagnose_table_failure app "$PROJECT_DIR"
+        ui_err "Fix the issue above, then re-run install."
+        exit 1
+    fi
+    ui_ok "Database tables initialised."
+
+    ui_action "Registering Telegram webhook..."
+    curl -s -F "url=https://${domainname}/faoxima/index.php" \
+        "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook" || {
+        ui_warn "Failed to set webhook — you can retry later via 'Change Domain'."
     }
     local MESSAGE="✅ Faoxima bot is installed! Send /start to begin."
     curl -s -X POST "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${YOUR_CHAT_ID}" -d text="${MESSAGE}" || {
-        ui_err "Failed to send message to Telegram."
+        -d chat_id="${YOUR_CHAT_ID}" -d text="${MESSAGE}" || ui_warn "Failed to send the confirmation Telegram message."
+
+    discard_dummy_cert "$domainname"
+
+    ui_action "Requesting a Let's Encrypt certificate for ${domainname}..."
+    if issue_certificate "$domainname"; then
+        ui_ok "SSL certificate issued and nginx reloaded."
+        local fresh_cert_enddate
+        fresh_cert_enddate=$(get_cert_enddate "$domainname")
+        [ -n "$fresh_cert_enddate" ] && cache_set "cert_enddate" "$fresh_cert_enddate"
+        cache_set "pma_running" "1"
+    else
+        ui_err "SSL issuance failed for ${domainname} — installation cannot complete without a valid certificate."
+        diagnose_ssl_failure "$domainname"
+        ui_err "Fix the issue above (usually DNS not pointing here yet, or port 80 not reachable from the internet), then re-run install."
         exit 1
-    }
+    fi
 
-    sleep 1
-    systemctl start apache2 || { ui_err "Failed to start Apache 2."; exit 1; }
-
-    # ── Trigger table.php to initialise the database tables ────────────────
-    local table_url="https://${YOUR_DOMAIN}/faoxima/table.php"
-    ui_action "Initialising database tables via table.php..."
-    curl -s "$table_url" >/dev/null || {
-        ui_warn "Failed to fetch ${table_url} — please open it manually in a browser."
-    }
-
-    grant_file_permissions "$BOT_DIR"
+    grant_file_permissions
 
     clear
     show_logo
     ui_status_table "INSTALLATION SUCCESSFUL" "$C_GREEN" \
-        "Bot URL|${C_GREEN}https://${YOUR_DOMAIN}${C_RESET}" \
-        "phpMyAdmin|${C_BLUE}https://${YOUR_DOMAIN}/phpmyadmin${C_RESET}" \
-        "Database name|${C_CYAN}${dbname}${C_RESET}" \
-        "Database user|${C_CYAN}${dbuser}${C_RESET}" \
-        "Database password|${C_CYAN}${dbpass}${C_RESET}"
+        "Bot URL|${C_GREEN}https://${domainname}/faoxima${C_RESET}" \
+        "phpMyAdmin|${C_GREEN}https://${domainname}/phpmyadmin/${C_RESET} ${C_DIM}(login with the DB credentials below)${C_RESET}" \
+        "Database name|${C_CYAN}${DEFAULT_DB_NAME}${C_RESET}" \
+        "Database user|${C_CYAN}${DEFAULT_DB_NAME}${C_RESET}" \
+        "Database password|${C_CYAN}${mysql_pass}${C_RESET}" \
+        "Compose file|${C_DIM}${COMPOSE_FILE}${C_RESET}"
     ui_tip "Run 'faoxima' anytime from the shell to reopen this menu."
     printf '\n'
 
@@ -1271,758 +1280,893 @@ EOF
     ln -sf "$INSTALL_SCRIPT_PATH" "$INSTALL_SCRIPT_LINK" >/dev/null 2>&1 || true
 }
 
-# ============================================================================
-#  INSTALL BOT — alongside Marzban (uses Marzban's MySQL, port 88)
-# ============================================================================
-install_bot_with_marzban() {
+install_additional_bot() {
     show_logo
-    ui_panel "INSTALLATION — MARZBAN-COMPATIBLE" "$C_BOLD$C_YELLOW" "$C_YELLOW" \
-        "${C_WHITE}Marzban panel detected on this server.${C_RESET}" \
-        "${C_RED}Backup the Marzban database before continuing.${C_RESET}"
+    ui_panel "INSTALL ADDITIONAL BOT" "$C_BOLD$C_GREEN" "$C_GREEN" \
+        "${C_WHITE}Adds another bot sharing this server's domain, nginx, and MySQL.${C_RESET}" \
+        "${C_DIM}The bot is reachable at the main domain under its own name (like cPanel subfolders), and gets its own database inside the same MySQL server.${C_RESET}"
 
-    local confirm
-    printf '\n  %s❯%s Are you sure you want to install Faoxima Bot alongside Marzban? (y/n): ' \
-        "$C_YELLOW" "$C_RESET"
-    read -r confirm
-    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
-        ui_err "Installation aborted by user."
-        exit 0
+    if [ ! -f "$ENV_FILE" ] || [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Install the main Faoxima Bot first (option 1) before adding additional bots."
+        return 1
+    fi
+    if ! dc ps -q db >/dev/null 2>&1 || [ -z "$(dc ps -q db 2>/dev/null)" ]; then
+        ui_err "The main stack's 'db' container is not running. Start it before adding additional bots."
+        return 1
     fi
 
-    ui_action "Checking Marzban database type..."
-    local DB_TYPE
-    DB_TYPE=$(detect_database_type)
-    if [ "$DB_TYPE" != "mysql" ]; then
-        ui_err "Your database is ${DB_TYPE}. To install Faoxima Bot, you must use MySQL."
-        ui_warn "Please configure Marzban to use MySQL and try again."
-        exit 1
-    fi
-    ui_ok "MySQL detected. Proceeding with installation..."
-
-    ui_action "Checking port availability..."
-    if ss -tuln | grep -q ":80 "; then
-        ui_err "Port 80 is already in use. Please free port 80 and run the script again."
-        exit 1
-    fi
-    if ss -tuln | grep -q ":88 "; then
-        ui_err "Port 88 is already in use. Please free port 88 and run the script again."
-        exit 1
-    fi
-    ui_ok "Ports 80 and 88 are free."
-
-    if ! (apt update && apt upgrade -y); then
-        ui_warn "Update/upgrade failed. Attempting alternative mirrors..."
-        if fix_update_issues; then
-            if apt update && apt upgrade -y; then
-                ui_ok "System updated successfully after fixing mirrors."
-            else
-                ui_err "Failed to update even after trying alternative mirrors."
-                exit 1
-            fi
-        else
-            ui_err "Failed to update/upgrade system and mirror fix failed."
-            exit 1
-        fi
-    else
-        ui_ok "System updated successfully."
+    local domainname
+    domainname=$(env_get DOMAIN)
+    if [ -z "$domainname" ]; then
+        ui_err "Could not read DOMAIN from ${ENV_FILE}. Is the main bot installed correctly?"
+        return 1
     fi
 
-    apt-get install -y software-properties-common || { ui_err "Failed to install software-properties-common."; exit 1; }
-
-    ui_action "Checking and installing MySQL client..."
-    if ! command -v mysql &>/dev/null; then
-        apt install -y mysql-client || { ui_err "Failed to install MySQL client."; exit 1; }
-        ui_ok "MySQL client installed."
-    else
-        ui_ok "MySQL client is already installed."
-    fi
-
-    apt install -y software-properties-common || { ui_err "Failed to install software-properties-common."; exit 1; }
-    add-apt-repository -y ppa:ondrej/php || {
-        ui_warn "Failed to add PPA ondrej/php — trying with locale override..."
-        LC_ALL=C.UTF-8 add-apt-repository -y ppa:ondrej/php || {
-            ui_err "Failed to add PPA even with locale override."
-            exit 1
-        }
-    }
-    apt update || { ui_err "Failed to update package list after adding PPA."; exit 1; }
-
-    apt install -y git unzip curl wget jq || { ui_err "Failed to install basic tools."; exit 1; }
-
-    if ! dpkg -s apache2 &>/dev/null; then
-        apt install -y apache2 || { ui_err "Failed to install Apache 2."; exit 1; }
-    fi
-
-    DEBIAN_FRONTEND=noninteractive apt install -y \
-        php8.2 php8.2-fpm php8.2-mysql php8.2-mbstring php8.2-zip php8.2-gd \
-        php8.2-curl php8.2-soap php8.2-ssh2 libssh2-1-dev libssh2-1 php8.2-pdo || {
-        ui_err "Failed to install PHP 8.2 and modules."
-        exit 1
-    }
-    apt install -y libapache2-mod-php8.2     || { ui_err "Failed to install libapache2-mod-php8.2."; exit 1; }
-    apt install -y python3-certbot-apache    || { ui_err "Failed to install Certbot for Apache 2."; exit 1; }
-    systemctl enable certbot.timer           || { ui_err "Failed to enable certbot timer."; exit 1; }
-
-    if ! dpkg -s ufw &>/dev/null; then
-        apt install -y ufw || { ui_err "Failed to install UFW."; exit 1; }
-    fi
-
-    # ── Marzban MySQL credentials ──────────────────────────────────────────
-    local ENV_FILE="/opt/marzban/.env" MYSQL_ROOT_PASSWORD ROOT_USER MYSQL_CONTAINER
-    if [ ! -f "$ENV_FILE" ]; then
-        ui_err "Marzban .env file not found. Cannot proceed without Marzban configuration."
-        exit 1
-    fi
-    MYSQL_ROOT_PASSWORD=$(grep "MYSQL_ROOT_PASSWORD=" "$ENV_FILE" | cut -d'=' -f2 | tr -d '[:space:]' | sed 's/"//g')
-    ROOT_USER="root"
-    if [ -z "$MYSQL_ROOT_PASSWORD" ]; then
-        ui_warn "Could not retrieve MySQL root password from Marzban .env file."
-        printf '  %s❯%s Please enter the MySQL root password manually: ' "$C_YELLOW" "$C_RESET"
-        read -rs MYSQL_ROOT_PASSWORD
-        echo
-    fi
-    MYSQL_CONTAINER=$(docker ps -q --filter "name=mysql" --no-trunc)
-    if [ -z "$MYSQL_CONTAINER" ]; then
-        ui_err "Could not find a running MySQL container. Ensure Marzban is running with Docker."
-        ui_warn "Running containers:"
-        docker ps
-        exit 1
-    fi
-
-    ui_action "Testing MySQL connection..."
-    mysql -u "$ROOT_USER" -p"$MYSQL_ROOT_PASSWORD" -h 127.0.0.1 -P 3306 -e "SELECT 1;" 2>/tmp/mysql_error.log
-    if [ $? -eq 0 ]; then
-        ui_ok "MySQL connection successful (direct host method)."
-    else
-        ui_warn "Direct connection failed, trying inside container..."
-        docker exec "$MYSQL_CONTAINER" bash -c "echo 'SELECT 1;' | mysql -u '$ROOT_USER' -p'$MYSQL_ROOT_PASSWORD'" 2>/tmp/mysql_error.log
-        if [ $? -eq 0 ]; then
-            ui_ok "MySQL connection successful (container method)."
-        else
-            ui_err "Failed to connect to MySQL using both methods."
-            cat /tmp/mysql_error.log
-            local NEW_PASSWORD
-            printf '  %s❯%s Enter the correct MySQL root password: ' "$C_YELLOW" "$C_RESET"
-            read -rs NEW_PASSWORD
-            echo
-            MYSQL_ROOT_PASSWORD="$NEW_PASSWORD"
-            mysql -u "$ROOT_USER" -p"$MYSQL_ROOT_PASSWORD" -h 127.0.0.1 -P 3306 -e "SELECT 1;" 2>/tmp/mysql_error.log || {
-                docker exec "$MYSQL_CONTAINER" bash -c "echo 'SELECT 1;' | mysql -u '$ROOT_USER' -p'$MYSQL_ROOT_PASSWORD'" 2>/tmp/mysql_error.log || {
-                    ui_err "Still can't connect with new password."
-                    cat /tmp/mysql_error.log
-                    exit 1
-                }
-            }
-            ui_ok "MySQL connection successful with new password."
-        fi
-    fi
-
-    clear
-    show_logo
-    ui_panel "DATABASE CREDENTIALS" "$C_BOLD$C_MAGENTA" "$C_MAGENTA" \
-        "${C_WHITE}Configuring Faoxima Bot database credentials...${C_RESET}"
-
-    local default_dbuser default_dbpass dbuser dbpass dbname
-    default_dbuser=$(openssl rand -base64 12 | tr -dc 'a-zA-Z' | head -c8)
-    printf '\n  %s❯%s Database username [default: %s%s%s]: ' \
-        "$C_YELLOW" "$C_RESET" "$C_CYAN" "$default_dbuser" "$C_RESET"
-    read -r dbuser
-    [ -z "$dbuser" ] && dbuser="$default_dbuser"
-
-    default_dbpass=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9' | head -c12)
-    printf '  %s❯%s Database password [default: %s%s%s]: ' \
-        "$C_YELLOW" "$C_RESET" "$C_CYAN" "$default_dbpass" "$C_RESET"
-    read -rs dbpass
-    echo
-    [ -z "$dbpass" ] && dbpass="$default_dbpass"
-    dbname="$DEFAULT_DB_NAME"
-
-    docker exec "$MYSQL_CONTAINER" bash -c "mysql -u '$ROOT_USER' -p'$MYSQL_ROOT_PASSWORD' -e \"CREATE DATABASE IF NOT EXISTS ${dbname}; CREATE USER IF NOT EXISTS '${dbuser}'@'%' IDENTIFIED BY '${dbpass}'; GRANT ALL PRIVILEGES ON ${dbname}.* TO '${dbuser}'@'%'; FLUSH PRIVILEGES;\"" || {
-        ui_err "Failed to create database or user in Marzban MySQL container."
-        exit 1
-    }
-    ui_ok "Database '${dbname}' created."
-
-    # ── Bot directory ──────────────────────────────────────────────────────
-    if [ -d "$BOT_DIR" ]; then
-        ui_warn "Directory ${BOT_DIR} already exists — removing..."
-        rm -rf "$BOT_DIR" || { ui_err "Failed to remove ${BOT_DIR}."; exit 1; }
-    fi
-    mkdir -p "$BOT_DIR" || { ui_err "Failed to create ${BOT_DIR}."; exit 1; }
-
-    local ZIP_URL
-    ZIP_URL=$(curl -s "https://api.github.com/repos/${FAOXIMA_REPO}/releases/latest" | grep "zipball_url" | cut -d '"' -f 4)
-    if [[ "$1" == "-v" && "$2" == "beta" ]] || [[ "$1" == "-beta" ]] || [[ "$1" == "-" && "$2" == "beta" ]]; then
-        ZIP_URL="${FAOXIMA_GITHUB}/archive/refs/heads/main.zip"
-    elif [[ "$1" == "-v" && -n "$2" ]]; then
-        ZIP_URL="${FAOXIMA_GITHUB}/archive/refs/tags/$2.zip"
-    fi
-    if [ -z "$ZIP_URL" ]; then
-        ZIP_URL="${FAOXIMA_GITHUB}/archive/refs/heads/main.zip"
-    fi
-
-    mkdir -p "$TMP_DOWNLOAD"
-    wget -O "${TMP_DOWNLOAD}/bot.zip" "$ZIP_URL" || { ui_err "Failed to download bot files."; exit 1; }
-    unzip -q "${TMP_DOWNLOAD}/bot.zip" -d "$TMP_DOWNLOAD" || { ui_err "Failed to unzip bot files."; exit 1; }
-    local extracted_dir
-    extracted_dir=$(find "$TMP_DOWNLOAD" -mindepth 1 -maxdepth 1 -type d | head -1)
-    mv "${extracted_dir}"/* "$BOT_DIR" || { ui_err "Failed to move bot files."; exit 1; }
-    rm -rf "$TMP_DOWNLOAD"
-
-    chown -R www-data:www-data "$BOT_DIR"
-    chmod -R 755 "$BOT_DIR"
-    ui_ok "Bot files installed in ${BOT_DIR}."
-    sleep 2
-    clear
-
-    # ── Apache 2 ports + SSL on port 88 ───────────────────────────────────
-    show_logo
-    ui_action "Configuring Apache 2 ports..."
-    : > /etc/apache2/ports.conf
-    cat <<EOF | tee /etc/apache2/ports.conf >/dev/null
-
-Listen 80
-Listen 88
-
-EOF
-
-    : > /etc/apache2/sites-available/000-default.conf
-    cat <<EOF | tee /etc/apache2/sites-available/000-default.conf >/dev/null
-<VirtualHost *:80>
-    ServerAdmin webmaster@localhost
-    DocumentRoot /var/www/html
-    ErrorLog \${APACHE_LOG_DIR}/error.log
-    CustomLog \${APACHE_LOG_DIR}/access.log combined
-</VirtualHost>
-
-EOF
-
-    systemctl enable apache2  || { ui_err "Failed to enable Apache 2.";  exit 1; }
-    systemctl restart apache2 || { ui_err "Failed to restart Apache 2."; exit 1; }
-
-    ui_action "Configuring SSL on port 88..."
-    ufw allow 80 || { ui_err "Failed to configure firewall for port 80."; exit 1; }
-    ufw allow 88 || { ui_err "Failed to configure firewall for port 88."; exit 1; }
-    clear
-    show_logo
-    ui_panel "DOMAIN" "$C_BOLD$C_GREEN" "$C_GREEN" \
-        "${C_WHITE}Enter the domain that will host this Faoxima bot.${C_RESET}"
-
-    local domainname DOMAIN_NAME
-    printf '\n  %s❯%s Enter the domain (e.g., example.com): ' "$C_YELLOW" "$C_RESET"
-    read -r domainname
-    while [[ ! "$domainname" =~ ^[a-zA-Z0-9.-]+$ ]]; do
-        ui_err "Invalid domain format. Must be like 'example.com'. Please try again."
-        printf '  %s❯%s Enter the domain (e.g., example.com): ' "$C_YELLOW" "$C_RESET"
-        read -r domainname
+    local botname
+    printf '\n  %s❯%s Bot name — this becomes its URL path (e.g. bot1 -> https://%s/bot1): ' "$C_YELLOW" "$C_RESET" "$domainname"
+    read -r botname
+    while [[ ! "$botname" =~ ^[a-zA-Z0-9_-]+$ ]] \
+        || [[ "$botname" =~ ^(app|cron|db|nginx|certbot|phpmyadmin|faoxima)$ ]] \
+        || [ -d "${BOTS_DIR}/${botname}" ]; do
+        ui_err "Invalid or already-used bot name. Please try again."
+        printf '  %s❯%s Bot name: ' "$C_YELLOW" "$C_RESET"
+        read -r botname
     done
-    DOMAIN_NAME="$domainname"
-    ui_ok "Domain set to: ${DOMAIN_NAME}"
 
-    systemctl restart apache2 || { ui_err "Failed to restart Apache 2 before Certbot."; exit 1; }
-    if ! wait_for_certbot; then
-        ui_err "Certbot is busy. Please try again shortly."
-        exit 1
-    fi
-    certbot --apache --agree-tos --preferred-challenges http -d "$DOMAIN_NAME" --https-port 88 --no-redirect || {
-        ui_err "Failed to configure SSL with Certbot on port 88."
-        exit 1
-    }
-
-    : > /etc/apache2/sites-available/000-default-le-ssl.conf
-    cat <<EOF | tee /etc/apache2/sites-available/000-default-le-ssl.conf >/dev/null
-<IfModule mod_ssl.c>
-<VirtualHost *:88>
-    ServerAdmin webmaster@localhost
-    ServerName $DOMAIN_NAME
-    DocumentRoot /var/www/html
-    ErrorLog \${APACHE_LOG_DIR}/error.log
-    CustomLog \${APACHE_LOG_DIR}/access.log combined
-    SSLEngine on
-    SSLCertificateFile /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem
-    SSLCertificateKeyFile /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem
-    SSLProtocol all -SSLv2 -SSLv3 -TLSv1 -TLSv1.1
-    SSLCipherSuite HIGH:!aNULL:!MD5
-</VirtualHost>
-</IfModule>
-EOF
-    a2enmod ssl || { ui_err "Failed to enable SSL module."; exit 1; }
-    a2ensite 000-default-le-ssl.conf || { ui_err "Failed to enable SSL site."; exit 1; }
-    : > /etc/apache2/ports.conf
-    echo "Listen 88" | tee /etc/apache2/ports.conf >/dev/null
-    apache2ctl configtest || { ui_err "Apache 2 configuration test failed after Certbot."; exit 1; }
-    systemctl restart apache2 || { ui_err "Failed to restart Apache 2 after SSL configuration."; exit 1; }
-
-    ui_action "Disabling port 80 as it's no longer needed..."
-    a2dissite 000-default.conf || { ui_err "Failed to disable port 80 VirtualHost."; exit 1; }
-    ufw delete allow 80        || { ui_err "Failed to remove port 80 from firewall."; exit 1; }
-    apache2ctl configtest      || { ui_err "Apache 2 configuration test failed."; exit 1; }
-    systemctl restart apache2  || { ui_err "Failed to restart Apache 2 after disabling port 80."; exit 1; }
-    ui_ok "SSL configured successfully on port 88. Port 80 disabled."
-    sleep 2
-
-    # ── Bot configuration prompts ──────────────────────────────────────────
-    clear
-    show_logo
-    ui_panel "BOT CONFIGURATION" "$C_BOLD$C_CYAN" "$C_CYAN" \
-        "${C_WHITE}Now wire up your Telegram bot credentials.${C_RESET}"
-
-    local YOUR_BOT_TOKEN YOUR_CHAT_ID YOUR_BOTNAME YOUR_DOMAIN
-    printf '\n  %s❯%s Bot Token: ' "$C_YELLOW" "$C_RESET"
+    local YOUR_BOT_TOKEN
+    printf '  %s❯%s Bot Token: ' "$C_YELLOW" "$C_RESET"
     read -r YOUR_BOT_TOKEN
-    while [[ ! "$YOUR_BOT_TOKEN" =~ ^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$ ]]; do
+    while [[ ! "$YOUR_BOT_TOKEN" =~ ^[0-9]+:[a-zA-Z0-9_-]+$ ]]; do
         ui_err "Invalid bot token format. Please try again."
         printf '  %s❯%s Bot Token: ' "$C_YELLOW" "$C_RESET"
         read -r YOUR_BOT_TOKEN
     done
-    printf '  %s❯%s Chat ID: ' "$C_YELLOW" "$C_RESET"
+
+    local YOUR_CHAT_ID
+    printf '  %s❯%s Admin Telegram ID (numeric): ' "$C_YELLOW" "$C_RESET"
     read -r YOUR_CHAT_ID
     while [[ ! "$YOUR_CHAT_ID" =~ ^-?[0-9]+$ ]]; do
         ui_err "Invalid chat ID format. Please try again."
-        printf '  %s❯%s Chat ID: ' "$C_YELLOW" "$C_RESET"
+        printf '  %s❯%s Admin Telegram ID (numeric): ' "$C_YELLOW" "$C_RESET"
         read -r YOUR_CHAT_ID
     done
 
-    YOUR_DOMAIN="${DOMAIN_NAME}:88"
-    printf '  %s❯%s Bot username: ' "$C_YELLOW" "$C_RESET"
-    read -r YOUR_BOTNAME
-    while [ -z "$YOUR_BOTNAME" ]; do
-        ui_err "Bot username cannot be empty."
-        printf '  %s❯%s Bot username: ' "$C_YELLOW" "$C_RESET"
-        read -r YOUR_BOTNAME
-    done
+    local bot_dir="${BOTS_DIR}/${botname}"
+    mkdir -p "$bot_dir" || { ui_err "Failed to create bot directory ${bot_dir}."; return 1; }
 
-    local secrettoken ASAS='$'
-    secrettoken=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
+    local main_install_source
+    main_install_source=$(env_get INSTALL_SOURCE)
 
-    cat > "${BOT_DIR}/config.php" <<EOF
-<?php
-${ASAS}APIKEY = '${YOUR_BOT_TOKEN}';
-${ASAS}usernamedb = '${dbuser}';
-${ASAS}passworddb = '${dbpass}';
-${ASAS}dbname = '${dbname}';
-${ASAS}domainhosts = '${YOUR_DOMAIN}';
-${ASAS}adminnumber = '${YOUR_CHAT_ID}';
-${ASAS}usernamebot = '${YOUR_BOTNAME}';
-${ASAS}secrettoken = '${secrettoken}';
+    if [ "$main_install_source" = "github" ]; then
+        local version_arg1="$1" version_arg2="$2"
+        if [ -z "$version_arg1" ]; then
+            local picked_version
+            picked_version=$(prompt_version_selection)
+            if [ -n "$picked_version" ]; then
+                if [ "$picked_version" = "beta" ]; then
+                    version_arg1="-beta"
+                else
+                    version_arg1="-v"
+                    version_arg2="$picked_version"
+                fi
+            fi
+        fi
 
-${ASAS}connect = mysqli_connect('127.0.0.1', \$usernamedb, \$passworddb, \$dbname);
-if (${ASAS}connect->connect_error) {
-    die('Database connection failed: ' . ${ASAS}connect->connect_error);
-}
-mysqli_set_charset(${ASAS}connect, 'utf8mb4');
+        ui_action "Downloading Faoxima source for '${botname}'..."
+        local zip_url
+        zip_url=$(resolve_zip_url "$version_arg1" "$version_arg2")
+        mkdir -p "$TMP_DOWNLOAD" || { ui_err "Failed to create temporary directory ${TMP_DOWNLOAD}."; return 1; }
+        wget -O "${TMP_DOWNLOAD}/bot.zip" "$zip_url" || { ui_err "Failed to download Faoxima from ${zip_url}."; return 1; }
+        unzip -q "${TMP_DOWNLOAD}/bot.zip" -d "$TMP_DOWNLOAD" || { ui_err "Failed to extract the downloaded archive."; return 1; }
+        local extracted_dir
+        extracted_dir=$(find "$TMP_DOWNLOAD" -mindepth 1 -maxdepth 1 -type d | head -1)
+        [ -n "$extracted_dir" ] || { ui_err "Could not locate the extracted Faoxima directory."; return 1; }
+        cp -a "${extracted_dir}/." "${bot_dir}/" || { ui_err "Failed to copy Faoxima source into ${bot_dir}."; return 1; }
+        rm -rf "$TMP_DOWNLOAD"
+    else
+        ui_action "Copying Faoxima source from the existing local checkout at ${PROJECT_DIR}..."
+        cp -a "${PROJECT_DIR}/." "${bot_dir}/" || { ui_err "Failed to copy Faoxima source into ${bot_dir}."; return 1; }
+        rm -rf "${bot_dir}/.env" "${bot_dir}/bots" "${bot_dir}/nginx/conf.d" "${bot_dir}"/docker-compose.bot-*.yml
+    fi
 
-${ASAS}options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    PDO::ATTR_EMULATE_PREPARES   => false,
-];
-${ASAS}dsn = "mysql:host=127.0.0.1;port=3306;dbname=\$dbname;charset=utf8mb4";
-try {
-    ${ASAS}pdo = new PDO(\$dsn, \$usernamedb, \$passworddb, \$options);
-} catch (\PDOException \$e) {
-    die('PDO Connection failed: ' . \$e->getMessage());
-}
-?>
+    find "${bot_dir}/re/rx" -mindepth 2 -maxdepth 2 \( -name '.compiled.php' -o -name '.compiled.map' \) -delete 2>/dev/null || true
+    if [ -f "${bot_dir}/config.php" ]; then
+        sed -i -E \
+            -e 's/^(\$dbname[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+            -e 's/^(\$usernamedb[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+            -e 's/^(\$passworddb[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+            -e 's/^(\$dbhost[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+            -e 's/^(\$APIKEY[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+            -e 's/^(\$adminnumber[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+            -e 's/^(\$domainhosts[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+            -e 's/^(\$usernamebot[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+            "${bot_dir}/config.php" || { ui_err "Failed to reset config.php for '${botname}'."; return 1; }
+    fi
+
+    local db_name="faoxima_${botname}" db_user="faoxima_${botname}" db_pass
+    db_pass=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
+    local mysql_root_pass
+    mysql_root_pass=$(env_get MYSQL_ROOT_PASSWORD)
+
+    ui_action "Creating database '${db_name}' inside the shared MySQL server..."
+    dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
+        "CREATE DATABASE IF NOT EXISTS \`${db_name}\`; \
+         CREATE USER IF NOT EXISTS '${db_user}'@'%' IDENTIFIED WITH mysql_native_password BY '${db_pass}'; \
+         ALTER USER '${db_user}'@'%' IDENTIFIED WITH mysql_native_password BY '${db_pass}'; \
+         GRANT ALL PRIVILEGES ON \`${db_name}\`.* TO '${db_user}'@'%'; \
+         FLUSH PRIVILEGES;" || { ui_err "Failed to create the database for '${botname}'."; return 1; }
+
+    cat > "${bot_dir}/.env" <<EOF
+DB_HOST=db
+DB_NAME=${db_name}
+DB_USER=${db_user}
+DB_PASS=${db_pass}
+DOMAIN=${domainname}
+URL_PATH=${botname}
+TELEGRAM_BOT_TOKEN=${YOUR_BOT_TOKEN}
+TELEGRAM_ADMIN_ID=${YOUR_CHAT_ID}
+PUID=$(env_get PUID)
+PGID=$(env_get PGID)
 EOF
 
-    # ── Webhook + first message (fixed: was using BOT_TOKEN/CHAT_ID before) ─
-    curl -F "url=https://${YOUR_DOMAIN}/faoxima/index.php" \
-         -F "secret_token=${secrettoken}" \
-         "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook" || {
-        ui_err "Failed to set webhook."
-        exit 1
-    }
+    cat > "${BOT_COMPOSE_PREFIX}${botname}.yml" <<EOF
+services:
+  app_${botname}:
+    image: faoxima_app:latest
+    env_file: ${bot_dir}/.env
+    volumes:
+      - ${bot_dir}:/var/www/faoxima
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+EOF
 
-    local MESSAGE="✅ Faoxima bot is installed! Send /start to begin."
-    curl -s -X POST "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/sendMessage" \
-        -d chat_id="${YOUR_CHAT_ID}" -d text="${MESSAGE}" || {
-        ui_err "Failed to send message to Telegram."
+    mkdir -p "$NGINX_BOTS_CONF_DIR" || { ui_err "Failed to create ${NGINX_BOTS_CONF_DIR}."; return 1; }
+    render_bot_location "/var/www/bots" "app_${botname}:9000" "${NGINX_BOTS_CONF_DIR}/${botname}.conf" "$botname" || {
+        ui_err "Failed to render the nginx location block for '${botname}'."
         return 1
     }
 
-    local TABLE_SETUP_URL="https://${YOUR_DOMAIN}/faoxima/table.php"
-    ui_action "Setting up database tables..."
-    curl -s "$TABLE_SETUP_URL" >/dev/null || {
-        ui_warn "Failed to fetch ${TABLE_SETUP_URL} — please open it manually in a browser."
-    }
+    ui_action "Starting the app container for '${botname}'..."
+    dc up -d --no-deps "app_${botname}" || { ui_err "Failed to start the app container for '${botname}'."; return 1; }
 
-    grant_file_permissions "$BOT_DIR"
+    ui_action "Waiting for '${botname}' database user to accept connections..."
+    if ! wait_for_db_ready 60 "app_${botname}" "db" "$db_name" "$db_user" "$db_pass"; then
+        ui_err "The '${botname}' database user could not connect in time."
+        diagnose_db_failure "app_${botname}" "db" "$db_name" "$db_user" "$db_pass"
+        return 1
+    fi
+    ui_ok "Database is ready for connections."
+
+    ui_action "Waiting for '${botname}' config.php to finish templating from environment..."
+    if ! wait_for_config_templated 60 "app_${botname}"; then
+        ui_err "config.php was not templated in time for '${botname}' — the app container may still be starting up."
+        diagnose_table_failure "app_${botname}" "$bot_dir"
+        return 1
+    fi
+
+    ui_action "Reloading nginx so '${botname}' is reachable..."
+    local nginx_test_output
+    nginx_test_output=$(dc exec -T nginx nginx -t 2>&1)
+    if [ $? -ne 0 ]; then
+        ui_err "The rendered nginx config for '${botname}' is invalid — nginx will keep serving the OLD config until this is fixed."
+        printf '%s\n' "$nginx_test_output"
+        return 1
+    fi
+    dc exec nginx nginx -s reload || { ui_err "Failed to reload nginx with the new bot's location block."; return 1; }
+
+    ui_action "Initialising database tables via table.php..."
+    dc exec -T "app_${botname}" php table.php >/dev/null 2>&1
+    if ! verify_tables_created "$db_name" "$db_user" "$db_pass"; then
+        ui_err "table.php ran but the database schema was not created for '${botname}' (the 'setting' table is missing)."
+        diagnose_table_failure "app_${botname}" "$bot_dir"
+        return 1
+    fi
+    ui_ok "Database tables initialised for '${botname}'."
+
+    ui_action "Registering Telegram webhook for '${botname}'..."
+    curl -s -F "url=https://${domainname}/${botname}/index.php" \
+        "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook" || ui_warn "Failed to set webhook."
+    curl -s -X POST "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/sendMessage" \
+        -d chat_id="${YOUR_CHAT_ID}" -d text="✅ Faoxima bot '${botname}' is installed! Send /start to begin." \
+        >/dev/null 2>&1 || true
 
     clear
     show_logo
-    ui_status_table "INSTALLATION SUCCESSFUL" "$C_GREEN" \
-        "Bot URL|${C_GREEN}https://${DOMAIN_NAME}:88${C_RESET}" \
-        "phpMyAdmin|${C_BLUE}https://${DOMAIN_NAME}/phpmyadmin${C_RESET}" \
-        "Database name|${C_CYAN}${dbname}${C_RESET}" \
-        "Database user|${C_CYAN}${dbuser}${C_RESET}" \
-        "Database password|${C_CYAN}${dbpass}${C_RESET}"
-    ui_tip "Run 'faoxima' anytime from the shell to reopen this menu."
-    printf '\n'
-
-    chmod +x "$INSTALL_SCRIPT_PATH" 2>/dev/null || true
-    ln -sf "$INSTALL_SCRIPT_PATH" "$INSTALL_SCRIPT_LINK" >/dev/null 2>&1 || true
+    ui_status_table "ADDITIONAL BOT INSTALLED" "$C_GREEN" \
+        "Bot name|${C_CYAN}${botname}${C_RESET}" \
+        "Bot URL|${C_GREEN}https://${domainname}/${botname}${C_RESET}" \
+        "phpMyAdmin|${C_GREEN}https://${domainname}/phpmyadmin/${C_RESET} ${C_DIM}(login with the DB credentials below)${C_RESET}" \
+        "Database name|${C_CYAN}${db_name}${C_RESET}" \
+        "Database user|${C_CYAN}${db_user}${C_RESET}" \
+        "Database password|${C_CYAN}${db_pass}${C_RESET}" \
+        "Source directory|${C_DIM}${bot_dir}${C_RESET}"
 }
 
-# ============================================================================
-#  UPDATE BOT
-# ============================================================================
-update_bot() {
+list_additional_bots() {
     show_logo
-    ui_panel "UPDATE FAOXIMA BOT" "$C_BOLD$C_BLUE" "$C_BLUE" \
-        "${C_WHITE}Pulling the latest Faoxima release while preserving config.php.${C_RESET}"
+    ui_panel "ADDITIONAL BOTS" "$C_BOLD$C_CYAN" "$C_CYAN" \
+        "${C_WHITE}Every bot installed alongside the main bot on this server.${C_RESET}"
 
-    if ! (apt update && apt upgrade -y); then
-        ui_err "Error updating the server. Exiting..."
-        exit 1
-    fi
-    ui_ok "Server packages updated successfully."
-
-    if [ ! -d "$BOT_DIR" ]; then
-        ui_err "Faoxima Bot is not installed. Please install it first."
-        exit 1
-    fi
-
-    local ZIP_URL
-    if [[ "$1" == "-beta" ]] || [[ "$1" == "-v" && "$2" == "beta" ]]; then
-        ZIP_URL="${FAOXIMA_GITHUB}/archive/refs/heads/main.zip"
-    else
-        ZIP_URL=$(curl -s "https://api.github.com/repos/${FAOXIMA_REPO}/releases/latest" | grep "zipball_url" | cut -d '"' -f4)
-        [ -z "$ZIP_URL" ] && ZIP_URL="${FAOXIMA_GITHUB}/archive/refs/heads/main.zip"
-    fi
-
-    mkdir -p "$TMP_UPDATE"
-    wget -O "${TMP_UPDATE}/bot.zip" "$ZIP_URL" || { ui_err "Failed to download update package."; exit 1; }
-    unzip -q "${TMP_UPDATE}/bot.zip" -d "$TMP_UPDATE"
-
-    local extracted_dir
-    extracted_dir=$(find "$TMP_UPDATE" -mindepth 1 -maxdepth 1 -type d | head -1)
-
-    local CONFIG_PATH="${BOT_DIR}/config.php"
-    local TEMP_CONFIG="/root/faoxima_config_backup.php"
-    if [ -f "$CONFIG_PATH" ]; then
-        cp "$CONFIG_PATH" "$TEMP_CONFIG" || { ui_err "Config file backup failed!"; exit 1; }
-    fi
-
-    rm -rf "$BOT_DIR" || { ui_err "Failed to remove old bot files!"; exit 1; }
-    mkdir -p "$BOT_DIR"
-    mv "${extracted_dir}"/* "${BOT_DIR}/" || { ui_err "File transfer failed!"; exit 1; }
-
-    if [ -f "$TEMP_CONFIG" ]; then
-        mv "$TEMP_CONFIG" "$CONFIG_PATH" || { ui_err "Config file restore failed!"; exit 1; }
-    fi
-
-    local local_install
-    local_install=$(find "$BOT_DIR" -maxdepth 2 -name "install.sh" -print -quit)
-    if [ -n "$local_install" ]; then
-        cp "$local_install" "$INSTALL_SCRIPT_PATH"
-        ui_ok "Copied latest install.sh to ${INSTALL_SCRIPT_PATH}."
-    else
-        local raw_url="https://raw.githubusercontent.com/${FAOXIMA_REPO}/main/install.sh"
-        if curl -fsSL "$raw_url" -o "$INSTALL_SCRIPT_PATH"; then
-            ui_ok "Fetched install.sh from upstream repository."
-        else
-            ui_warn "install.sh not found locally and download failed — keeping existing ${INSTALL_SCRIPT_PATH}."
-        fi
-    fi
-    chown -R www-data:www-data "$BOT_DIR"
-    chmod -R 755 "$BOT_DIR"
-
-    local URL CLEAN_URL
-    URL=$(grep -oP "\$domainhosts\s*=\s*[\'\"]\K[^\'\"]+" "$CONFIG_PATH" 2>/dev/null | head -1)
-    if [ -z "$URL" ]; then
-        URL=$(grep "domainhosts" "$CONFIG_PATH" | sed -n "s/.*domainhosts.*=.*[\'\"]\([^\'\"]*\)[\'\"].*/\1/p" | head -1)
-    fi
-
-    if [ -n "$URL" ]; then
-        CLEAN_URL=${URL#http://}
-        CLEAN_URL=${CLEAN_URL#https://}
-        CLEAN_URL=${CLEAN_URL%/}
-        curl -s "https://${CLEAN_URL}/table.php" >/dev/null || {
-            ui_warn "Setup script execution failed for https://${CLEAN_URL}/table.php"
-        }
-    else
-        ui_warn "Unable to detect domainhosts from config.php. Skipping table setup call."
-    fi
-
-    ui_action "Verifying database tables..."
-    local DB_USERNAME DB_PASSWORD DB_NAME TABLES
-    DB_USERNAME=$(grep '^\$usernamedb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_PASSWORD=$(grep '^\$passworddb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_NAME=$(grep '^\$dbname'         "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    if [ -z "$DB_USERNAME" ] || [ -z "$DB_PASSWORD" ] || [ -z "$DB_NAME" ]; then
-        ui_err "Failed to read database credentials from config.php. Cannot verify tables."
-    else
-        TABLES=$(mysql -u "$DB_USERNAME" -p"$DB_PASSWORD" -D "$DB_NAME" -e "SHOW TABLES LIKE 'setting';" 2>&1)
-        if echo "$TABLES" | grep -q "setting"; then
-            ui_ok "Database table 'setting' exists."
-        else
-            ui_err "Database table 'setting' NOT FOUND."
-            ui_warn "Please check the bot logs for details."
-        fi
-    fi
-
-    grant_file_permissions "$BOT_DIR"
-
-    rm -rf "$TMP_UPDATE"
-    ui_ok "Faoxima Bot updated to latest version successfully."
-
-    if [ -f "$INSTALL_SCRIPT_PATH" ]; then
-        chmod +x "$INSTALL_SCRIPT_PATH"
-        ln -sf "$INSTALL_SCRIPT_PATH" "$INSTALL_SCRIPT_LINK" >/dev/null 2>&1
-        ui_ok "Ensured ${INSTALL_SCRIPT_PATH} is executable and 'faoxima' command is linked."
-    else
-        ui_err "${INSTALL_SCRIPT_PATH} not found after update attempt."
-    fi
-}
-
-# ============================================================================
-#  REMOVE BOT
-# ============================================================================
-remove_bot() {
-    show_logo
-    ui_panel "REMOVE FAOXIMA BOT" "$C_BOLD$C_RED" "$C_RED" \
-        "${C_WHITE}This will remove the bot, its database, and the LAMP stack.${C_RESET}" \
-        "${C_RED}This action is irreversible.${C_RESET}"
-
-    if [ ! -d "$BOT_DIR" ]; then
-        ui_err "Faoxima Bot is not installed (${BOT_DIR} not found)."
-        log_warn "Nothing to remove."
-        sleep 2
-        exit 1
-    fi
-
-    local choice
-    printf '\n  %s❯%s Are you sure you want to remove Faoxima Bot and its dependencies? (y/n): ' \
-        "$C_YELLOW" "$C_RESET"
-    read -r choice
-    if [[ "$choice" != "y" && "$choice" != "Y" ]]; then
-        ui_warn "Aborting..."
-        exit 0
-    fi
-
-    if check_marzban_installed; then
-        ui_warn "Marzban detected — switching to Marzban-compatible removal."
-        remove_bot_with_marzban
+    if [ ! -d "$BOTS_DIR" ] || [ -z "$(find "$BOTS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)" ]; then
+        ui_info "No additional bots installed."
         return 0
     fi
 
-    log_info "Removing Faoxima Bot..."
+    local names=() d
+    for d in "${BOTS_DIR}"/*/; do
+        [ -d "$d" ] || continue
+        names+=("$(basename "$d")")
+    done
 
-    if [ -d "$BOT_DIR" ]; then
-        rm -rf "$BOT_DIR" && ui_ok "Bot directory removed: ${BOT_DIR}" || {
-            ui_err "Failed to remove bot directory: ${BOT_DIR}. Exiting..."
-            exit 1
-        }
-    fi
+    local total="${#names[@]}"
+    local page_size=20
+    local page=0
+    local last_page=$(( (total - 1) / page_size ))
+    local name domain domain_line bot_dir
 
-    local CONFIG_PATH="/root/config.php"
-    if [ -f "$CONFIG_PATH" ]; then
-        shred -u -n 5 "$CONFIG_PATH" && ui_ok "Config file securely removed: ${CONFIG_PATH}" || \
-            ui_err "Failed to securely remove config file."
-    fi
+    while true; do
+        local start=$((page * page_size))
+        local end=$((start + page_size))
+        [ "$end" -gt "$total" ] && end="$total"
 
-    log_action "Removing MySQL and database..."
-    systemctl stop mysql       2>/dev/null || true
-    systemctl disable mysql    2>/dev/null || true
-    systemctl daemon-reload    2>/dev/null || true
-    apt --fix-broken install -y || true
-
-    apt-get purge -y mysql-server mysql-client mysql-common 'mysql-server-core-*' 'mysql-client-core-*' || true
-    rm -rf /etc/mysql /var/lib/mysql /var/log/mysql /var/log/mysql.* /usr/lib/mysql /usr/include/mysql /usr/share/mysql 2>/dev/null || true
-    rm -f  /lib/systemd/system/mysql.service /etc/init.d/mysql 2>/dev/null || true
-
-    dpkg --remove --force-remove-reinstreq mysql-server mysql-server-8.0 2>/dev/null || true
-    find /etc/systemd /lib/systemd /usr/lib/systemd -name "*mysql*" -exec rm -f {} \; 2>/dev/null || true
-
-    apt-get purge -y mysql-server mysql-server-8.0 mysql-client mysql-client-8.0 || true
-    apt-get purge -y mysql-client-core-8.0 mysql-server-core-8.0 mysql-common php-mysql php8.2-mysql php-mariadb-mysql-kbs 2>/dev/null || true
-    apt-get autoremove --purge -y || true
-    apt-get clean       || true
-    apt-get update      || true
-    ui_ok "MySQL has been completely removed."
-
-    log_action "Removing phpMyAdmin..."
-    if dpkg -s phpmyadmin &>/dev/null; then
-        apt-get purge -y phpmyadmin && ui_ok "phpMyAdmin removed."
-        apt-get autoremove -y && apt-get autoclean -y
-    else
-        ui_warn "phpMyAdmin is not installed."
-    fi
-
-    log_action "Removing Apache 2..."
-    systemctl stop apache2    2>/dev/null || ui_warn "Failed to stop Apache 2 — continuing..."
-    systemctl disable apache2 2>/dev/null || ui_warn "Failed to disable Apache 2 — continuing..."
-    apt-get purge -y apache2 apache2-utils apache2-bin apache2-data 'libapache2-mod-php*' || \
-        ui_err "Failed to purge Apache 2 packages."
-    apt-get autoremove --purge -y
-    apt-get autoclean -y
-    rm -rf /etc/apache2 "$BOT_DIR"
-
-    log_action "Removing Apache 2 / PHP configurations..."
-    a2disconf phpmyadmin.conf &>/dev/null || true
-    rm -f /etc/apache2/conf-available/phpmyadmin.conf
-
-    log_action "Removing additional packages..."
-    apt-get remove -y php-soap php-ssh2 libssh2-1-dev libssh2-1 \
-        && ui_ok "Removed additional PHP packages." \
-        || ui_warn "Some additional PHP packages may not be installed."
-
-    log_action "Resetting firewall rules (except SSL)..."
-    ufw delete allow 'Apache' 2>/dev/null || true
-    ufw reload 2>/dev/null || true
-
-    ui_ok "Faoxima Bot, MySQL, and dependencies have been completely removed."
-}
-
-remove_bot_with_marzban() {
-    log_action "Removing Faoxima Bot alongside Marzban..."
-
-    local DB_NAME="$DEFAULT_DB_NAME" DB_USER=""
-    if [ ! -d "$BOT_DIR" ]; then
-        ui_warn "Bot directory ${BOT_DIR} not found. Assuming it was already removed."
-    else
-        local CONFIG_PATH="${BOT_DIR}/config.php"
-        if [ -f "$CONFIG_PATH" ]; then
-            DB_USER=$(grep '^\$usernamedb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-            DB_NAME=$(grep '^\$dbname'     "$CONFIG_PATH" | awk -F"'" '{print $2}')
-            if [ -z "$DB_USER" ] || [ -z "$DB_NAME" ]; then
-                ui_err "Could not extract database credentials from ${CONFIG_PATH}. Using defaults."
-                DB_NAME="$DEFAULT_DB_NAME"; DB_USER=""
+        local i
+        for ((i = start; i < end; i++)); do
+            name="${names[$i]}"
+            bot_dir="${BOTS_DIR}/${name}"
+            domain=""
+            [ -f "${bot_dir}/.env" ] && domain=$(grep -E '^DOMAIN=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+            if [ -n "$domain" ]; then
+                domain_line="https://${domain}/${name}"
             else
-                ui_ok "Found database credentials: User=${DB_USER}, DB=${DB_NAME}"
+                domain_line="unknown"
             fi
-        else
-            ui_warn "config.php not found at ${CONFIG_PATH}. Assuming default database name '${DEFAULT_DB_NAME}'."
-            DB_NAME="$DEFAULT_DB_NAME"; DB_USER=""
+            ui_status_table "$name" "$C_CYAN" \
+                "Domain|${C_GREEN}${domain_line}${C_RESET}" \
+                "Directory|${C_DIM}${bot_dir}${C_RESET}"
+        done
+
+        if [ "$last_page" -le 0 ]; then
+            return 0
         fi
 
-        rm -rf "$BOT_DIR" && ui_ok "Bot directory removed: ${BOT_DIR}" || {
-            ui_err "Failed to remove bot directory: ${BOT_DIR}. Exiting..."
-            exit 1
-        }
-    fi
-
-    local ENV_FILE="/opt/marzban/.env" MYSQL_ROOT_PASSWORD ROOT_USER MYSQL_CONTAINER
-    if [ -f "$ENV_FILE" ]; then
-        MYSQL_ROOT_PASSWORD=$(grep "MYSQL_ROOT_PASSWORD=" "$ENV_FILE" | cut -d'=' -f2 | tr -d '[:space:]' | sed 's/"//g')
-        ROOT_USER="root"
-    else
-        ui_err "Marzban .env file not found. Cannot proceed without MySQL root password."
-        exit 1
-    fi
-
-    MYSQL_CONTAINER=$(docker ps -q --filter "name=mysql" --no-trunc)
-    if [ -z "$MYSQL_CONTAINER" ]; then
-        ui_err "Could not find a running MySQL container. Ensure Marzban is running."
-        exit 1
-    fi
-
-    if [ -n "$DB_NAME" ]; then
-        ui_action "Removing database ${DB_NAME}..."
-        docker exec "$MYSQL_CONTAINER" bash -c "mysql -u '$ROOT_USER' -p'$MYSQL_ROOT_PASSWORD' -e \"DROP DATABASE IF EXISTS ${DB_NAME};\"" \
-            && ui_ok "Database ${DB_NAME} removed." \
-            || ui_err "Failed to remove database ${DB_NAME}."
-    fi
-
-    if [ -n "$DB_USER" ]; then
-        ui_action "Removing database user ${DB_USER}..."
-        docker exec "$MYSQL_CONTAINER" bash -c "mysql -u '$ROOT_USER' -p'$MYSQL_ROOT_PASSWORD' -e \"DROP USER IF EXISTS '${DB_USER}'@'%'; FLUSH PRIVILEGES;\"" \
-            && ui_ok "User ${DB_USER} removed." \
-            || ui_err "Failed to remove user ${DB_USER}."
-    fi
-
-    log_action "Removing Apache 2..."
-    systemctl stop    apache2 2>/dev/null || ui_warn "Failed to stop Apache 2 — continuing..."
-    systemctl disable apache2 2>/dev/null || ui_warn "Failed to disable Apache 2 — continuing..."
-    apt-get purge -y apache2 apache2-utils apache2-bin apache2-data 'libapache2-mod-php*' || \
-        ui_err "Failed to purge Apache 2 packages."
-    apt-get autoremove --purge -y
-    apt-get autoclean -y
-    rm -rf /etc/apache2 "$BOT_DIR"
-
-    log_action "Resetting firewall rules (keeping SSL)..."
-    ufw delete allow 'Apache' 2>/dev/null || ui_err "Failed to remove Apache 2 rule from UFW."
-    ufw reload 2>/dev/null || true
-
-    ui_ok "Faoxima Bot has been removed alongside Marzban. SSL certificates remain intact."
+        printf '\n  %s(page %d of %d)%s\n' "$C_DIM" "$((page + 1))" "$((last_page + 1))" "$C_RESET"
+        local nav_hint=""
+        [ "$page" -lt "$last_page" ] && nav_hint="${nav_hint}n) next page  "
+        [ "$page" -gt 0 ] && nav_hint="${nav_hint}p) previous page  "
+        printf '\n  %s❯%s %s(Enter to finish): ' "$C_YELLOW" "$C_RESET" "$nav_hint"
+        local nav
+        read -r nav
+        case "$nav" in
+            n|N) [ "$page" -lt "$last_page" ] && page=$((page + 1)) ;;
+            p|P) [ "$page" -gt 0 ] && page=$((page - 1)) ;;
+            *) return 0 ;;
+        esac
+        show_logo
+        ui_panel "ADDITIONAL BOTS" "$C_BOLD$C_CYAN" "$C_CYAN" \
+            "${C_WHITE}Every bot installed alongside the main bot on this server.${C_RESET}"
+    done
 }
 
-# ============================================================================
-#  DATABASE EXPORT / IMPORT / BACKUP
-# ============================================================================
-extract_db_credentials() {
-    local CONFIG_PATH="${BOT_DIR}/config.php"
-    if [ ! -f "$CONFIG_PATH" ]; then
-        ui_err "config.php not found at ${CONFIG_PATH}."
+remove_additional_bot() {
+    show_logo
+    ui_panel "REMOVE ADDITIONAL BOT" "$C_BOLD$C_RED" "$C_RED" \
+        "${C_WHITE}Stops and removes an additional bot's containers, database, and vhost.${C_RESET}" \
+        "${C_DIM}The main bot and other additional bots are left untouched.${C_RESET}"
+
+    if [ ! -d "$BOTS_DIR" ] || [ -z "$(find "$BOTS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)" ]; then
+        ui_info "No additional bots installed."
+        return 0
+    fi
+
+    local names=() d
+    for d in "${BOTS_DIR}"/*/; do
+        [ -d "$d" ] || continue
+        names+=("$(basename "$d")")
+    done
+
+    if ! ui_pick_from_list "Which number to remove" "${names[@]}"; then
+        ui_info "Cancelled."
+        return 0
+    fi
+
+    local botname="${names[$UI_PICK_RESULT]}"
+    local bot_dir="${BOTS_DIR}/${botname}"
+
+    printf '  %s❯%s This will delete the bot'"'"'s containers, database, and source. Continue? (y/n): ' "$C_YELLOW" "$C_RESET"
+    local confirm
+    read -r confirm
+    if [[ "$confirm" != "y" && "$confirm" != "Y" ]]; then
+        ui_info "Cancelled."
+        return 0
+    fi
+
+    ui_action "Stopping and removing containers for '${botname}'..."
+    dc rm -f -s "app_${botname}" || ui_warn "Failed to stop/remove containers for '${botname}' — they may already be gone."
+    rm -f "${BOT_COMPOSE_PREFIX}${botname}.yml"
+
+    local db_name="faoxima_${botname}" db_user="faoxima_${botname}" mysql_root_pass db_drop_output
+    mysql_root_pass=$(env_get MYSQL_ROOT_PASSWORD)
+    ui_action "Dropping database '${db_name}'..."
+    db_drop_output=$(dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
+        "DROP DATABASE IF EXISTS \`${db_name}\`; DROP USER IF EXISTS '${db_user}'@'%';" 2>&1)
+    if [ $? -ne 0 ]; then
+        ui_err "Failed to drop database '${db_name}' — it may need manual cleanup."
+        printf '%s\n' "$db_drop_output"
+    fi
+
+    rm -f "${NGINX_BOTS_CONF_DIR}/${botname}.conf"
+    local nginx_test_output
+    nginx_test_output=$(dc exec -T nginx nginx -t 2>&1)
+    if [ $? -ne 0 ]; then
+        ui_err "nginx config is invalid after removing '${botname}'s location block — check manually."
+        printf '%s\n' "$nginx_test_output"
+    else
+        dc exec nginx nginx -s reload || ui_warn "Failed to reload nginx after removing '${botname}'."
+    fi
+
+    rm -rf "$bot_dir"
+
+    local leftovers=()
+    dc ps -a -q "app_${botname}" 2>/dev/null | grep -q . && leftovers+=("container app_${botname}")
+    [ -f "${BOT_COMPOSE_PREFIX}${botname}.yml" ] && leftovers+=("compose fragment ${BOT_COMPOSE_PREFIX}${botname}.yml")
+    [ -f "${NGINX_BOTS_CONF_DIR}/${botname}.conf" ] && leftovers+=("nginx config ${NGINX_BOTS_CONF_DIR}/${botname}.conf")
+    [ -d "$bot_dir" ] && leftovers+=("source directory ${bot_dir}")
+
+    if [ "${#leftovers[@]}" -gt 0 ]; then
+        ui_warn "Removal finished but some parts are still present: ${leftovers[*]}"
         return 1
     fi
-    DB_USER=$(grep '^\$usernamedb'   "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_PASS=$(grep '^\$passworddb'   "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_NAME=$(grep '^\$dbname'       "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    TELEGRAM_TOKEN=$(grep '^\$APIKEY'      "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    TELEGRAM_CHAT_ID=$(grep '^\$adminnumber' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ] \
-        || [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-        ui_err "Failed to extract required credentials from ${CONFIG_PATH}."
+    ui_ok "Additional bot '${botname}' removed."
+}
+
+update_single_additional_bot() {
+    local botname="$1" mode="$2" version_arg1="$3" version_arg2="$4" zip_path="$5"
+    local bot_dir="${BOTS_DIR}/${botname}"
+    if [ ! -d "$bot_dir" ]; then
+        ui_err "No additional bot named '${botname}' found."
+        return 1
+    fi
+
+    local db_name db_user db_pass
+    db_name=$(grep -E '^DB_NAME=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+    db_user=$(grep -E '^DB_USER=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+    db_pass=$(grep -E '^DB_PASS=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+    if [ -z "$db_name" ] || [ -z "$db_user" ]; then
+        ui_err "Failed to read database credentials from ${bot_dir}/.env for '${botname}'."
+        return 1
+    fi
+
+    update_bot_source "$bot_dir" "app_${botname}" "$botname" \
+        "$mode" "$version_arg1" "$version_arg2" "$zip_path" "$db_name" "$db_user" "$db_pass" "0"
+}
+
+menu_update_additional_bots() {
+    show_logo
+    ui_panel "UPDATE ADDITIONAL BOTS" "$C_BOLD$C_BLUE" "$C_BLUE" \
+        "${C_WHITE}Update one additional bot, or all of them at once.${C_RESET}"
+
+    if [ ! -d "$BOTS_DIR" ] || [ -z "$(find "$BOTS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)" ]; then
+        ui_info "No additional bots installed."
+        return 0
+    fi
+
+    printf '\n'
+    printf '  %s1)%s Update Single Bot\n' "$C_CYAN" "$C_RESET"
+    printf '  %s2)%s Update All Bots\n' "$C_CYAN" "$C_RESET"
+    local scope
+    printf '\n  %s❯%s Select an option [1-2]: ' "$C_YELLOW" "$C_RESET"
+    read -r scope
+
+    local names=() d
+    for d in "${BOTS_DIR}"/*/; do
+        [ -d "$d" ] || continue
+        names+=("$(basename "$d")")
+    done
+
+    local targets=()
+    case "$scope" in
+        1)
+            if ! ui_pick_from_list "Which number to update" "${names[@]}"; then
+                ui_info "Cancelled."
+                return 0
+            fi
+            targets=("${names[$UI_PICK_RESULT]}")
+            ;;
+        2)
+            targets=("${names[@]}")
+            ;;
+        *)
+            ui_err "Invalid selection."
+            return 1
+            ;;
+    esac
+
+    local mode
+    mode=$(prompt_update_source)
+    if [ -z "$mode" ]; then
+        ui_err "Invalid selection."
+        return 1
+    fi
+
+    local zip_path=""
+    if [ "$mode" = "manual" ]; then
+        printf '  %s❯%s Path to the update ZIP file: ' "$C_YELLOW" "$C_RESET"
+        read -r zip_path
+    fi
+
+    local failures=() name
+    for name in "${targets[@]}"; do
+        ui_action "Updating '${name}'..."
+        if ! update_single_additional_bot "$name" "$mode" "" "" "$zip_path"; then
+            failures+=("$name")
+        fi
+    done
+
+    if [ "${#failures[@]}" -gt 0 ]; then
+        ui_err "Update failed for: ${failures[*]}"
+        return 1
+    fi
+    ui_ok "Update completed successfully for: ${targets[*]}"
+}
+
+install_beta_additional_bot() {
+    show_logo
+    ui_panel "INSTALL BETA — ADDITIONAL BOT" "$C_BOLD$C_YELLOW" "$C_YELLOW" \
+        "${C_WHITE}Add a new bot on the latest main-branch build, or switch an existing one.${C_RESET}" \
+        "${C_DIM}This is not an official release — use it for testing only.${C_RESET}"
+
+    if [ ! -f "$ENV_FILE" ] || [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Install the main Faoxima Bot first (option 1) before adding additional bots."
+        return 1
+    fi
+
+    local names=("New Additional Bot") d
+    if [ -d "$BOTS_DIR" ]; then
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            names+=("$(basename "$d")")
+        done
+    fi
+
+    if ! ui_pick_from_list "New bot, or which existing bot to switch to Beta" "${names[@]}"; then
+        ui_info "Cancelled."
+        return 0
+    fi
+
+    if [ "$UI_PICK_RESULT" -eq 0 ]; then
+        install_additional_bot "-beta"
+        return $?
+    fi
+
+    local botname="${names[$UI_PICK_RESULT]}"
+    printf '  %s❯%s This will overwrite '"'"'%s'"'"'s source with the latest Beta build (config.php is preserved). Continue? (y/N): ' \
+        "$C_YELLOW" "$C_RESET" "$botname"
+    local confirm
+    read -r confirm
+    if [[ "${confirm,,}" != "y" ]]; then
+        ui_info "Cancelled."
+        return 0
+    fi
+
+    if ! update_single_additional_bot "$botname" "github" "-beta" "" ""; then
+        return 1
+    fi
+    ui_ok "'${botname}' switched to the latest Beta build."
+}
+
+validate_update_zip() {
+    local zip_path="$1"
+    if [ ! -f "$zip_path" ]; then
+        ui_err "File not found: ${zip_path}"
+        return 1
+    fi
+    if [[ ! "$zip_path" =~ \.zip$ ]]; then
+        ui_err "File must have a .zip extension: ${zip_path}"
+        return 1
+    fi
+    if ! unzip -tq "$zip_path" >/dev/null 2>&1; then
+        ui_err "The file at ${zip_path} is not a valid/readable ZIP archive."
         return 1
     fi
     return 0
 }
 
-translate_cron() {
-    local cron_line="$1" schedule
-    case "$cron_line" in
-        "* * * * *"*) schedule="Every Minute" ;;
-        "0 * * * *"*) schedule="Every Hour"   ;;
-        "0 0 * * *"*) schedule="Every Day"    ;;
-        "0 0 * * 0"*) schedule="Every Week"   ;;
-        *)            schedule="Custom Schedule (${cron_line})" ;;
+prompt_update_source() {
+    printf '\n' >&2
+    printf '  %s1)%s Update from GitHub\n' "$C_CYAN" "$C_RESET" >&2
+    printf '  %s2)%s Manual Update (ZIP)\n' "$C_CYAN" "$C_RESET" >&2
+    local mode
+    printf '\n  %s❯%s Select update method [1-2]: ' "$C_YELLOW" "$C_RESET" >&2
+    read -r mode
+    case "$mode" in
+        1) printf 'github' ;;
+        2) printf 'manual' ;;
+        *) printf '' ;;
     esac
-    printf '%s' "$schedule"
 }
 
-export_database() {
+prepare_update_source_dir() {
+    local mode="$1" version_arg1="$2" version_arg2="$3" zip_path="$4" work_dir="$5"
+    local extracted_dir
+
+    {
+        if [ "$mode" = "manual" ]; then
+            if ! validate_update_zip "$zip_path"; then
+                return 1
+            fi
+            ui_action "Extracting ${zip_path}..."
+            unzip -q "$zip_path" -d "$work_dir" || { ui_err "Failed to extract ${zip_path}."; return 1; }
+        else
+            local zip_url
+            zip_url=$(resolve_zip_url "$version_arg1" "$version_arg2")
+            ui_action "Downloading update from ${zip_url}..."
+            wget -O "${work_dir}/bot.zip" "$zip_url" || { ui_err "Failed to download update package."; return 1; }
+            unzip -q "${work_dir}/bot.zip" -d "$work_dir" || { ui_err "Failed to extract the update archive."; return 1; }
+        fi
+
+        extracted_dir=$(find "$work_dir" -mindepth 1 -maxdepth 1 -type d | head -1)
+        [ -n "$extracted_dir" ] || { ui_err "Could not locate the extracted update directory."; return 1; }
+    } >&2
+    printf '%s' "$extracted_dir"
+}
+
+update_bot_source() {
+    local code_dir="$1" app_service="$2" label="$3" \
+        mode="$4" version_arg1="$5" version_arg2="$6" zip_path="$7" \
+        db_name="$8" db_user="$9" db_pass="${10}" should_build="${11:-1}"
+
+    local work_dir
+    work_dir=$(mktemp -d "${TMP_UPDATE}.XXXXXX") || { ui_err "Failed to create a temporary work directory."; return 1; }
+
+    local extracted_dir
+    extracted_dir=$(prepare_update_source_dir "$mode" "$version_arg1" "$version_arg2" "$zip_path" "$work_dir")
+    if [ -z "$extracted_dir" ]; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+
+    local safe_label
+    safe_label=$(printf '%s' "$label" | tr -c 'a-zA-Z0-9_' '_')
+    local config_path="${code_dir}/config.php"
+    local temp_config
+    temp_config=$(mktemp "/root/${safe_label}_config_backup.XXXXXX.php") || { ui_err "Failed to create a config.php backup file."; rm -rf "$work_dir"; return 1; }
+    if [ -f "$config_path" ]; then
+        cp "$config_path" "$temp_config" || { ui_err "Config file backup failed for '${label}'!"; rm -rf "$work_dir"; return 1; }
+    fi
+
+    ui_action "Extracting update onto ${code_dir}..."
+    if ! cp -a "${extracted_dir}/." "${code_dir}/"; then
+        ui_err "File transfer failed for '${label}'!"
+        rm -rf "$work_dir" "$temp_config"
+        return 1
+    fi
+
+    if [ -f "$temp_config" ]; then
+        mv "$temp_config" "$config_path" || { ui_err "Config file restore failed for '${label}'!"; rm -rf "$work_dir"; return 1; }
+    fi
+    rm -rf "$work_dir"
+
+    if [ "$should_build" = "1" ]; then
+        ui_action "Rebuilding the app image for '${label}'..."
+        dc build "$app_service" || ui_warn "Rebuilding the app image for '${label}' failed — continuing with the existing image."
+    fi
+    ui_action "Restarting services for '${label}' with the updated source..."
+    dc up -d --no-deps "$app_service" || { ui_err "Failed to bring '${label}' services back up."; return 1; }
+
+    ui_action "Waiting for the '${label}' database user to accept connections..."
+    if ! wait_for_db_ready 60 "$app_service" "db" "$db_name" "$db_user" "$db_pass"; then
+        ui_err "The '${label}' database user could not connect after the update."
+        diagnose_db_failure "$app_service" "db" "$db_name" "$db_user" "$db_pass"
+        return 1
+    fi
+
+    dc exec -T "$app_service" php table.php >/dev/null 2>&1
+    if ! verify_tables_created "$db_name" "$db_user" "$db_pass"; then
+        ui_err "table.php ran but the database schema check failed for '${label}' (the 'setting' table is missing)."
+        diagnose_table_failure "$app_service" "$code_dir"
+        return 1
+    fi
+
+    dc restart "$app_service" || { ui_err "Failed to restart the '${app_service}' container after the update."; return 1; }
+
+    grant_file_permissions "$app_service"
+
+    ui_ok "'${label}' updated successfully."
+    return 0
+}
+
+update_bot() {
     show_logo
-    ui_panel "EXPORT DATABASE" "$C_BOLD$C_BLUE" "$C_BLUE" \
-        "${C_WHITE}A SQL dump of the bot database will be saved under /root.${C_RESET}"
+    ui_panel "UPDATE FAOXIMA BOT" "$C_BOLD$C_BLUE" "$C_BLUE" \
+        "${C_WHITE}Update from the latest GitHub release, or from a manually-provided ZIP.${C_RESET}" \
+        "${C_DIM}config.php and .env are always preserved.${C_RESET}"
 
-    if ! extract_db_credentials; then return 1; fi
-    if check_marzban_installed; then
-        ui_err "Exporting is not supported when Marzban is installed (DB lives in Docker)."
+    if [ ! -f "$ENV_FILE" ] || [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Faoxima Bot is not installed (no .env/docker-compose.yml at ${PROJECT_DIR})."
+        exit 1
+    fi
+
+    local mode
+    mode=$(prompt_update_source)
+    if [ -z "$mode" ]; then
+        ui_err "Invalid selection."
+        exit 1
+    fi
+
+    local zip_path=""
+    if [ "$mode" = "manual" ]; then
+        printf '  %s❯%s Path to the update ZIP file: ' "$C_YELLOW" "$C_RESET"
+        read -r zip_path
+    fi
+
+    local db_name db_user db_pass
+    db_name=$(env_get MYSQL_DATABASE)
+    db_user=$(env_get MYSQL_USER)
+    db_pass=$(env_get MYSQL_PASSWORD)
+
+    if ! update_bot_source "$PROJECT_DIR" "app" "Faoxima Bot" "$mode" "" "" "$zip_path" "$db_name" "$db_user" "$db_pass"; then
+        exit 1
+    fi
+
+    if [ -f "$INSTALL_SCRIPT_PATH" ]; then
+        if chmod +x "$INSTALL_SCRIPT_PATH" 2>/dev/null && ln -sf "$INSTALL_SCRIPT_PATH" "$INSTALL_SCRIPT_LINK" >/dev/null 2>&1; then
+            ui_ok "Ensured ${INSTALL_SCRIPT_PATH} is executable and 'faoxima' command is linked."
+        else
+            ui_warn "Could not update permissions/symlink for ${INSTALL_SCRIPT_PATH} — the 'faoxima' shell command may be stale."
+        fi
+    fi
+}
+
+install_beta_bot() {
+    show_logo
+    ui_panel "INSTALL BETA — FAOXIMA BOT" "$C_BOLD$C_YELLOW" "$C_YELLOW" \
+        "${C_WHITE}Installs (or switches to) the latest main-branch build.${C_RESET}" \
+        "${C_DIM}This is not an official release — use it for testing only.${C_RESET}"
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        install_bot "-beta"
+        return $?
+    fi
+
+    local install_source
+    install_source=$(env_get INSTALL_SOURCE)
+    if [ "$install_source" != "github" ]; then
+        ui_err "This bot was not installed from GitHub, so beta switching isn't available — reinstall from GitHub first."
         return 1
     fi
 
-    ui_action "Verifying database existence..."
-    if ! mysql -u "$DB_USER" -p"$DB_PASS" -e "USE ${DB_NAME};" 2>/dev/null; then
-        ui_err "Database ${DB_NAME} does not exist or credentials are incorrect."
+    printf '  %s❯%s This will overwrite the current source with the latest Beta build (config.php is preserved). Continue? (y/N): ' "$C_YELLOW" "$C_RESET"
+    local confirm
+    read -r confirm
+    if [[ "${confirm,,}" != "y" ]]; then
+        ui_info "Cancelled."
+        return 0
+    fi
+
+    local db_name db_user db_pass
+    db_name=$(env_get MYSQL_DATABASE)
+    db_user=$(env_get MYSQL_USER)
+    db_pass=$(env_get MYSQL_PASSWORD)
+
+    if ! update_bot_source "$PROJECT_DIR" "app" "Faoxima Bot" "github" "-beta" "" "" "$db_name" "$db_user" "$db_pass"; then
+        return 1
+    fi
+    ui_ok "Faoxima Bot switched to the latest Beta build."
+}
+
+remove_bot() {
+    show_logo
+    ui_panel "REMOVE FAOXIMA BOT" "$C_BOLD$C_RED" "$C_RED" \
+        "${C_WHITE}This tears down the Docker stack (containers + db/cert volumes).${C_RESET}" \
+        "${C_DIM}If the source was downloaded from GitHub, ${PROJECT_DIR} is deleted too.${C_RESET}" \
+        "${C_DIM}If it was uploaded manually, the source is kept and only config.php is reset.${C_RESET}"
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "No docker-compose.yml found at ${COMPOSE_FILE}. Nothing to remove."
+        exit 1
+    fi
+
+    if [ -d "$BOTS_DIR" ] && [ -n "$(find "$BOTS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)" ]; then
+        ui_warn "Additional bots are still installed under ${BOTS_DIR}."
+        ui_warn "They share this stack's db/nginx — removing the main bot will also stop them."
+        ui_warn "Remove each additional bot first (option 6) if you want to keep them working."
+    fi
+
+    local choice
+    printf '\n  %s❯%s Are you sure you want to remove the Faoxima Docker stack? (y/n): ' \
+        "$C_YELLOW" "$C_RESET"
+    read -r choice
+    if [[ "$choice" != "y" && "$choice" != "Y" ]]; then
+        ui_warn "Aborting..."
+        return 0
+    fi
+
+    local install_source
+    install_source=$(env_get INSTALL_SOURCE)
+
+    log_action "Tearing down the Faoxima Docker stack..."
+    dc down -v || { ui_err "docker compose down -v failed."; exit 1; }
+    ui_ok "Containers and volumes (db_data, certs, certbot_webroot) removed."
+
+    if [ -f "$ENV_FILE" ]; then
+        rm -f "$ENV_FILE"
+        ui_ok ".env removed."
+    fi
+
+    if [ "$install_source" = "github" ]; then
+        rm -rf "${PROJECT_DIR:?}"/* "${PROJECT_DIR:?}"/.[!.]* 2>/dev/null || true
+        ui_ok "Faoxima Docker stack removed. Source at ${PROJECT_DIR} (downloaded from GitHub) was deleted as well."
+    else
+        if [ -f "${PROJECT_DIR}/config.php" ]; then
+            sed -i -E \
+                -e 's/^(\$dbname[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+                -e 's/^(\$usernamedb[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+                -e 's/^(\$passworddb[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+                -e 's/^(\$dbhost[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+                -e 's/^(\$APIKEY[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+                -e 's/^(\$adminnumber[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+                -e 's/^(\$domainhosts[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+                -e 's/^(\$usernamebot[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"''"'\2/' \
+                "${PROJECT_DIR}/config.php" || ui_warn "Failed to reset config.php — a future reinstall may reuse stale database credentials."
+            ui_ok "config.php reset so the next install re-templates fresh credentials."
+        fi
+        ui_ok "Faoxima Docker stack removed. Source code left in place at ${PROJECT_DIR}."
+    fi
+}
+
+require_env_db_creds() {
+    if [ ! -f "$ENV_FILE" ]; then
+        ui_err ".env not found at ${ENV_FILE}."
+        return 1
+    fi
+    DB_USER=$(env_get MYSQL_USER)
+    DB_PASS=$(env_get MYSQL_PASSWORD)
+    DB_NAME=$(env_get MYSQL_DATABASE)
+    if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ]; then
+        ui_err "Failed to read database credentials from ${ENV_FILE}."
+        return 1
+    fi
+    return 0
+}
+
+dump_bot_database() {
+    local label="$1" db_name="$2" db_user="$3" db_pass="$4" backup_file="$5"
+    ui_action "Creating backup for '${label}' at ${backup_file}..."
+    if ! dc exec -T db mysqldump -u"$db_user" -p"$db_pass" --no-tablespaces "$db_name" > "$backup_file"; then
+        ui_err "Failed to create database backup for '${label}'."
+        return 1
+    fi
+    ui_ok "Backup for '${label}' successfully created at ${backup_file}."
+}
+
+export_database_single() {
+    show_logo
+    ui_panel "EXPORT DATABASE — SINGLE BOT" "$C_BOLD$C_BLUE" "$C_BLUE" \
+        "${C_WHITE}Back up one bot's database on its own.${C_RESET}"
+
+    local names=("main") d
+    if [ -d "$BOTS_DIR" ]; then
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            names+=("$(basename "$d")")
+        done
+    fi
+
+    if ! ui_pick_from_list "Which bot to back up" "${names[@]}"; then
+        ui_info "Cancelled."
+        return 0
+    fi
+
+    local botname="${names[$UI_PICK_RESULT]}"
+    if [ "$botname" = "main" ]; then
+        if ! require_env_db_creds; then return 1; fi
+        local backup_file="/root/${DB_NAME}_backup_$(date +%Y-%m-%d).sql"
+        dump_bot_database "main" "$DB_NAME" "$DB_USER" "$DB_PASS" "$backup_file"
+        return $?
+    fi
+
+    local bot_dir="${BOTS_DIR}/${botname}"
+    if [ ! -f "${bot_dir}/.env" ]; then
+        ui_err "Could not find .env for '${botname}' at ${bot_dir}."
+        return 1
+    fi
+    local db_name db_user db_pass
+    db_name=$(grep -E '^DB_NAME=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+    db_user=$(grep -E '^DB_USER=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+    db_pass=$(grep -E '^DB_PASS=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+    if [ -z "$db_name" ] || [ -z "$db_user" ]; then
+        ui_err "Failed to read database credentials from ${bot_dir}/.env for '${botname}'."
         return 1
     fi
 
-    local BACKUP_FILE="/root/${DB_NAME}_backup.sql"
-    ui_action "Creating backup at ${BACKUP_FILE}..."
-    if ! mysqldump -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" > "$BACKUP_FILE"; then
-        ui_err "Failed to create database backup."
+    local backup_file="/root/${db_name}_backup_$(date +%Y-%m-%d).sql"
+    dump_bot_database "$botname" "$db_name" "$db_user" "$db_pass" "$backup_file"
+}
+
+export_database_all() {
+    show_logo
+    ui_panel "EXPORT DATABASE — ALL BOTS" "$C_BOLD$C_BLUE" "$C_BLUE" \
+        "${C_WHITE}Backs up the main bot and every additional bot's database in one pass.${C_RESET}"
+
+    local failures=0
+
+    if require_env_db_creds; then
+        local backup_file="/root/${DB_NAME}_backup_$(date +%Y-%m-%d).sql"
+        dump_bot_database "main" "$DB_NAME" "$DB_USER" "$DB_PASS" "$backup_file" || failures=$((failures + 1))
+    else
+        ui_err "Failed to read database credentials for the main bot."
+        failures=$((failures + 1))
+    fi
+
+    if [ -d "$BOTS_DIR" ]; then
+        local d botname bot_dir db_name db_user db_pass backup_file
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            botname=$(basename "$d")
+            bot_dir="${BOTS_DIR}/${botname}"
+            if [ ! -f "${bot_dir}/.env" ]; then
+                ui_err "Could not find .env for '${botname}' at ${bot_dir}."
+                failures=$((failures + 1))
+                continue
+            fi
+            db_name=$(grep -E '^DB_NAME=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+            db_user=$(grep -E '^DB_USER=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+            db_pass=$(grep -E '^DB_PASS=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+            if [ -z "$db_name" ] || [ -z "$db_user" ]; then
+                ui_err "Failed to read database credentials from ${bot_dir}/.env for '${botname}'."
+                failures=$((failures + 1))
+                continue
+            fi
+            backup_file="/root/${db_name}_backup_$(date +%Y-%m-%d).sql"
+            dump_bot_database "$botname" "$db_name" "$db_user" "$db_pass" "$backup_file" || failures=$((failures + 1))
+        done
+    fi
+
+    if [ "$failures" -gt 0 ]; then
+        ui_warn "Bulk export finished with ${failures} failure(s) — see the messages above."
         return 1
     fi
-    ui_ok "Backup successfully created at ${BACKUP_FILE}."
+    ui_ok "Bulk export finished successfully for the main bot and all additional bots."
 }
 
 import_database() {
     show_logo
     ui_panel "IMPORT DATABASE" "$C_BOLD$C_BLUE" "$C_BLUE" \
-        "${C_WHITE}Restore a previously-saved SQL dump into the bot database.${C_RESET}"
+        "${C_WHITE}Restore a previously-saved SQL dump into a bot's database.${C_RESET}" \
+        "${C_RED}This replaces the current database contents entirely.${C_RESET}"
 
-    if ! extract_db_credentials; then return 1; fi
-    if check_marzban_installed; then
-        ui_err "Importing is not supported when Marzban is installed (DB lives in Docker)."
-        return 1
+    local names=("main") d
+    if [ -d "$BOTS_DIR" ]; then
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            names+=("$(basename "$d")")
+        done
     fi
 
-    ui_action "Verifying database existence..."
-    if ! mysql -u "$DB_USER" -p"$DB_PASS" -e "USE ${DB_NAME};" 2>/dev/null; then
-        ui_err "Database ${DB_NAME} does not exist or credentials are incorrect."
-        return 1
+    if ! ui_pick_from_list "Which bot to import into" "${names[@]}"; then
+        ui_info "Cancelled."
+        return 0
+    fi
+
+    local botname="${names[$UI_PICK_RESULT]}"
+    local DB_NAME DB_USER DB_PASS
+    if [ "$botname" = "main" ]; then
+        if ! require_env_db_creds; then return 1; fi
+    else
+        local bot_dir="${BOTS_DIR}/${botname}"
+        if [ ! -f "${bot_dir}/.env" ]; then
+            ui_err "Could not find .env for '${botname}' at ${bot_dir}."
+            return 1
+        fi
+        DB_NAME=$(grep -E '^DB_NAME=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+        DB_USER=$(grep -E '^DB_USER=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+        DB_PASS=$(grep -E '^DB_PASS=' "${bot_dir}/.env" | tail -1 | cut -d'=' -f2-)
+        if [ -z "$DB_NAME" ] || [ -z "$DB_USER" ]; then
+            ui_err "Failed to read database credentials from ${bot_dir}/.env for '${botname}'."
+            return 1
+        fi
     fi
 
     local BACKUP_FILE
@@ -2031,1344 +2175,1684 @@ import_database() {
             "$C_YELLOW" "$C_RESET" "$DB_NAME"
         read -r BACKUP_FILE
         BACKUP_FILE=${BACKUP_FILE:-/root/${DB_NAME}_backup.sql}
-        if [[ -f "$BACKUP_FILE" && "$BACKUP_FILE" =~ \.sql$ ]]; then
-            break
+        if [[ ! -f "$BACKUP_FILE" || ! "$BACKUP_FILE" =~ \.sql$ ]]; then
+            ui_err "Invalid file path or format. Please provide a valid .sql file."
+            continue
         fi
-        ui_err "Invalid file path or format. Please provide a valid .sql file."
+        if [ ! -s "$BACKUP_FILE" ]; then
+            ui_err "The file ${BACKUP_FILE} is empty."
+            continue
+        fi
+        if ! head -c 65536 "$BACKUP_FILE" | grep -qiE 'CREATE TABLE|INSERT INTO|DROP TABLE'; then
+            ui_err "The file ${BACKUP_FILE} does not look like a valid SQL dump (no CREATE/INSERT/DROP statements found)."
+            continue
+        fi
+        break
     done
 
-    ui_action "Importing backup from ${BACKUP_FILE}..."
-    if ! mysql -u "$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$BACKUP_FILE"; then
-        ui_err "Failed to import database from backup file."
+    printf '  %s❯%s This will DROP the current database '"'"'%s'"'"' and replace it with the contents of %s. Continue? (y/N): ' \
+        "$C_YELLOW" "$C_RESET" "$DB_NAME" "$BACKUP_FILE"
+    local confirm
+    read -r confirm
+    if [[ "${confirm,,}" != "y" ]]; then
+        ui_info "Import cancelled."
+        return 0
+    fi
+
+    ui_action "Dropping and recreating database '${DB_NAME}'..."
+    if ! dc exec -T db mysql -u"$DB_USER" -p"$DB_PASS" -e "DROP DATABASE IF EXISTS \`${DB_NAME}\`; CREATE DATABASE \`${DB_NAME}\`;" 2>/dev/null; then
+        ui_err "Failed to drop/recreate database '${DB_NAME}' — the app user may lack the required privileges."
         return 1
     fi
+
+    ui_action "Importing backup from ${BACKUP_FILE}..."
+    if ! dc exec -T db mysql -u"$DB_USER" -p"$DB_PASS" "$DB_NAME" < "$BACKUP_FILE"; then
+        ui_err "Failed to import database from backup file — the database was dropped but the new dump did not load cleanly."
+        return 1
+    fi
+
+    if ! verify_tables_created "$DB_NAME" "$DB_USER" "$DB_PASS"; then
+        ui_warn "Import finished, but the 'setting' table was not found afterwards — verify the dump matches this bot's schema."
+    fi
+
     ui_ok "Database successfully imported from ${BACKUP_FILE}."
 }
 
-auto_backup() {
-    show_logo
-    ui_panel "CONFIGURE AUTOMATED BACKUP" "$C_BOLD$C_CYAN" "$C_CYAN" \
-        "${C_WHITE}Schedule automatic database backups sent to your Telegram chat.${C_RESET}"
-
-    if [ ! -d "$BOT_DIR" ]; then
-        ui_err "Faoxima Bot is not installed (${BOT_DIR} not found)."
-        sleep 2
-        return 1
-    fi
-    if ! extract_db_credentials; then return 1; fi
-
-    local BACKUP_SCRIPT MYSQL_CONTAINER
-    if check_marzban_installed; then
-        ui_warn "Marzban detected. Using Marzban-compatible backup."
-        BACKUP_SCRIPT="/root/backup_faoxima_marzban.sh"
-        MYSQL_CONTAINER=$(docker ps -q --filter "name=mysql" --no-trunc)
-        if [ -z "$MYSQL_CONTAINER" ]; then
-            ui_err "No running MySQL container found for Marzban."
-            return 1
-        fi
-        cat > "$BACKUP_SCRIPT" <<EOF
-#!/usr/bin/env bash
-BACKUP_FILE="/root/${DB_NAME}_\$(date +"%Y%m%d_%H%M%S").sql"
-if docker exec ${MYSQL_CONTAINER} mysqldump -u "${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" > "\$BACKUP_FILE"; then
-    curl -F document=@"\$BACKUP_FILE" "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendDocument" -F chat_id="${TELEGRAM_CHAT_ID}"
-    [ \$? -eq 0 ] && rm "\$BACKUP_FILE"
-else
-    echo "[ERROR] Failed to create Marzban database backup."
-fi
-EOF
-    else
-        ui_info "Using standard backup."
-        BACKUP_SCRIPT="/root/faoxima_backup.sh"
-        if ! mysql -u "$DB_USER" -p"$DB_PASS" -e "USE ${DB_NAME};" 2>/dev/null; then
-            ui_err "Database ${DB_NAME} does not exist or credentials are incorrect."
-            return 1
-        fi
-        cat > "$BACKUP_SCRIPT" <<EOF
-#!/usr/bin/env bash
-BACKUP_FILE="/root/${DB_NAME}_\$(date +"%Y%m%d_%H%M%S").sql"
-if mysqldump -u "${DB_USER}" -p"${DB_PASS}" "${DB_NAME}" > "\$BACKUP_FILE"; then
-    curl -F document=@"\$BACKUP_FILE" "https://api.telegram.org/bot${TELEGRAM_TOKEN}/sendDocument" -F chat_id="${TELEGRAM_CHAT_ID}"
-    [ \$? -eq 0 ] && rm "\$BACKUP_FILE"
-else
-    echo "[ERROR] Failed to create database backup."
-fi
-EOF
-    fi
-    chmod +x "$BACKUP_SCRIPT"
-
-    local CURRENT_CRON SCHEDULE
-    CURRENT_CRON=$(crontab -l 2>/dev/null | grep "$BACKUP_SCRIPT" | grep -v "^#")
-    if [ -n "$CURRENT_CRON" ]; then
-        SCHEDULE=$(translate_cron "$CURRENT_CRON")
-        ui_info "Current backup schedule: ${SCHEDULE}"
-    else
-        ui_info "No active backup schedule found."
-    fi
-
-    printf '\n'
-    printf '  %s1)%s Every Minute\n' "$C_CYAN" "$C_RESET"
-    printf '  %s2)%s Every Hour\n'   "$C_CYAN" "$C_RESET"
-    printf '  %s3)%s Every Day\n'    "$C_CYAN" "$C_RESET"
-    printf '  %s4)%s Every Week\n'   "$C_CYAN" "$C_RESET"
-    printf '  %s5)%s Disable Backup\n' "$C_RED" "$C_RESET"
-    printf '  %s6)%s Back to Menu\n' "$C_CYAN" "$C_RESET"
-
-    local backup_option
-    printf '\n  %s❯%s Select an option [1-6]: ' "$C_YELLOW" "$C_RESET"
-    read -r backup_option
-
-    update_cron() {
-        local cron_line="$1"
-        if [ -n "$CURRENT_CRON" ]; then
-            crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" | crontab - \
-                && ui_ok "Removed previous backup schedule." \
-                || ui_err "Failed to remove existing cron."
-        fi
-        if [ -n "$cron_line" ]; then
-            (crontab -l 2>/dev/null; echo "$cron_line") | crontab - \
-                && { ui_ok "Backup scheduled: $(translate_cron "$cron_line")"; bash "$BACKUP_SCRIPT" &>/dev/null & } \
-                || ui_err "Failed to schedule backup."
-        fi
-    }
-
-    case "$backup_option" in
-        1) update_cron "* * * * * bash $BACKUP_SCRIPT" ;;
-        2) update_cron "0 * * * * bash $BACKUP_SCRIPT" ;;
-        3) update_cron "0 0 * * * bash $BACKUP_SCRIPT" ;;
-        4) update_cron "0 0 * * 0 bash $BACKUP_SCRIPT" ;;
-        5)
-            if [ -n "$CURRENT_CRON" ]; then
-                crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" | crontab - \
-                    && ui_ok "Automated backup disabled." \
-                    || ui_err "Failed to disable backup."
-            else
-                ui_warn "No backup schedule to disable."
-            fi
-            ;;
-        6) show_menu ;;
-        *)
-            ui_err "Invalid option. Please try again."
-            auto_backup
-            ;;
-    esac
+detect_cpu_cores() {
+    nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || printf '1'
 }
 
-# ============================================================================
-#  RENEW SSL
-# ============================================================================
+detect_ram_mb() {
+    free -m 2>/dev/null | awk '/^Mem:/{print $2}'
+}
+
+collect_bot_db_creds() {
+    names=("main")
+    db_names=()
+    db_users=()
+    db_passes=()
+
+    if require_env_db_creds; then
+        db_names+=("$DB_NAME")
+        db_users+=("$DB_USER")
+        db_passes+=("$DB_PASS")
+    else
+        db_names+=("")
+        db_users+=("")
+        db_passes+=("")
+    fi
+
+    if [ -d "$BOTS_DIR" ]; then
+        local d bn
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            bn=$(basename "$d")
+            names+=("$bn")
+            db_names+=("$(grep -E '^DB_NAME=' "${d}.env" 2>/dev/null | tail -1 | cut -d'=' -f2-)")
+            db_users+=("$(grep -E '^DB_USER=' "${d}.env" 2>/dev/null | tail -1 | cut -d'=' -f2-)")
+            db_passes+=("$(grep -E '^DB_PASS=' "${d}.env" 2>/dev/null | tail -1 | cut -d'=' -f2-)")
+        done
+    fi
+}
+
+count_db_users_total() {
+    local total=0 i cnt mysql_root_pass
+    mysql_root_pass=$(env_get MYSQL_ROOT_PASSWORD)
+    for ((i = 0; i < ${#db_names[@]}; i++)); do
+        [ -z "${db_names[$i]}" ] && continue
+        cnt=$(dc exec -T db mysql -uroot -p"${mysql_root_pass}" -N -e \
+            "SELECT COUNT(*) FROM \`${db_names[$i]}\`.user;" 2>/dev/null | tr -d '\r')
+        [[ "$cnt" =~ ^[0-9]+$ ]] && total=$((total + cnt))
+    done
+    printf '%d' "$total"
+}
+
+compute_max_connections() {
+    local ram_mb="$1" cores="$2" bot_count="$3" user_count="$4"
+    local base=64
+    local per_core=$((cores * 10))
+    local per_bot=$((bot_count * 15))
+    local per_1k_users=$(((user_count / 1000) * 5))
+    local demand=$((base + per_core + per_bot + per_1k_users))
+
+    local ram_cap=$((ram_mb / 4))
+    [ "$ram_cap" -lt 50 ] && ram_cap=50
+
+    local result="$demand"
+    [ "$result" -gt "$ram_cap" ] && result="$ram_cap"
+    [ "$result" -lt 100 ] && result=100
+    [ "$result" -gt 1000 ] && result=1000
+
+    printf '%d' "$result"
+}
+
+write_mysql_conf() {
+    local max_conn="$1"
+    local dir="${PROJECT_DIR}/docker/mysql/conf.d"
+    local file="${dir}/faoxima.cnf"
+    mkdir -p "$dir" || return 1
+    cat > "$file" <<EOF
+[mysqld]
+max_connections = ${max_conn}
+wait_timeout = 180
+interactive_timeout = 180
+EOF
+}
+
+current_max_connections() {
+    local mysql_root_pass
+    mysql_root_pass=$(env_get MYSQL_ROOT_PASSWORD)
+    dc exec -T db mysql -uroot -p"${mysql_root_pass}" -N -e \
+        "SHOW VARIABLES LIKE 'max_connections';" 2>/dev/null | awk '{print $2}' | tr -d '\r'
+}
+
+set_max_connections() {
+    show_logo
+    ui_panel "SET MAX DATABASE CONNECTIONS" "$C_BOLD$C_GREEN" "$C_GREEN" \
+        "${C_WHITE}Manually set MySQL's max_connections limit.${C_RESET}" \
+        "${C_DIM}Use 'Optimize Database & Server' for an automatic, server-aware value instead.${C_RESET}"
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Faoxima Bot is not installed."
+        return 1
+    fi
+
+    ui_action "Reading the current value from MySQL..."
+    local current
+    current=$(current_max_connections)
+    [ -z "$current" ] && current="unknown"
+    ui_status_table "Current Setting" "$C_CYAN" \
+        "max_connections|${C_WHITE}${current}${C_RESET}"
+
+    local new_value
+    printf '\n  %s❯%s Enter the new max_connections value (100-1000): ' "$C_YELLOW" "$C_RESET"
+    read -r new_value
+    if ! [[ "$new_value" =~ ^[0-9]+$ ]] || [ "$new_value" -lt 100 ] || [ "$new_value" -gt 1000 ]; then
+        ui_err "Invalid value. Please enter a number between 100 and 1000."
+        return 1
+    fi
+
+    ui_action "Writing docker/mysql/conf.d/faoxima.cnf..."
+    if ! write_mysql_conf "$new_value"; then
+        ui_err "Failed to write the MySQL configuration file."
+        return 1
+    fi
+
+    ui_action "Applying the new setting (this may briefly restart the database)..."
+    if ! dc up -d --force-recreate db; then
+        ui_err "Failed to apply the MySQL configuration."
+        return 1
+    fi
+
+    ui_action "Waiting for MySQL to come back up..."
+    local wait_ok=0 i
+    for i in {1..30}; do
+        dc exec -T db mysqladmin ping -uroot -p"$(env_get MYSQL_ROOT_PASSWORD)" >/dev/null 2>&1 && { wait_ok=1; break; }
+        sleep 1
+    done
+    [ "$wait_ok" -eq 0 ] && ui_warn "MySQL did not report healthy within 30s — checking the applied value anyway."
+
+    local applied
+    applied=$(current_max_connections)
+    if [ "$applied" = "$new_value" ]; then
+        ui_ok "max_connections changed from ${current} to ${applied}."
+    else
+        ui_err "max_connections is still ${applied:-unknown} (expected ${new_value}). The container may not have restarted — check 'dc logs db'."
+    fi
+}
+
+redis_service_exists() {
+    grep -qE '^\s{2}redis:' "$COMPOSE_FILE" 2>/dev/null
+}
+
+write_redis_conf() {
+    local maxmemory_mb="$1"
+    local dir="${PROJECT_DIR}/docker/redis"
+    local file="${dir}/redis.conf"
+    mkdir -p "$dir" || return 1
+    cat > "$file" <<EOF
+# maxmemory-policy trade-offs for this deployment:
+#   allkeys-lru  (current) - may evict cron-lock/dedupe keys early under
+#                 memory pressure; the app already tolerates this safely
+#                 via its file-lock and MySQL fallbacks.
+#   volatile-lru - nearly identical here since every key already has a TTL.
+#   noeviction   - safest for lock/dedupe correctness, but Redis writes
+#                 (including cache writes) fail outright once full instead
+#                 of evicting; the app's existing fallback still applies.
+# Change this only as a deliberate operational decision.
+maxmemory ${maxmemory_mb}mb
+maxmemory-policy allkeys-lru
+save ""
+appendonly no
+EOF
+}
+
+set_config_php_var() {
+    local var="$1" value="$2"
+    local file="${PROJECT_DIR}/config.php"
+    [ -f "$file" ] || return 1
+    if grep -qE "^\\\$${var}[[:space:]]*=" "$file"; then
+        sed -i -E \
+            -e "s/^(\\\$${var}[[:space:]]*=[[:space:]]*)['\"][^'\"]*['\"](;.*)\$/\\1'${value}'\\2/" \
+            "$file"
+    fi
+}
+
+install_redis() {
+    show_logo
+    ui_panel "INSTALL / ENABLE REDIS" "$C_BOLD$C_GREEN" "$C_GREEN" \
+        "${C_WHITE}Adds a Redis cache service to the Docker stack and enables the${C_RESET}" \
+        "${C_DIM}phpredis extension in the app image. Redis here is cache-only —${C_RESET}" \
+        "${C_DIM}no persistence, safe to lose on restart.${C_RESET}"
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Faoxima Bot is not installed."
+        return 1
+    fi
+
+    if redis_service_exists; then
+        ui_ok "Redis service already present in docker-compose.yml."
+    else
+        ui_err "docker-compose.yml does not have a 'redis' service defined. Please update docker-compose.yml to include the redis service (see docs), then re-run this option."
+        return 1
+    fi
+
+    ui_action "Writing default docker/redis/redis.conf..."
+    if ! write_redis_conf 64; then
+        ui_err "Failed to write the Redis configuration file."
+        return 1
+    fi
+
+    ui_action "Rebuilding the app image with the redis extension enabled..."
+    if ! dc build app; then
+        ui_err "Failed to rebuild the app image with ext-redis."
+        return 1
+    fi
+
+    ui_action "Starting redis and refreshing the app container..."
+    if ! dc up -d --force-recreate redis app; then
+        ui_err "Failed to start the redis service."
+        return 1
+    fi
+
+    ui_action "Reloading nginx so it picks up the new app container IP..."
+    dc restart nginx || ui_err "nginx failed to restart — the site may 502 until you run 'docker compose restart nginx' manually."
+
+    ui_action "Waiting for Redis to come up..."
+    local wait_ok=0 i
+    for i in {1..30}; do
+        if dc exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+            wait_ok=1
+            break
+        fi
+        sleep 1
+    done
+    if [ "$wait_ok" -eq 0 ]; then
+        ui_err "Redis did not respond to PING within 30s — check 'dc logs redis'."
+        return 1
+    fi
+    ui_ok "Redis is up and responding to PING."
+
+    ui_action "Writing Redis connection settings to config.php..."
+    set_config_php_var "redis_host" "redis"
+    set_config_php_var "redis_port" "6379"
+    set_config_php_var "redis_password" ""
+    set_config_php_var "redis_database" "0"
+
+    ui_ok "Redis installation complete. Enable it via the bot's ⚙️ Feature Status ← 🧠 Redis Status menu."
+}
+
+optimize_database() {
+    show_logo
+    ui_panel "OPTIMIZE DATABASE & SERVER" "$C_BOLD$C_GREEN" "$C_GREEN" \
+        "${C_WHITE}Automatically tunes MySQL and PHP based on detected server load,${C_RESET}" \
+        "${C_DIM}CPU/RAM, number of bots, databases, and users. Aims to prevent${C_RESET}" \
+        "${C_DIM}'Too many connections' / PDO connection errors.${C_RESET}"
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Faoxima Bot is not installed."
+        return 1
+    fi
+
+    ui_action "Detecting server resources..."
+    local cores ram_mb
+    cores=$(detect_cpu_cores)
+    ram_mb=$(detect_ram_mb)
+    [ -z "$ram_mb" ] && ram_mb=1024
+
+    local names db_names db_users db_passes
+    collect_bot_db_creds
+    local bot_count="${#names[@]}"
+    local db_count=0 i
+    for ((i = 0; i < ${#db_names[@]}; i++)); do
+        [ -n "${db_names[$i]}" ] && db_count=$((db_count + 1))
+    done
+
+    ui_action "Counting user records across ${db_count} database(s)..."
+    local user_count
+    user_count=$(count_db_users_total)
+
+    ui_info "Detected: ${cores} CPU core(s), ${ram_mb}MB RAM, ${bot_count} bot(s), ${db_count} database(s), ${user_count} total user record(s)."
+
+    local current_conn
+    current_conn=$(current_max_connections)
+    [ -z "$current_conn" ] && current_conn="unknown"
+
+    local max_conn
+    max_conn=$(compute_max_connections "$ram_mb" "$cores" "$bot_count" "$user_count")
+    ui_info "Current MySQL max_connections = ${current_conn}."
+    ui_info "Computed MySQL max_connections = ${max_conn} (heuristic based on the above detection — not a guarantee for every traffic pattern)."
+
+    ui_action "Writing MySQL tuning to docker/mysql/conf.d/faoxima.cnf..."
+    if ! write_mysql_conf "$max_conn"; then
+        ui_err "Failed to write the MySQL configuration file."
+        return 1
+    fi
+
+    if ! grep -qF "./docker/mysql/conf.d:/etc/mysql/conf.d:ro" "$COMPOSE_FILE"; then
+        ui_warn "docker-compose.yml does not yet mount docker/mysql/conf.d — add '- ./docker/mysql/conf.d:/etc/mysql/conf.d:ro' under the db service's volumes, then re-run this option."
+        return 1
+    fi
+
+    ui_action "Applying MySQL configuration (this may briefly restart the database)..."
+    if ! dc up -d --force-recreate db; then
+        ui_err "Failed to apply the MySQL configuration."
+        return 1
+    fi
+
+    ui_action "Waiting for MySQL to come back up..."
+    local wait_ok=0 wi
+    for wi in {1..30}; do
+        dc exec -T db mysqladmin ping -uroot -p"$(env_get MYSQL_ROOT_PASSWORD)" >/dev/null 2>&1 && { wait_ok=1; break; }
+        sleep 1
+    done
+    [ "$wait_ok" -eq 0 ] && ui_warn "MySQL did not report healthy within 30s — checking the applied value anyway."
+
+    local applied_conn
+    applied_conn=$(current_max_connections)
+    if [ "$applied_conn" = "$max_conn" ]; then
+        ui_ok "MySQL max_connections changed from ${current_conn} to ${applied_conn}."
+    else
+        ui_err "max_connections is still ${applied_conn:-unknown} (expected ${max_conn}). The container may not have restarted — check 'dc logs db'."
+    fi
+
+    local mem_mb=$((ram_mb / (cores * 4)))
+    [ "$mem_mb" -lt 128 ] && mem_mb=128
+    [ "$mem_mb" -gt 512 ] && mem_mb=512
+
+    local ini="${PROJECT_DIR}/docker/php/conf.d/faoxima.ini"
+    if [ -f "$ini" ]; then
+        cp "$ini" "${ini}.bak" 2>/dev/null || true
+        if faoxima_set_ini "memory_limit" "${mem_mb}M" "$ini"; then
+            ui_action "Rebuilding the app image with the new PHP memory_limit..."
+            if dc build app && dc up -d app; then
+                ui_ok "PHP memory_limit set to ${mem_mb}M."
+                if [ -d "$BOTS_DIR" ]; then
+                    local d bn
+                    for d in "${BOTS_DIR}"/*/; do
+                        [ -d "$d" ] || continue
+                        bn=$(basename "$d")
+                        dc up -d --no-deps "app_${bn}" || ui_warn "Failed to refresh 'app_${bn}' with the new image."
+                    done
+                fi
+            else
+                ui_err "Failed to rebuild/restart the app image — MySQL tuning was still applied."
+            fi
+        else
+            ui_err "Failed to update memory_limit in ${ini}."
+        fi
+    fi
+
+    ui_warn "PHP-FPM pool tuning (pm.max_children) was intentionally skipped — no pool configuration file exists in this deployment yet."
+
+    if redis_service_exists; then
+        local redis_mem_mb=$((ram_mb / 8))
+        [ "$redis_mem_mb" -lt 32 ] && redis_mem_mb=32
+        [ "$redis_mem_mb" -gt 256 ] && redis_mem_mb=256
+
+        ui_action "Writing Redis tuning (maxmemory=${redis_mem_mb}mb) to docker/redis/redis.conf..."
+        if write_redis_conf "$redis_mem_mb"; then
+            ui_action "Applying Redis configuration (this may briefly restart Redis)..."
+            if dc up -d --force-recreate redis; then
+                local redis_wait_ok=0 ri
+                for ri in {1..30}; do
+                    if dc exec -T redis redis-cli ping 2>/dev/null | grep -q PONG; then
+                        redis_wait_ok=1
+                        break
+                    fi
+                    sleep 1
+                done
+                if [ "$redis_wait_ok" -eq 1 ]; then
+                    ui_ok "Redis maxmemory set to ${redis_mem_mb}mb (allkeys-lru eviction)."
+                else
+                    ui_warn "Redis did not report healthy within 30s after retuning — check 'dc logs redis'."
+                fi
+            else
+                ui_err "Failed to apply the Redis configuration."
+            fi
+        else
+            ui_err "Failed to write the Redis configuration file."
+        fi
+    else
+        ui_info "Redis is not installed — skipping Redis tuning. Use Database ← Install/Enable Redis to add it."
+    fi
+
+    ui_ok "Optimization finished. Verify cron/shell_exec still work with: dc exec app sh -c 'command -v cron && pgrep cron'"
+}
+
 renew_ssl() {
     show_logo
     ui_panel "RENEW SSL CERTIFICATES" "$C_BOLD$C_GREEN" "$C_GREEN" \
-        "${C_WHITE}Apache 2 will be stopped briefly while certbot performs renewal.${C_RESET}"
+        "${C_WHITE}Runs the certbot sidecar's renewal, then reloads nginx — no downtime.${C_RESET}" \
+        "${C_DIM}All bots (main + additional) share one certificate for this domain, so this covers all of them.${C_RESET}"
 
-    if ! command -v certbot &>/dev/null; then
-        ui_err "Certbot is not installed. Please install Certbot to proceed."
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Faoxima Bot is not installed."
         return 1
     fi
 
-    ui_action "Stopping Apache 2..."
-    systemctl stop apache2 || { ui_err "Failed to stop Apache 2. Exiting..."; return 1; }
-
-    if ! wait_for_certbot; then
-        ui_err "Certbot is busy. Please try again later."
-        systemctl start apache2 >/dev/null 2>&1
-        return 1
-    fi
-
-    if certbot renew; then
+    if dc run --rm --entrypoint certbot certbot renew; then
         ui_ok "SSL certificates successfully renewed."
-    else
-        ui_err "SSL renewal failed. Please check Certbot logs for more details."
-        systemctl start apache2
-        return 1
+        dc exec nginx nginx -s reload && ui_ok "nginx reloaded." || ui_warn "Failed to reload nginx — check manually."
+        rm -f "${CACHE_DIR}/cert_enddate" 2>/dev/null
+        return 0
     fi
 
-    ui_action "Restarting Apache 2..."
-    systemctl restart apache2 || ui_warn "Failed to restart Apache 2. Please check manually."
+    ui_warn "Renewal via the webroot method failed — port 80 may be blocked by something other than our own nginx. Retrying by stopping nginx and binding port 80 directly..."
+    dc stop nginx || { ui_err "Failed to stop nginx for the standalone renewal attempt."; return 1; }
+
+    if dc run --rm -p 80:80 --entrypoint certbot certbot renew --standalone; then
+        ui_ok "SSL certificates successfully renewed (standalone)."
+        dc start nginx && ui_ok "nginx restarted." || ui_err "Renewal succeeded but nginx failed to restart — start it manually with 'docker compose start nginx'."
+        rm -f "${CACHE_DIR}/cert_enddate" 2>/dev/null
+    else
+        ui_err "SSL renewal failed even in standalone mode. Please check 'docker compose logs certbot' for details."
+        dc start nginx || ui_err "nginx also failed to restart — start it manually with 'docker compose start nginx'."
+        return 1
+    fi
 }
 
-# ============================================================================
-#  CHANGE DOMAIN
-# ============================================================================
+ssl_auto_renew_check() {
+    if [ ! -f "$ENV_FILE" ] || [ ! -f "$COMPOSE_FILE" ]; then
+        exit 0
+    fi
+
+    local domain
+    domain=$(env_get DOMAIN)
+    [ -z "$domain" ] && exit 0
+
+    local cert_enddate
+    cert_enddate=$(get_cert_enddate "$domain")
+    [ -z "$cert_enddate" ] && exit 0
+
+    local expiry_ts now_ts days_left
+    expiry_ts=$(date -d "$cert_enddate" +%s 2>/dev/null || echo 0)
+    [ "$expiry_ts" -le 0 ] && exit 0
+    now_ts=$(date +%s)
+    days_left=$(( (expiry_ts - now_ts) / 86400 ))
+
+    if [ "$days_left" -lt 1 ]; then
+        renew_ssl
+    fi
+}
+
+enable_ssl_auto_renew() {
+    show_logo
+    ui_panel "ENABLE SSL AUTO-RENEWAL" "$C_BOLD$C_GREEN" "$C_GREEN" \
+        "${C_WHITE}Installs a daily cron job that checks every domain's certificate.${C_RESET}" \
+        "${C_DIM}If less than 1 day of validity remains, renewal runs automatically.${C_RESET}"
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Faoxima Bot is not installed."
+        return 1
+    fi
+
+    local already_enabled
+    already_enabled=$(env_get SSL_AUTO_RENEW)
+    if [ "$already_enabled" = "1" ]; then
+        ui_info "Automatic SSL renewal is already enabled."
+        return 0
+    fi
+
+    local cron_line="0 3 * * * ${INSTALL_SCRIPT_LINK} --ssl-auto-renew-check >/dev/null 2>&1"
+    if ! (crontab -l 2>/dev/null | grep -qF "$cron_line"); then
+        (crontab -l 2>/dev/null; printf '%s\n' "$cron_line") | crontab - || {
+            ui_err "Failed to install the auto-renewal cron job."
+            return 1
+        }
+    fi
+
+    env_set "SSL_AUTO_RENEW" "1"
+    ui_ok "Automatic SSL renewal enabled — certificates will be checked daily and renewed automatically when less than 1 day remains."
+}
+
 change_domain() {
     show_logo
     ui_panel "CHANGE DOMAIN" "$C_BOLD$C_BLUE" "$C_BLUE" \
-        "${C_WHITE}Migrate the bot to a new domain (issues a new SSL cert and updates the webhook).${C_RESET}"
+        "${C_WHITE}Migrate the main bot and ALL additional bots to a new domain.${C_RESET}" \
+        "${C_DIM}Issues a new shared SSL cert and updates the webhook for every bot.${C_RESET}"
 
-    local new_domain current_domainhosts sanitized_value path_segment
-    local full_domain_path="" WEBHOOK_URL="" updated_domainhosts webhook_response NEW_SECRET BOT_TOKEN
+    if [ ! -f "$ENV_FILE" ]; then
+        ui_err "Faoxima Bot is not installed (${ENV_FILE} not found)."
+        return 1
+    fi
+
+    local new_domain
     while [[ ! "$new_domain" =~ ^[a-zA-Z0-9.-]+$ ]]; do
         printf '  %s❯%s Enter new domain: ' "$C_YELLOW" "$C_RESET"
         read -r new_domain
         [[ ! "$new_domain" =~ ^[a-zA-Z0-9.-]+$ ]] && ui_err "Invalid domain format"
     done
 
-    log_action "Disabling Apache 2 service before domain change..."
-    systemctl disable apache2 >/dev/null 2>&1 || true
+    local old_domain
+    old_domain=$(env_get DOMAIN)
+    env_set "DOMAIN" "$new_domain"
 
-    if ! configure_apache_vhost "$new_domain"; then
-        log_error "Unable to prepare Apache 2 virtual host for ${new_domain}."
-        restore_apache_service
+    if [ -f "${PROJECT_DIR}/config.php" ]; then
+        sed -i -E \
+            -e 's/^(\$domainhosts[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"'${new_domain}'"'\2/' \
+            "${PROJECT_DIR}/config.php" || ui_warn "Failed to update \$domainhosts in ${PROJECT_DIR}/config.php."
+    fi
+
+    ui_action "Generating a temporary self-signed certificate for ${new_domain} so nginx can reload..."
+    ensure_dummy_cert "$new_domain" || ui_warn "Could not generate a temporary certificate — nginx reload below may fail until SSL is issued."
+
+    ui_action "Rendering the nginx vhost for ${new_domain}..."
+    render_vhost "$new_domain" "${NGINX_CONF_DIR}/00-main.conf" || {
+        ui_err "Failed to render the nginx vhost for ${new_domain}."
+        env_set "DOMAIN" "$old_domain"
+        return 1
+    }
+
+    ui_action "Reloading nginx with the new domain..."
+    local nginx_test_output
+    nginx_test_output=$(dc exec -T nginx nginx -t 2>&1)
+    if [ $? -ne 0 ]; then
+        ui_err "The rendered nginx config for ${new_domain} is invalid — nginx will keep serving the OLD domain until this is fixed."
+        printf '%s\n' "$nginx_test_output"
+        env_set "DOMAIN" "$old_domain"
+        return 1
+    fi
+    dc exec nginx nginx -s reload || { log_error "Failed to reload nginx for ${new_domain}."; return 1; }
+
+    discard_dummy_cert "$new_domain"
+
+    ui_action "Requesting SSL certificate for ${new_domain}..."
+    if ! issue_certificate "$new_domain"; then
+        log_error "SSL configuration failed for ${new_domain}."
+        diagnose_ssl_failure "$new_domain"
+        env_set "DOMAIN" "$old_domain"
+        render_vhost "$old_domain" "${NGINX_CONF_DIR}/00-main.conf" 2>/dev/null
+        dc exec nginx nginx -s reload 2>/dev/null || true
         return 1
     fi
 
-    log_action "Stopping Apache 2 to configure SSL..."
-    if ! systemctl stop apache2; then
-        log_error "Failed to stop Apache 2 while preparing SSL for ${new_domain}."
-        restore_apache_service
-        return 1
-    fi
+    local fresh_cert_enddate
+    fresh_cert_enddate=$(get_cert_enddate "$new_domain")
+    [ -n "$fresh_cert_enddate" ] && cache_set "cert_enddate" "$fresh_cert_enddate"
 
-    log_action "Configuring SSL certificate for ${new_domain}..."
-    if ! wait_for_certbot; then
-        log_error "Certbot is already running. Please try again after the current process completes."
-        restore_apache_service
-        return 1
-    fi
-    if ! certbot --apache --redirect --agree-tos --preferred-challenges http \
-            --non-interactive --force-renewal --cert-name "$new_domain" -d "$new_domain"; then
-        log_error "SSL configuration failed for ${new_domain}, rolling back certificate changes."
-        if wait_for_certbot; then
-            certbot delete --cert-name "$new_domain" 2>/dev/null
-        fi
-        restore_apache_service
-        return 1
-    fi
-
-    local CONFIG_FILE="${BOT_DIR}/config.php"
-    if [ -f "$CONFIG_FILE" ]; then
-        cp "$CONFIG_FILE" "${CONFIG_FILE}.$(date +%s).bak"
-
-        current_domainhosts=$(awk -F"'" '/\$domainhosts/{print $2}' "$CONFIG_FILE" | head -1)
-        sanitized_value=${current_domainhosts#http://}
-        sanitized_value=${sanitized_value#https://}
-        sanitized_value=${sanitized_value#/}
-        path_segment=""
-        if [[ "$sanitized_value" == */* ]]; then
-            path_segment=${sanitized_value#*/}
-            path_segment=${path_segment%/}
-        fi
-        if [ -z "$path_segment" ] && [ -d "$BOT_DIR" ]; then
-            path_segment="faoxima"
-            log_info "No path segment detected — using default '/faoxima'."
-        fi
-        if [ -n "$path_segment" ]; then
-            full_domain_path="${new_domain}/${path_segment}"
-        else
-            full_domain_path="${new_domain}"
-        fi
-        sed -i "s|\$domainhosts = '.*';|\$domainhosts = '${full_domain_path}';|" "$CONFIG_FILE"
-
-        NEW_SECRET=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
-        sed -i "s|\$secrettoken = '.*';|\$secrettoken = '${NEW_SECRET}';|" "$CONFIG_FILE"
-
-        BOT_TOKEN=$(awk -F"'" '/\$APIKEY/{print $2}' "$CONFIG_FILE")
-        updated_domainhosts=$(awk -F"'" '/\$domainhosts/{print $2}' "$CONFIG_FILE" | head -1)
-        updated_domainhosts=${updated_domainhosts%/}
-        if [[ "$updated_domainhosts" =~ ^https?:// ]]; then
-            WEBHOOK_URL="${updated_domainhosts}/index.php"
-        else
-            WEBHOOK_URL="https://${updated_domainhosts}/index.php"
-        fi
-
-        webhook_response=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
-            -F "url=${WEBHOOK_URL}" -F "secret_token=${NEW_SECRET}")
-        if echo "$webhook_response" | grep -q '"ok":true'; then
-            log_info "Telegram webhook updated successfully for ${new_domain}."
-        else
-            log_warn "Webhook update returned a warning: ${webhook_response}"
-        fi
+    local bot_token webhook_url webhook_response
+    bot_token=$(env_get TELEGRAM_BOT_TOKEN)
+    webhook_url="https://${new_domain}/faoxima/index.php"
+    webhook_response=$(curl -s -X POST "https://api.telegram.org/bot${bot_token}/setWebhook" -F "url=${webhook_url}")
+    if echo "$webhook_response" | grep -q '"ok":true'; then
+        log_info "Telegram webhook updated successfully for ${new_domain}."
     else
-        log_error "Config file missing at ${CONFIG_FILE}; aborting domain change."
-        restore_apache_service
-        return 1
+        log_warn "Webhook update returned a warning: ${webhook_response}"
     fi
 
     local attempt http_status=""
     for attempt in {1..5}; do
-        http_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$WEBHOOK_URL")
+        http_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$webhook_url")
         [[ "$http_status" =~ ^(200|301|302)$ ]] && break
-        log_warn "Endpoint ${WEBHOOK_URL} not ready yet (HTTP ${http_status:-000}). Retrying in 3 seconds..."
+        log_warn "Endpoint ${webhook_url} not ready yet (HTTP ${http_status:-000}). Retrying in 3 seconds..."
         sleep 3
     done
 
     if [[ "$http_status" =~ ^(200|301|302)$ ]]; then
-        log_info "Domain successfully migrated to ${full_domain_path}."
-    else
-        log_warn "Final verification failed for ${WEBHOOK_URL} (HTTP ${http_status:-000})."
-    fi
-    restore_apache_service
-}
+        log_info "Domain successfully migrated to ${new_domain}."
+        ui_ok "Domain updated to ${new_domain}."
 
-# ============================================================================
-#  REMOVE DOMAIN
-# ============================================================================
-remove_domain() {
-    show_logo
-    ui_panel "REMOVE DOMAIN" "$C_BOLD$C_RED" "$C_RED" \
-        "${C_WHITE}Disable an Apache 2 virtual host and optionally delete its SSL certificate.${C_RESET}"
+        if [ -d "$BOTS_DIR" ]; then
+            local bot_ok=() bot_failed=()
+            local d name bot_token_extra bot_webhook_url bot_webhook_response bot_status
+            for d in "${BOTS_DIR}"/*/; do
+                [ -f "${d}.env" ] || continue
+                name=$(basename "$d")
+                if ! sed -i "s|^DOMAIN=.*|DOMAIN=${new_domain}|" "${d}.env"; then
+                    ui_warn "Failed to update DOMAIN in ${d}.env for '${name}'."
+                    bot_failed+=("$name")
+                    continue
+                fi
+                if [ -f "${d}config.php" ]; then
+                    sed -i -E \
+                        -e 's/^(\$domainhosts[[:space:]]*=[[:space:]]*)['"'"'"][^'"'"'"]*['"'"'"](;.*)$/\1'"'${new_domain}'"'\2/' \
+                        "${d}config.php" || ui_warn "Failed to update \$domainhosts in ${d}config.php for '${name}'."
+                fi
+                bot_token_extra=$(grep -E '^TELEGRAM_BOT_TOKEN=' "${d}.env" | tail -1 | cut -d'=' -f2-)
+                bot_webhook_url="https://${new_domain}/${name}/index.php"
+                if [ -n "$bot_token_extra" ]; then
+                    bot_webhook_response=$(curl -s -F "url=${bot_webhook_url}" "https://api.telegram.org/bot${bot_token_extra}/setWebhook")
+                    if ! echo "$bot_webhook_response" | grep -q '"ok":true'; then
+                        ui_warn "Failed to update webhook for additional bot '${name}': ${bot_webhook_response}"
+                        bot_failed+=("$name")
+                        continue
+                    fi
+                fi
+                bot_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$bot_webhook_url")
+                if [[ "$bot_status" =~ ^(200|301|302)$ ]]; then
+                    bot_ok+=("$name")
+                else
+                    ui_warn "Additional bot '${name}' did not answer at ${bot_webhook_url} (HTTP ${bot_status:-000})."
+                    bot_failed+=("$name")
+                fi
+            done
 
-    local conf_dir="/etc/apache2/sites-available"
-    local domain_list=()
-    local domain selection
-    local -a conf_files=()
-
-    if [ ! -d "$conf_dir" ]; then
-        ui_err "Apache 2 configuration directory not found."
-        printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-        show_menu
-        return 1
-    fi
-
-    mapfile -t conf_files < <(find "$conf_dir" -maxdepth 1 -type f -name '*.conf' -printf '%f\n' 2>/dev/null | sort)
-    local conf
-    for conf in "${conf_files[@]}"; do
-        [ -z "$conf" ] && continue
-        domain="${conf%.conf}"
-        case "$domain" in
-            000-default|default-ssl|000-default-le-ssl) continue ;;
-        esac
-        domain_list+=("$domain")
-    done
-
-    if [ ${#domain_list[@]} -eq 0 ]; then
-        ui_info "No custom domains found to remove."
-        printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-        show_menu
-        return 0
-    fi
-
-    printf '\n'
-    ui_info "Configured domains:"
-    local idx
-    for idx in "${!domain_list[@]}"; do
-        printf '  %s%d)%s %s\n' "$C_CYAN" "$((idx + 1))" "$C_RESET" "${domain_list[$idx]}"
-    done
-
-    printf '\n  %s❯%s Select the domain you want to remove [1-%d]: ' \
-        "$C_YELLOW" "$C_RESET" "${#domain_list[@]}"
-    read -r selection
-    if ! [[ "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt "${#domain_list[@]}" ]; then
-        ui_err "Invalid selection."
-        sleep 2
-        show_menu
-        return 1
-    fi
-    domain="${domain_list[$((selection - 1))]}"
-
-    local confirm
-    printf '  %s❯%s Are you sure you want to remove %s? (y/n): ' "$C_YELLOW" "$C_RESET" "$domain"
-    read -r confirm
-    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
-        ui_info "Operation cancelled."
-        sleep 1
-        show_menu
-        return 0
-    fi
-
-    mapfile -t conf_files < <(find "$conf_dir" -maxdepth 1 -type f -name "${domain}*.conf" -printf '%f\n' 2>/dev/null)
-    [ ${#conf_files[@]} -eq 0 ] && conf_files=("${domain}.conf")
-
-    for conf in "${conf_files[@]}"; do
-        [ -z "$conf" ] && continue
-        a2dissite "$conf" >/dev/null 2>&1
-        rm -f "${conf_dir}/${conf}" "/etc/apache2/sites-enabled/${conf}"
-    done
-
-    if ! apache2ctl configtest >/dev/null 2>&1; then
-        ui_err "Apache 2 configuration test failed after removing ${domain}. Please inspect manually."
-        show_menu
-        return 1
-    fi
-
-    if ! systemctl reload apache2 >/dev/null 2>&1; then
-        ui_warn "Reload failed. Attempting restart..."
-        systemctl restart apache2 >/dev/null 2>&1 || ui_err "Apache 2 restart failed."
-    fi
-
-    if [ -d "/etc/letsencrypt/live/${domain}" ]; then
-        local delete_cert
-        printf '  %s❯%s Delete existing SSL certificate for %s? (y/n): ' "$C_YELLOW" "$C_RESET" "$domain"
-        read -r delete_cert
-        if [[ "$delete_cert" =~ ^[Yy]$ ]]; then
-            if wait_for_certbot; then
-                certbot delete --cert-name "$domain" 2>/dev/null \
-                    || ui_warn "Failed to delete certificate for ${domain}."
-            else
-                ui_warn "Certbot is busy. Skipping certificate deletion for ${domain}."
+            if [ "${#bot_ok[@]}" -gt 0 ]; then
+                ui_ok "Additional bots verified working on ${new_domain}: ${bot_ok[*]}"
+            fi
+            if [ "${#bot_failed[@]}" -gt 0 ]; then
+                ui_err "Additional bots that failed verification: ${bot_failed[*]} — check them individually."
             fi
         fi
-    fi
 
-    ui_ok "Domain ${domain} removed."
-    printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-    show_menu
+        if [ -n "$old_domain" ] && [ "$old_domain" != "$new_domain" ]; then
+            local delete_old_cert
+            printf '  %s❯%s Delete old SSL certificate for %s? (y/n): ' "$C_YELLOW" "$C_RESET" "$old_domain"
+            read -r delete_old_cert
+            if [[ "$delete_old_cert" =~ ^[Yy]$ ]]; then
+                dc run --rm --entrypoint certbot certbot delete --cert-name "$old_domain" 2>/dev/null \
+                    || ui_warn "Failed to delete certificate for ${old_domain}."
+            fi
+        fi
+    else
+        log_warn "Final verification failed for ${webhook_url} (HTTP ${http_status:-000})."
+        ui_err "Domain changed in .env, but the endpoint did not answer yet — check DNS/propagation."
+        return 1
+    fi
 }
 
-# ============================================================================
-#  DELETE CRON JOBS (www-data)
-# ============================================================================
-delete_cron_jobs() {
-    local CRON_FILE="/var/spool/cron/crontabs/www-data"
+container_has_error_logs() {
+    local service="$1"
+    dc logs --tail=200 "$service" 2>&1 \
+        | grep -viE '"ok":(true|false)' \
+        | grep -vE '"[A-Z]+ [^"]*" [0-9]{3}$' \
+        | grep -qiE 'error|exception|fatal|failed|warn|emerg|crit|panic'
+}
+
+view_error_logs() {
+    local page=0
+    local page_size=20
+    local -A hidden_from_view=()
+
     while true; do
-        local delete_all selection tmp
-        clear
         show_logo
-        ui_panel "DELETE CRON JOBS" "$C_BOLD$C_RED" "$C_RED" \
-            "${C_WHITE}Manage scheduled tasks for the www-data user.${C_RESET}"
+        ui_panel "VIEW ERROR LOGS" "$C_BOLD$C_GREEN" "$C_GREEN" \
+            "${C_WHITE}Pick a log to view — nothing is shown automatically.${C_RESET}" \
+            "${C_DIM}Scans ${PROJECT_DIR} and ${BOTS_DIR} for app-level log files, plus bot containers that have logged an error.${C_RESET}"
 
-        if [ ! -f "$CRON_FILE" ]; then
-            ui_err "Cron file not found at ${CRON_FILE}."
-            printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-            show_menu
-            return 1
+        local bot_names=() d
+        if [ -d "$BOTS_DIR" ]; then
+            for d in "${BOTS_DIR}"/*/; do
+                [ -d "$d" ] || continue
+                bot_names+=("$(basename "$d")")
+            done
+        fi
+        local bot_total="${#bot_names[@]}"
+        local bot_page_size=18
+        local bot_last_page=$(( (bot_total - 1) / bot_page_size ))
+        [ "$bot_last_page" -lt 0 ] && bot_last_page=0
+        [ "$page" -gt "$bot_last_page" ] && page="$bot_last_page"
+
+        local KINDS=() PATHS=()
+        if [ -f "$COMPOSE_FILE" ]; then
+            [ -z "${hidden_from_view[container|nginx]:-}" ] && container_has_error_logs nginx && { KINDS+=("container"); PATHS+=("nginx"); }
+            [ -z "${hidden_from_view[container|app]:-}" ] && container_has_error_logs app && { KINDS+=("container"); PATHS+=("app"); }
+        fi
+        if [ "$bot_total" -gt 0 ]; then
+            local bstart=$((page * bot_page_size))
+            local bend=$((bstart + bot_page_size))
+            [ "$bend" -gt "$bot_total" ] && bend="$bot_total"
+            local bi name
+            for ((bi = bstart; bi < bend; bi++)); do
+                name="${bot_names[$bi]}"
+                [ -z "${hidden_from_view[container|app_${name}]:-}" ] && container_has_error_logs "app_${name}" && { KINDS+=("container"); PATHS+=("app_${name}"); }
+            done
         fi
 
-        if ! cat "$CRON_FILE" >/dev/null 2>&1; then
-            ui_err "Cannot read ${CRON_FILE} (permission denied)."
-            printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-            show_menu
-            return 1
-        fi
-
-        local CRON_LINES=()
-        mapfile -t CRON_LINES < <(awk '
-            /^[[:space:]]*#/ {next}
-            /^[[:space:]]*$/ {next}
-            {print}
-        ' "$CRON_FILE")
-
-        if [ "${#CRON_LINES[@]}" -eq 0 ]; then
-            ui_info "No cron entries found for www-data."
-            printf '\n  %s❯%s Press Enter to return to main menu... ' "$C_YELLOW" "$C_RESET"; read -r
-            show_menu
-            return 0
-        fi
-
-        printf '\n  %sExisting cron entries:%s\n' "$C_CYAN" "$C_RESET"
-        local idx
-        for idx in "${!CRON_LINES[@]}"; do
-            printf '  %s%d)%s %s\n' "$C_CYAN" "$((idx + 1))" "$C_RESET" "${CRON_LINES[$idx]}"
+        local LOGS=()
+        mapfile -t LOGS < <(find "$PROJECT_DIR" "$BOTS_DIR" -type f \( -name 'error_log' -o -name '*.log' \) 2>/dev/null | sort)
+        local f
+        for f in "${LOGS[@]}"; do
+            [ -n "${hidden_from_view[file|${f}]:-}" ] && continue
+            KINDS+=("file")
+            PATHS+=("$f")
         done
 
-        printf '\n  %s❯%s Delete all detected cron jobs? (y/n): ' "$C_YELLOW" "$C_RESET"
-        read -r delete_all
-        if [[ "$delete_all" =~ ^[Yy]$ ]]; then
-            tmp=$(mktemp)
-            if ! awk '
-                /^[[:space:]]*#/ {print; next}
-                /^[[:space:]]*$/ {print; next}
-            ' "$CRON_FILE" > "$tmp"; then
-                ui_err "Failed to clean cron file."
-                rm -f "$tmp"
-                printf '\n  %s❯%s Press Enter to return... ' "$C_YELLOW" "$C_RESET"; read -r
-                show_menu
-                return 1
+        if [ "${#PATHS[@]}" -eq 0 ]; then
+            if [ "${#hidden_from_view[@]}" -gt 0 ]; then
+                ui_ok "No logs to show (some entries are hidden from this session's view)."
+            elif [ "$bot_total" -eq 0 ]; then
+                ui_ok "No logs found (no on-disk log files, and no compose stack installed)."
+            else
+                ui_ok "No logs found (no on-disk log files, and no bot containers currently have errors)."
             fi
-            if ! mv "$tmp" "$CRON_FILE"; then
-                ui_err "Failed to overwrite cron file."
-                rm -f "$tmp"
-                printf '\n  %s❯%s Press Enter to return... ' "$C_YELLOW" "$C_RESET"; read -r
-                show_menu
-                return 1
-            fi
-            chown www-data:crontab "$CRON_FILE" 2>/dev/null || true
-            chmod 600 "$CRON_FILE" 2>/dev/null || true
-            ui_ok "All detected cron jobs were deleted."
-            sleep 1.5
-            show_menu
             return 0
         fi
 
-        printf '  %s0)%s Exit to Main Menu\n' "$C_RED" "$C_RESET"
-        printf '\n  %s❯%s Select a cron entry to delete [0-%d]: ' \
-            "$C_YELLOW" "$C_RESET" "${#CRON_LINES[@]}"
-        read -r selection
-        if [[ "$selection" == "0" ]]; then
-            ui_info "Returning to main menu..."
-            sleep 1
-            show_menu
-            return 0
+        if [ "$bot_last_page" -gt 0 ]; then
+            ui_info "Checking additional bots' containers page $((page + 1)) of $((bot_last_page + 1)) (nginx/app + on-disk logs are always shown in full)."
         fi
-        if ! [[ "$selection" =~ ^[0-9]+$ ]] || [ "$selection" -lt 1 ] || [ "$selection" -gt "${#CRON_LINES[@]}" ]; then
+
+        ui_ok "Found ${#PATHS[@]} log source(s) on this view:"
+        printf '\n'
+        local idx size
+        for ((idx = 0; idx < ${#PATHS[@]}; idx++)); do
+            if [ "${KINDS[$idx]}" = "container" ]; then
+                printf '  %s%2d)%s [container] %s\n' "$C_YELLOW" "$((idx + 1))" "$C_RESET" "${PATHS[$idx]}"
+            else
+                size=$(du -h "${PATHS[$idx]}" 2>/dev/null | awk '{print $1}')
+                printf '  %s%2d)%s %s  %s(%s)%s\n' "$C_YELLOW" "$((idx + 1))" "$C_RESET" "${PATHS[$idx]}" "$C_DIM" "${size:-?}" "$C_RESET"
+            fi
+        done
+        local has_deletable_file=0 ci
+        for ((ci = 0; ci < ${#KINDS[@]}; ci++)); do
+            [ "${KINDS[$ci]}" = "file" ] && { has_deletable_file=1; break; }
+        done
+
+        local delete_option=0
+        local max_option="${#PATHS[@]}"
+        if [ "$has_deletable_file" -eq 1 ]; then
+            delete_option=$(( ${#PATHS[@]} + 1 ))
+            max_option="$delete_option"
+            printf '  %s%2d)%s %sDelete a log%s\n' "$C_RED" "$delete_option" "$C_RESET" "$C_RED" "$C_RESET"
+        fi
+
+        if [ "$bot_last_page" -gt 0 ]; then
+            printf '\n  %s(bot container page %d of %d)%s\n' "$C_DIM" "$((page + 1))" "$((bot_last_page + 1))" "$C_RESET"
+        fi
+        local nav_hint=""
+        [ "$bot_last_page" -gt 0 ] && [ "$page" -lt "$bot_last_page" ] && nav_hint="${nav_hint}n) next bot page  "
+        [ "$bot_last_page" -gt 0 ] && [ "$page" -gt 0 ] && nav_hint="${nav_hint}p) previous bot page  "
+
+        printf '\n  %s❯%s Select an option [1-%d], %sor Enter to return to main menu: ' \
+            "$C_YELLOW" "$C_RESET" "$max_option" "$nav_hint"
+        local choice; read -r choice
+        [ -z "$choice" ] && return 0
+
+        case "$choice" in
+            n|N)
+                [ "$page" -lt "$bot_last_page" ] && page=$((page + 1))
+                continue
+                ;;
+            p|P)
+                [ "$page" -gt 0 ] && page=$((page - 1))
+                continue
+                ;;
+        esac
+
+        if [[ ! "$choice" =~ ^[0-9]+$ ]] || [ "$choice" -lt 1 ] || [ "$choice" -gt "$max_option" ]; then
             ui_err "Invalid selection."
-            sleep 1.5
+            printf '\n  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"; read -r
             continue
         fi
 
-        tmp=$(mktemp)
-        if ! awk -v target="$selection" 'BEGIN{idx=0}
-        {
-            line=$0
-            if (line ~ /^[[:space:]]*$/) {print; next}
-            if (line ~ /^[[:space:]]*#/) {print; next}
-            idx++
-            if (idx==target) next
-            print
-        }' "$CRON_FILE" > "$tmp"; then
-            ui_err "Failed to update cron file."
-            rm -f "$tmp"
-            printf '\n  %s❯%s Press Enter to return... ' "$C_YELLOW" "$C_RESET"; read -r
-            show_menu
-            return 1
+        if [ "$delete_option" -gt 0 ] && [ "$choice" -eq "$delete_option" ]; then
+            delete_error_logs KINDS PATHS
+            printf '\n  %s❯%s Press Enter to return to the log list... ' "$C_YELLOW" "$C_RESET"; read -r
+            continue
         fi
-        if ! mv "$tmp" "$CRON_FILE"; then
-            ui_err "Failed to overwrite cron file."
-            rm -f "$tmp"
-            printf '\n  %s❯%s Press Enter to return... ' "$C_YELLOW" "$C_RESET"; read -r
-            show_menu
-            return 1
+
+        local sel=$((choice - 1))
+        local sel_kind="${KINDS[$sel]}" sel_path="${PATHS[$sel]}"
+        ui_rule
+        if [ "$sel_kind" = "container" ]; then
+            printf '  %s● %s (last 200 lines)%s\n' "$C_CYAN" "$sel_path" "$C_RESET"
+            ui_rule
+            dc logs --tail=200 "$sel_path" 2>/dev/null || ui_err "Could not read ${sel_path} logs."
+        else
+            printf '  %s● %s%s  %s(last 200 lines)%s\n' "$C_CYAN" "$sel_path" "$C_RESET" "$C_DIM" "$C_RESET"
+            ui_rule
+            tail -n 200 "$sel_path" 2>/dev/null || ui_err "Could not read ${sel_path}."
         fi
-        chown www-data:crontab "$CRON_FILE" 2>/dev/null || true
-        chmod 600 "$CRON_FILE" 2>/dev/null || true
-        ui_ok "Cron entry #${selection} deleted."
-        sleep 1.5
+
+        printf '\n  %s❯%s 🗑️  Hide this entry from the current view? (y/N): ' "$C_YELLOW" "$C_RESET"
+        local hide_confirm; read -r hide_confirm
+        if [[ "${hide_confirm,,}" == "y" ]]; then
+            hidden_from_view["${sel_kind}|${sel_path}"]=1
+            ui_ok "The log entry was removed from the current view. The original log source remains unchanged."
+        fi
+
+        printf '\n  %s❯%s Press Enter to return to the log list... ' "$C_YELLOW" "$C_RESET"; read -r
     done
 }
 
-# ============================================================================
-#  ADDITIONAL BOT MANAGEMENT
-# ----------------------------------------------------------------------------
-#  These commands operate on bots installed under /var/www/html/<botname>/
-#  (i.e. *separate* from the main /var/www/html/faoxima bot). They re-use the
-#  root credentials saved by install_bot under ${CRED_FILE}.
-# ============================================================================
-manage_additional_bots() {
+delete_error_logs() {
+    local -n kinds_ref="$1" paths_ref="$2"
+    local file_idx=() i
+    for ((i = 0; i < ${#paths_ref[@]}; i++)); do
+        [ "${kinds_ref[$i]}" = "file" ] && file_idx+=("$i")
+    done
+
+    if [ "${#file_idx[@]}" -eq 0 ]; then
+        ui_warn "No on-disk log files to delete (container logs can't be deleted, only viewed)."
+        return 0
+    fi
+
+    local total="${#file_idx[@]}"
+    local page_size=20
+    local page=0
+    local last_page=$(( (total - 1) / page_size ))
+
+    while true; do
+        local start=$((page * page_size))
+        local end=$((start + page_size))
+        [ "$end" -gt "$total" ] && end="$total"
+
+        printf '\n'
+        local j i
+        for ((j = start; j < end; j++)); do
+            i="${file_idx[$j]}"
+            printf '  %s%2d)%s %s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${paths_ref[$i]}"
+        done
+
+        local nav_hint=""
+        if [ "$last_page" -gt 0 ]; then
+            printf '\n  %s(page %d of %d)%s\n' "$C_DIM" "$((page + 1))" "$((last_page + 1))" "$C_RESET"
+            [ "$page" -lt "$last_page" ] && nav_hint="${nav_hint}n) next page  "
+            [ "$page" -gt 0 ] && nav_hint="${nav_hint}p) previous page  "
+        fi
+
+        printf '\n  %s❯%s Which number to delete (%sEnter to cancel): ' "$C_YELLOW" "$C_RESET" "$nav_hint"
+        local pick; read -r pick
+        [ -z "$pick" ] && { ui_info "Cancelled."; return 0; }
+
+        case "$pick" in
+            n|N)
+                [ "$page" -lt "$last_page" ] && page=$((page + 1))
+                continue
+                ;;
+            p|P)
+                [ "$page" -gt 0 ] && page=$((page - 1))
+                continue
+                ;;
+        esac
+
+        if [[ ! "$pick" =~ ^[0-9]+$ ]]; then
+            ui_err "Invalid selection."
+            return 1
+        fi
+        local sel=$((pick - 1))
+        if [ "$sel" -lt 0 ] || [ "$sel" -ge "${#paths_ref[@]}" ] || [ "${kinds_ref[$sel]}" != "file" ]; then
+            ui_err "Invalid selection."
+            return 1
+        fi
+
+        printf '  %s❯%s Delete %s? (y/N): ' "$C_YELLOW" "$C_RESET" "${paths_ref[$sel]}"
+        local confirm; read -r confirm
+        if [[ "${confirm,,}" == "y" ]]; then
+            rm -f "${paths_ref[$sel]}" 2>/dev/null && ui_ok "Deleted ${paths_ref[$sel]}" || ui_warn "Could not delete ${paths_ref[$sel]}."
+        fi
+        return 0
+    done
+}
+
+faoxima_set_ini() {
+    local key="$1" val="$2" file="$3"
+    if grep -qE "^[[:space:]]*;?[[:space:]]*${key}[[:space:]]*=" "$file"; then
+        sed -i -E "s|^[[:space:]]*;?[[:space:]]*${key}[[:space:]]*=.*|${key} = ${val}|" "$file" || return 1
+    else
+        printf '%s = %s\n' "$key" "$val" >> "$file" || return 1
+    fi
+    grep -qE "^${key}[[:space:]]*=[[:space:]]*${val}$" "$file"
+}
+
+read_ini_value() {
+    local key="$1" file="$2"
+    grep -E "^${key}[[:space:]]*=" "$file" 2>/dev/null | tail -1 | sed -E "s/^${key}[[:space:]]*=[[:space:]]*//"
+}
+
+increase_upload_limit() {
     show_logo
-    if [ ! -d "$BOT_DIR" ]; then
-        ui_err "The main Faoxima Bot is not installed (${BOT_DIR} not found)."
-        ui_warn "You are not allowed to use this section without the main bot installed. Exiting..."
-        sleep 2
-        exit 1
+    ui_panel "INCREASE UPLOAD LIMIT" "$C_BOLD$C_GREEN" "$C_GREEN" \
+        "${C_WHITE}Raises upload size limits for both the bot itself and phpMyAdmin.${C_RESET}" \
+        "${C_DIM}Requires rebuilding the app image and recreating phpMyAdmin — brief restart.${C_RESET}"
+
+    local ini="${PROJECT_DIR}/docker/php/conf.d/faoxima.ini"
+    local current_bot_limit="unknown"
+    [ -f "$ini" ] && current_bot_limit=$(read_ini_value "upload_max_filesize" "$ini")
+    local current_pma_limit
+    current_pma_limit=$(env_get PMA_UPLOAD_LIMIT)
+    [ -z "$current_pma_limit" ] && current_pma_limit="50M"
+
+    ui_status_table "Current Upload Limits" "$C_CYAN" \
+        "Bot (Telegram uploads)|${C_WHITE}${current_bot_limit}${C_RESET}" \
+        "phpMyAdmin (SQL import)|${C_WHITE}${current_pma_limit}${C_RESET}"
+
+    local size_mb
+    printf '\n  %s❯%s Enter the new max upload size in MB for BOTH (e.g. 100): ' "$C_YELLOW" "$C_RESET"
+    read -r size_mb
+    if ! [[ "$size_mb" =~ ^[0-9]+$ ]] || [ "$size_mb" -lt 1 ]; then
+        ui_err "Invalid number. Please enter a positive integer (MB)."
+        return 1
     fi
-    if check_marzban_installed; then
-        ui_err "Additional bot management is not available when Marzban is installed."
-        ui_warn "Exiting script..."
-        sleep 2
-        exit 1
+    local post_mb=$(( size_mb + 16 ))
+    local mem_mb=$(( post_mb + 64 ))
+
+    if [ ! -f "$ini" ]; then
+        ui_err "faoxima.ini not found at ${ini}."
+        return 1
+    fi
+    cp "$ini" "${ini}.bak" 2>/dev/null || true
+    if ! faoxima_set_ini "upload_max_filesize" "${size_mb}M" "$ini" \
+        || ! faoxima_set_ini "post_max_size"       "${post_mb}M" "$ini" \
+        || ! faoxima_set_ini "memory_limit"        "${mem_mb}M"  "$ini" \
+        || ! faoxima_set_ini "max_execution_time"  "600"         "$ini" \
+        || ! faoxima_set_ini "max_input_time"      "600"         "$ini"; then
+        ui_err "Failed to update one or more settings in ${ini}."
+        return 1
+    fi
+    ui_ok "Updated ${ini}"
+
+    env_set "PMA_UPLOAD_LIMIT" "${size_mb}M"
+
+    ui_action "Rebuilding the app image and restarting..."
+    if ! dc build app && dc up -d app; then
+        ui_err "Failed to rebuild/restart the app image."
+        return 1
     fi
 
-    ui_panel "ADDITIONAL BOT MANAGEMENT" "$C_BOLD$C_CYAN" "$C_CYAN" \
-        "${C_WHITE}Manage extra Faoxima bots running on additional domains.${C_RESET}"
+    ui_action "Recreating phpMyAdmin with the new upload limit..."
+    if ! dc up -d --force-recreate --no-deps phpmyadmin; then
+        ui_err "Failed to recreate phpMyAdmin — the bot's upload limit was still updated."
+        return 1
+    fi
 
-    local width
-    width=$(ui_term_width)
-    ui_box_top "Sub-menu" "$C_CYAN$C_BOLD" "$C_CYAN" "$width"
-    ui_box_blank "$C_CYAN" "$width"
-    ui_box_line  "$C_CYAN" "$width" "${C_WHITE}1)${C_RESET} Install Additional Bot"
-    ui_box_line  "$C_CYAN" "$width" "${C_WHITE}2)${C_RESET} Update Additional Bot"
-    ui_box_line  "$C_CYAN" "$width" "${C_WHITE}3)${C_RESET} Remove Additional Bot"
-    ui_box_line  "$C_CYAN" "$width" "${C_WHITE}4)${C_RESET} Export Additional Bot Database"
-    ui_box_line  "$C_CYAN" "$width" "${C_WHITE}5)${C_RESET} Import Additional Bot Database"
-    ui_box_line  "$C_CYAN" "$width" "${C_WHITE}6)${C_RESET} Configure Automated Backup for Additional Bot"
-    ui_box_line  "$C_CYAN" "$width" "${C_WHITE}7)${C_RESET} Disable Automated Backup for Additional Bot"
-    ui_box_line  "$C_CYAN" "$width" "${C_WHITE}8)${C_RESET} Change Additional Bot Domain"
-    ui_box_line  "$C_CYAN" "$width" "${C_RED}9)${C_RESET} Back to Main Menu"
-    ui_box_blank "$C_CYAN" "$width"
-    ui_box_bottom "$C_CYAN" "$width"
+    ui_ok "Upload limit set to ${size_mb}M for both the bot (post_max_size ${post_mb}M, memory_limit ${mem_mb}M) and phpMyAdmin."
+    ui_tip "You can now upload/import files up to ${size_mb} MB through the bot and phpMyAdmin."
+}
 
-    local sub_option
-    printf '\n  %s❯%s Select an option [1-9]: ' "$C_YELLOW" "$C_RESET"
-    read -r sub_option
-    case "$sub_option" in
-        1) install_additional_bot ;;
-        2) update_additional_bot ;;
-        3) remove_additional_bot ;;
-        4) export_additional_bot_database ;;
-        5) import_additional_bot_database ;;
-        6) configure_backup_additional_bot ;;
-        7) disable_backup_additional_bot ;;
-        8) change_additional_bot_domain ;;
-        9) show_menu ;;
-        *)
-            ui_err "Invalid option. Please try again."
-            sleep 1
-            manage_additional_bots
-            ;;
+file_env_get() {
+    local file="$1" key="$2"
+    [ -f "$file" ] || return 1
+    grep -E "^${key}=" "$file" | tail -1 | cut -d'=' -f2-
+}
+
+file_env_set() {
+    local file="$1" key="$2" value="$3"
+    if grep -qE "^${key}=" "$file"; then
+        sed -i "s|^${key}=.*|${key}=${value}|" "$file" || return 1
+    else
+        printf '%s=%s\n' "$key" "$value" >> "$file" || return 1
+    fi
+}
+
+select_bot_for_credentials() {
+    local names=("main") d
+    if [ -d "$BOTS_DIR" ]; then
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            names+=("$(basename "$d")")
+        done
+    fi
+
+    if ! ui_pick_from_list "Which bot" "${names[@]}"; then
+        ui_info "Cancelled."
+        return 1
+    fi
+
+    SELECTED_BOT="${names[$UI_PICK_RESULT]}"
+    if [ "$SELECTED_BOT" = "main" ]; then
+        if ! require_env_db_creds; then return 1; fi
+        SELECTED_DB_NAME="$DB_NAME"
+        SELECTED_DB_USER="$DB_USER"
+        SELECTED_DB_PASS="$DB_PASS"
+        SELECTED_ENV_FILE="$ENV_FILE"
+        SELECTED_CONFIG_PHP="${PROJECT_DIR}/config.php"
+        SELECTED_DOMAIN=$(env_get DOMAIN)
+        SELECTED_CONTAINER="app"
+    else
+        local bot_dir="${BOTS_DIR}/${SELECTED_BOT}"
+        if [ ! -f "${bot_dir}/.env" ]; then
+            ui_err "Could not find .env for '${SELECTED_BOT}' at ${bot_dir}."
+            return 1
+        fi
+        SELECTED_DB_NAME=$(file_env_get "${bot_dir}/.env" "DB_NAME")
+        SELECTED_DB_USER=$(file_env_get "${bot_dir}/.env" "DB_USER")
+        SELECTED_DB_PASS=$(file_env_get "${bot_dir}/.env" "DB_PASS")
+        SELECTED_ENV_FILE="${bot_dir}/.env"
+        SELECTED_CONFIG_PHP="${bot_dir}/config.php"
+        SELECTED_DOMAIN=$(file_env_get "${bot_dir}/.env" "DOMAIN")
+        SELECTED_CONTAINER="app_${SELECTED_BOT}"
+        if [ -z "$SELECTED_DB_NAME" ] || [ -z "$SELECTED_DB_USER" ]; then
+            ui_err "Failed to read database credentials for '${SELECTED_BOT}'."
+            return 1
+        fi
+    fi
+}
+
+show_db_credentials() {
+    ui_status_table "Database Info — ${SELECTED_BOT}" "$C_CYAN" \
+        "phpMyAdmin|${C_GREEN}https://${SELECTED_DOMAIN}/phpmyadmin/${C_RESET} ${C_DIM}(shared instance — log in with the credentials below)${C_RESET}" \
+        "Database|${C_WHITE}${SELECTED_DB_NAME}${C_RESET}" \
+        "Username|${C_WHITE}${SELECTED_DB_USER}${C_RESET}" \
+        "Password|${C_WHITE}${SELECTED_DB_PASS}${C_RESET}"
+}
+
+rotate_bot_db_credentials() {
+    local field="$1" new_value="$2"
+    local mysql_root_pass
+    mysql_root_pass=$(env_get MYSQL_ROOT_PASSWORD)
+
+    if [ "$field" = "passworddb" ]; then
+        ui_action "Updating the MySQL password for '${SELECTED_DB_USER}'..."
+        if ! dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
+            "ALTER USER '${SELECTED_DB_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${new_value}'; FLUSH PRIVILEGES;" 2>&1; then
+            ui_err "Failed to update the MySQL password — no changes were made to config.php."
+            return 1
+        fi
+    else
+        ui_action "Creating the new MySQL user '${new_value}'..."
+        if ! dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
+            "CREATE USER '${new_value}'@'%' IDENTIFIED WITH mysql_native_password BY '${SELECTED_DB_PASS}'; GRANT ALL PRIVILEGES ON \`${SELECTED_DB_NAME}\`.* TO '${new_value}'@'%'; FLUSH PRIVILEGES;" 2>&1; then
+            ui_err "Failed to create the new MySQL user — no changes were made to config.php."
+            return 1
+        fi
+    fi
+
+    ui_action "Updating config.php for '${SELECTED_BOT}'..."
+    if ! dc exec -T "$SELECTED_CONTAINER" php /var/www/faoxima/docker/php-update-credential.php "$field" "$new_value" 2>&1; then
+        ui_err "Failed to update config.php — reverting the MySQL change."
+        if [ "$field" = "passworddb" ]; then
+            dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
+                "ALTER USER '${SELECTED_DB_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${SELECTED_DB_PASS}'; FLUSH PRIVILEGES;" >/dev/null 2>&1
+        else
+            dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
+                "DROP USER IF EXISTS '${new_value}'@'%'; FLUSH PRIVILEGES;" >/dev/null 2>&1
+        fi
+        return 1
+    fi
+
+    if [ "$field" = "usernamedb" ]; then
+        ui_action "Removing the old MySQL user '${SELECTED_DB_USER}'..."
+        dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
+            "DROP USER IF EXISTS '${SELECTED_DB_USER}'@'%'; FLUSH PRIVILEGES;" 2>&1 \
+            || ui_warn "Failed to drop the old MySQL user '${SELECTED_DB_USER}' — it can be removed manually."
+        file_env_set "$SELECTED_ENV_FILE" "DB_USER" "$new_value"
+        SELECTED_DB_USER="$new_value"
+    else
+        file_env_set "$SELECTED_ENV_FILE" "DB_PASS" "$new_value"
+        SELECTED_DB_PASS="$new_value"
+    fi
+
+    ui_ok "Credentials updated successfully for '${SELECTED_BOT}'. No restart needed — PHP re-reads config.php on the next request."
+}
+
+change_db_username() {
+    printf '\n  %s❯%s New database username (letters, numbers, underscore only): ' "$C_YELLOW" "$C_RESET"
+    local new_user
+    read -r new_user
+    if [[ ! "$new_user" =~ ^[a-zA-Z0-9_]+$ ]]; then
+        ui_err "Invalid username format."
+        return 1
+    fi
+    printf '  %s❯%s Change username from '"'"'%s'"'"' to '"'"'%s'"'"'? (y/N): ' "$C_YELLOW" "$C_RESET" "$SELECTED_DB_USER" "$new_user"
+    local confirm
+    read -r confirm
+    if [[ "${confirm,,}" != "y" ]]; then
+        ui_info "Cancelled."
+        return 0
+    fi
+    rotate_bot_db_credentials "usernamedb" "$new_user"
+}
+
+change_db_password() {
+    printf '\n  %s❯%s Leave blank to auto-generate a strong password, or enter one: ' "$C_YELLOW" "$C_RESET"
+    local new_pass
+    read -r new_pass
+    if [ -z "$new_pass" ]; then
+        new_pass=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
+    fi
+    printf '  %s❯%s Change the database password for '"'"'%s'"'"'? (y/N): ' "$C_YELLOW" "$C_RESET" "$SELECTED_DB_USER"
+    local confirm
+    read -r confirm
+    if [[ "${confirm,,}" != "y" ]]; then
+        ui_info "Cancelled."
+        return 0
+    fi
+    rotate_bot_db_credentials "passworddb" "$new_pass"
+}
+
+menu_db_credentials() {
+    show_logo
+    ui_panel "DATABASE CREDENTIALS & INFO" "$C_BOLD$C_CYAN" "$C_CYAN" \
+        "${C_WHITE}View phpMyAdmin access and rotate database credentials for any bot.${C_RESET}" \
+        "${C_DIM}Changes are applied to MySQL and config.php together, in real time.${C_RESET}"
+
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Faoxima Bot is not installed."
+        return 1
+    fi
+
+    local SELECTED_BOT SELECTED_DB_NAME SELECTED_DB_USER SELECTED_DB_PASS
+    local SELECTED_ENV_FILE SELECTED_CONFIG_PHP SELECTED_DOMAIN SELECTED_CONTAINER
+    select_bot_for_credentials || return 0
+    show_db_credentials
+
+    ui_menu_list "Credentials" \
+        "${C_WHITE}[1]${C_RESET} Change Username" \
+        "${C_WHITE}[2]${C_RESET} Change Password" \
+        "${C_RED}[3]${C_RESET} Back"
+
+    local option
+    printf '  %s❯%s Select an option [1-3]: ' "$C_YELLOW" "$C_RESET"
+    read -r option
+
+    case "$option" in
+        1) change_db_username ;;
+        2) change_db_password ;;
+        3) return 0 ;;
+        *) ui_err "Invalid option." ;;
     esac
 }
 
-# Helper: list /var/www/html/* directories that aren't the main bot.
-# Echoes one bot directory name per line.
-_list_additional_bots() {
-    ls -d /var/www/html/*/ 2>/dev/null \
-        | grep -v "${BOT_DIR}/" \
-        | xargs -r -n 1 basename
-}
-
-# Helper: prompt the user to pick one of the listed bot names.
-# Sets the global SELECTED_BOT on success or returns 1 on cancel/error.
-_prompt_select_bot() {
-    local prompt_text="${1:-Select a bot by name}"
-    local BOT_DIRS
-    BOT_DIRS=$(_list_additional_bots)
-    if [ -z "$BOT_DIRS" ]; then
-        ui_err "No additional bots found in /var/www/html."
-        return 1
+service_action() {
+    local action="$1"
+    local names=("nginx" "db" "app") d
+    redis_service_exists && names+=("redis")
+    if [ -d "$BOTS_DIR" ]; then
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            names+=("app_$(basename "$d")")
+        done
     fi
-    printf '\n  %sAvailable bots:%s\n' "$C_CYAN" "$C_RESET"
-    printf '%s\n' "$BOT_DIRS" | nl -w 2 -s ') '
-    printf '\n  %s❯%s %s: ' "$C_YELLOW" "$C_RESET" "$prompt_text"
-    read -r SELECTED_BOT
-    if [[ ! "$BOT_DIRS" =~ (^|[[:space:]])$SELECTED_BOT($|[[:space:]]) ]]; then
-        ui_err "Invalid bot name."
-        return 1
+
+    if ! ui_pick_from_list "Which service to ${action}" "${names[@]}"; then
+        ui_info "Cancelled."
+        return 0
     fi
-    return 0
-}
 
-# ─── INSTALL ADDITIONAL BOT ────────────────────────────────────────────────
-install_additional_bot() {
-    show_logo
-    ui_panel "INSTALL ADDITIONAL BOT" "$C_BOLD$C_GREEN" "$C_GREEN" \
-        "${C_WHITE}Deploy another Faoxima bot under a new domain.${C_RESET}"
-
-    local ROOT_USER ROOT_PASS
-    if [ ! -f "$CRED_FILE" ]; then
-        ui_err "Root credentials file not found at ${CRED_FILE}."
-        printf '  %s❯%s Please enter the root MySQL password: ' "$C_YELLOW" "$C_RESET"
-        read -rs ROOT_PASS; echo
-        ROOT_USER="root"
-    else
-        ROOT_USER=$(grep '\$user =' "$CRED_FILE" | awk -F"'" '{print $2}')
-        ROOT_PASS=$(grep '\$pass =' "$CRED_FILE" | awk -F"'" '{print $2}')
-        if [ -z "$ROOT_USER" ] || [ -z "$ROOT_PASS" ]; then
-            ui_err "Could not extract root credentials from ${CRED_FILE}."
-            return 1
+    local svc="${names[$UI_PICK_RESULT]}"
+    if [ "$action" != "start" ]; then
+        printf '  %s❯%s %s %s? (y/N): ' "$C_YELLOW" "$C_RESET" "$action" "$svc"
+        local confirm
+        read -r confirm
+        if [[ "${confirm,,}" != "y" ]]; then
+            ui_info "Cancelled."
+            return 0
         fi
     fi
 
-    local DOMAIN_NAME BOT_NAME BOT_TOKEN CHAT_ID
-    while true; do
-        printf '\n  %s❯%s Enter the domain for the additional bot: ' "$C_YELLOW" "$C_RESET"
-        read -r DOMAIN_NAME
-        [[ "$DOMAIN_NAME" =~ ^[a-zA-Z0-9.-]+$ ]] && break
-        ui_err "Invalid domain format. Please try again."
-    done
-
-    ui_action "Stopping Apache 2 to free port 80..."
-    systemctl stop apache2 2>/dev/null || true
-    # Remove any stale PID/socket files so Apache can come back cleanly.
-    cleanup_apache_state
-
-    ui_action "Obtaining SSL certificate..."
-    if ! wait_for_certbot; then
-        ui_err "Certbot is busy. Please try again shortly."
-        restore_apache_service
+    ui_action "Running: docker compose ${action} ${svc}..."
+    if dc "$action" "$svc"; then
+        ui_ok "${svc} ${action} succeeded."
+    else
+        ui_err "Failed to ${action} ${svc}."
         return 1
     fi
-    certbot certonly --standalone --agree-tos --preferred-challenges http -d "$DOMAIN_NAME" || {
-        ui_err "Error obtaining SSL certificate."
-        restore_apache_service
-        return 1
-    }
-
-    ui_action "Restarting Apache 2..."
-    restore_apache_service
-    if ! systemctl is-active --quiet apache2; then
-        ui_err "Apache 2 is not running after certbot — aborting before writing vhost."
-        return 1
-    fi
-
-    while true; do
-        printf '  %s❯%s Enter the bot name: ' "$C_YELLOW" "$C_RESET"
-        read -r BOT_NAME
-        if [[ "$BOT_NAME" =~ ^[a-zA-Z0-9_-]+$ && ! -d "/var/www/html/${BOT_NAME}" ]]; then
-            break
-        fi
-        ui_err "Invalid or duplicate bot name. Please try again."
-    done
-
-    local APACHE_CONFIG="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
-    if [ -f "$APACHE_CONFIG" ]; then
-        ui_err "Apache 2 configuration for this domain already exists."
-        return 1
-    fi
-
-    # Make sure the modules the new vhost depends on are enabled before reload.
-    # On a fresh server certbot may not have enabled mod_ssl yet, and without
-    # rewrite the bot's .htaccess (if any) is silently ignored.
-    ui_action "Enabling required Apache 2 modules (ssl, rewrite, headers)..."
-    a2enmod ssl     >/dev/null 2>&1 || ui_warn "Failed to enable mod_ssl."
-    a2enmod rewrite >/dev/null 2>&1 || ui_warn "Failed to enable mod_rewrite."
-    a2enmod headers >/dev/null 2>&1 || true
-
-    ui_action "Configuring Apache 2 for ${DOMAIN_NAME}..."
-    cat > "$APACHE_CONFIG" <<EOF
-<VirtualHost *:80>
-    ServerName ${DOMAIN_NAME}
-    Redirect permanent / https://${DOMAIN_NAME}/
-</VirtualHost>
-
-<VirtualHost *:443>
-    ServerName ${DOMAIN_NAME}
-    # DocumentRoot is /var/www/html (not /var/www/html/${BOT_NAME}) because the
-    # webhook URL, \$domainhosts, and table.php URL all include /${BOT_NAME}/ as
-    # a subpath — i.e. https://${DOMAIN_NAME}/${BOT_NAME}/index.php. Setting the
-    # docroot to the bot folder makes that path resolve under /var/www/html/${BOT_NAME}/${BOT_NAME}/
-    # and Apache returns 404 to every Telegram webhook delivery.
-    DocumentRoot /var/www/html
-
-    <Directory /var/www/html>
-        Options -Indexes +FollowSymLinks
-        AllowOverride All
-        Require all granted
-    </Directory>
-
-    SSLEngine on
-    SSLCertificateFile /etc/letsencrypt/live/${DOMAIN_NAME}/fullchain.pem
-    SSLCertificateKeyFile /etc/letsencrypt/live/${DOMAIN_NAME}/privkey.pem
-
-    ErrorLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-error.log
-    CustomLog \${APACHE_LOG_DIR}/${DOMAIN_NAME}-access.log combined
-</VirtualHost>
-EOF
-
-    local BOT_PATH="/var/www/html/${BOT_NAME}"
-    mkdir -p "$BOT_PATH"
-
-    if ! a2ensite "${DOMAIN_NAME}.conf" >/dev/null; then
-        ui_err "Failed to enable Apache 2 site ${DOMAIN_NAME}.conf"
-        return 1
-    fi
-
-    # Validate the whole Apache config before touching the running service —
-    # a bad reload would take the main bot down with it.
-    if ! apache2ctl configtest >/dev/null 2>&1; then
-        ui_err "Apache 2 configuration test failed after adding ${DOMAIN_NAME}."
-        ui_warn "Disabling the new vhost so the main bot keeps working..."
-        a2dissite "${DOMAIN_NAME}.conf" >/dev/null 2>&1 || true
-        rm -f "$APACHE_CONFIG"
-        restore_apache_service
-        return 1
-    fi
-
-    # Full restart (not reload) so a previously-stopped Apache definitely
-    # comes back up, then assert it is actually active.
-    cleanup_apache_state
-    if ! systemctl restart apache2; then
-        ui_err "Apache 2 failed to restart after adding ${DOMAIN_NAME}."
-        ui_warn "Rolling back the new vhost to recover the main bot..."
-        a2dissite "${DOMAIN_NAME}.conf" >/dev/null 2>&1 || true
-        rm -f "$APACHE_CONFIG"
-        restore_apache_service
-        return 1
-    fi
-    if ! systemctl is-active --quiet apache2; then
-        ui_err "Apache 2 is not active after restart."
-        return 1
-    fi
-    ui_ok "Apache 2 is active and serving ${DOMAIN_NAME}."
-
-    ui_action "Cloning Faoxima source code..."
-    rm -rf "$BOT_PATH"
-    git clone "${FAOXIMA_GITHUB}.git" "$BOT_PATH" || {
-        ui_err "Failed to clone the repository."
-        return 1
-    }
-
-    while true; do
-        printf '  %s❯%s Enter the bot token: ' "$C_YELLOW" "$C_RESET"
-        read -r BOT_TOKEN
-        [[ "$BOT_TOKEN" =~ ^[0-9]{8,10}:[a-zA-Z0-9_-]{35}$ ]] && break
-        ui_err "Invalid bot token format. Please try again."
-    done
-    while true; do
-        printf '  %s❯%s Enter the chat ID: ' "$C_YELLOW" "$C_RESET"
-        read -r CHAT_ID
-        [[ "$CHAT_ID" =~ ^-?[0-9]+$ ]] && break
-        ui_err "Invalid chat ID format. Please try again."
-    done
-
-    local DB_NAME="faoxima_${BOT_NAME}"
-    local DB_USERNAME="$DB_NAME"
-    local DEFAULT_PASSWORD DB_PASSWORD
-    DEFAULT_PASSWORD=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-    printf '  %s❯%s Enter the database password [default: %s%s%s]: ' \
-        "$C_YELLOW" "$C_RESET" "$C_CYAN" "$DEFAULT_PASSWORD" "$C_RESET"
-    read -r DB_PASSWORD
-    DB_PASSWORD=${DB_PASSWORD:-$DEFAULT_PASSWORD}
-
-    ui_action "Creating database and user..."
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "CREATE DATABASE ${DB_NAME};" || {
-        ui_err "Failed to create database."
-        return 1
-    }
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "CREATE USER '${DB_USERNAME}'@'localhost' IDENTIFIED BY '${DB_PASSWORD}';" || {
-        ui_err "Failed to create database user."
-        return 1
-    }
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "GRANT ALL PRIVILEGES ON ${DB_NAME}.* TO '${DB_USERNAME}'@'localhost';" || {
-        ui_err "Failed to grant privileges to user."
-        return 1
-    }
-    mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "FLUSH PRIVILEGES;"
-
-    local CONFIG_FILE="${BOT_PATH}/config.php"
-    local secrettoken
-    secrettoken=$(openssl rand -base64 10 | tr -dc 'a-zA-Z0-9' | cut -c1-8)
-
-    ui_action "Writing config.php..."
-    cat > "$CONFIG_FILE" <<EOF
-<?php
-\$APIKEY = '${BOT_TOKEN}';
-\$usernamedb = '${DB_USERNAME}';
-\$passworddb = '${DB_PASSWORD}';
-\$dbname = '${DB_NAME}';
-\$domainhosts = '${DOMAIN_NAME}/${BOT_NAME}';
-\$adminnumber = '${CHAT_ID}';
-\$usernamebot = '${BOT_NAME}';
-\$secrettoken = '${secrettoken}';
-\$connect = mysqli_connect('localhost', \$usernamedb, \$passworddb, \$dbname);
-if (\$connect->connect_error) {
-    die('Database connection failed: ' . \$connect->connect_error);
-}
-mysqli_set_charset(\$connect, 'utf8mb4');
-\$options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    PDO::ATTR_EMULATE_PREPARES   => false,
-];
-\$dsn = "mysql:host=localhost;dbname=\$dbname;charset=utf8mb4";
-try {
-     \$pdo = new PDO(\$dsn, \$usernamedb, \$passworddb, \$options);
-} catch (\PDOException \$e) {
-     throw new \PDOException(\$e->getMessage(), (int)\$e->getCode());
-}
-?>
-EOF
-    sleep 1
-    chown -R www-data:www-data "$BOT_PATH"
-    chmod -R 755 "$BOT_PATH"
-
-    ui_action "Setting webhook for bot..."
-    curl -F "url=https://${DOMAIN_NAME}/${BOT_NAME}/index.php" \
-         -F "secret_token=${secrettoken}" \
-         "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" || {
-        ui_err "Failed to set webhook for bot."
-        return 1
-    }
-
-    local MESSAGE="✅ Faoxima additional bot installed! Send /start to begin."
-    curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/sendMessage" \
-        -d chat_id="${CHAT_ID}" -d text="${MESSAGE}" || ui_warn "Failed to send Telegram welcome message."
-
-    # Final sanity check: Apache MUST be running before we hit table.php,
-    # otherwise the curl below silently fails and the database is left
-    # un-initialised (this was the cause of the "table.php ran once then
-    # everything stopped working" bug — Apache had quietly died).
-    if ! systemctl is-active --quiet apache2; then
-        ui_warn "Apache 2 is not active right before table.php — trying to recover..."
-        restore_apache_service
-    fi
-    grant_file_permissions "$BOT_PATH"
-
-    local TABLE_SETUP_URL="https://${DOMAIN_NAME}/${BOT_NAME}/table.php"
-    ui_action "Setting up database tables..."
-    curl -s "$TABLE_SETUP_URL" >/dev/null || \
-        ui_warn "Failed to fetch ${TABLE_SETUP_URL} — please open it manually in a browser."
-
-    # Apache may have been left in a bad state by anything above; make sure
-    # both the main bot and the new additional bot are actually being served
-    # before we tell the user the install succeeded.
-    if ! systemctl is-active --quiet apache2; then
-        ui_warn "Apache 2 stopped responding after table.php — restarting..."
-        restore_apache_service
-    fi
-
-    clear
-    show_logo
-    ui_status_table "ADDITIONAL BOT INSTALLED" "$C_GREEN" \
-        "Bot URL|${C_GREEN}https://${DOMAIN_NAME}${C_RESET}" \
-        "phpMyAdmin|${C_BLUE}https://${DOMAIN_NAME}/phpmyadmin${C_RESET}" \
-        "Database name|${C_CYAN}${DB_NAME}${C_RESET}" \
-        "Database user|${C_CYAN}${DB_USERNAME}${C_RESET}" \
-        "Database password|${C_CYAN}${DB_PASSWORD}${C_RESET}"
-    printf '\n'
 }
 
-# ─── UPDATE ADDITIONAL BOT ─────────────────────────────────────────────────
-update_additional_bot() {
-    show_logo
-    ui_panel "UPDATE ADDITIONAL BOT" "$C_BOLD$C_BLUE" "$C_BLUE" \
-        "${C_WHITE}Pulls the latest Faoxima source while preserving config.php.${C_RESET}"
-
-    local SELECTED_BOT
-    if ! _prompt_select_bot "Select a bot to update"; then return 1; fi
-
-    local BOT_PATH="/var/www/html/${SELECTED_BOT}"
-    local CONFIG_PATH="${BOT_PATH}/config.php"
-    local TEMP_CONFIG_PATH="/root/${SELECTED_BOT}_config.php"
-
-    ui_action "Updating ${SELECTED_BOT}..."
-    if [ -f "$CONFIG_PATH" ]; then
-        mv "$CONFIG_PATH" "$TEMP_CONFIG_PATH" || { ui_err "Failed to backup config.php."; return 1; }
-    else
-        ui_err "config.php not found in ${BOT_PATH}."
-        return 1
+service_logs() {
+    local names=("nginx" "db" "app") d
+    redis_service_exists && names+=("redis")
+    if [ -d "$BOTS_DIR" ]; then
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            names+=("app_$(basename "$d")")
+        done
     fi
 
-    rm -rf "$BOT_PATH" || { ui_err "Failed to remove old bot directory."; return 1; }
-    if ! git clone "${FAOXIMA_GITHUB}.git" "$BOT_PATH"; then
-        ui_err "Failed to clone the repository."
-        return 1
-    fi
-    if ! mv "$TEMP_CONFIG_PATH" "$CONFIG_PATH"; then
-        ui_err "Failed to restore config.php."
-        return 1
+    if ! ui_pick_from_list "Which service's logs" "${names[@]}"; then
+        ui_info "Cancelled."
+        return 0
     fi
 
-    chown -R www-data:www-data "$BOT_PATH"
-    chmod -R 755 "$BOT_PATH"
-
-    local URL
-    URL=$(grep '\$domainhosts' "$CONFIG_PATH" | cut -d"'" -f2)
-    if [ -z "$URL" ]; then
-        ui_err "Failed to extract domain URL from config.php."
-        return 1
-    fi
-
-    if ! curl -s "https://${URL}/table.php" >/dev/null; then
-        ui_warn "Failed to execute table.php — please verify manually."
-    fi
-    ui_ok "${SELECTED_BOT} has been successfully updated."
+    dc logs --tail=200 "${names[$UI_PICK_RESULT]}"
 }
 
-# ─── REMOVE ADDITIONAL BOT ─────────────────────────────────────────────────
-remove_additional_bot() {
-    show_logo
-    ui_panel "REMOVE ADDITIONAL BOT" "$C_BOLD$C_RED" "$C_RED" \
-        "${C_WHITE}Drops the bot's database/user, removes its files and Apache 2 vhost.${C_RESET}"
-
-    local SELECTED_BOT
-    if ! _prompt_select_bot "Select a bot to remove"; then return 1; fi
-
-    local BOT_PATH="/var/www/html/${SELECTED_BOT}"
-    local CONFIG_PATH="${BOT_PATH}/config.php"
-
-    local CONFIRM_REMOVE BACKUP_CONFIRM
-    printf '  %s❯%s Are you sure you want to remove %s? (yes/no): ' "$C_YELLOW" "$C_RESET" "$SELECTED_BOT"
-    read -r CONFIRM_REMOVE
-    [[ "$CONFIRM_REMOVE" != "yes" ]] && { ui_warn "Aborted."; return 1; }
-    printf '  %s❯%s Have you backed up the database? (yes/no): ' "$C_YELLOW" "$C_RESET"
-    read -r BACKUP_CONFIRM
-    [[ "$BACKUP_CONFIRM" != "yes" ]] && { ui_warn "Aborted. Please backup the database first."; return 1; }
-
-    local ROOT_USER ROOT_PASS
-    if [ -f "$CRED_FILE" ]; then
-        ROOT_USER=$(grep '\$user =' "$CRED_FILE" | awk -F"'" '{print $2}')
-        ROOT_PASS=$(grep '\$pass =' "$CRED_FILE" | awk -F"'" '{print $2}')
-    else
-        printf '  %s❯%s Root credentials file not found. Enter MySQL root password: ' "$C_YELLOW" "$C_RESET"
-        read -rs ROOT_PASS; echo
-        ROOT_USER="root"
+service_status_all() {
+    local rows=("nginx|$(service_state nginx)" "db|$(service_state db)" "app (main, incl. PHP-FPM)|$(service_state app)")
+    if redis_service_exists; then
+        rows+=("redis|$(service_state redis)")
     fi
 
-    local DOMAIN_NAME DB_NAME DB_USER
-    DOMAIN_NAME=$(grep '\$domainhosts' "$CONFIG_PATH" | cut -d"'" -f2 | cut -d'/' -f1)
-    DB_NAME=$(awk -F"'" '/\$dbname = / {print $2}'    "$CONFIG_PATH")
-    DB_USER=$(awk -F"'" '/\$usernamedb = / {print $2}' "$CONFIG_PATH")
-
-    ui_action "Removing database ${DB_NAME}..."
-    if mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "DROP DATABASE IF EXISTS \`${DB_NAME}\`;" 2>/tmp/db_remove_error.log; then
-        ui_ok "Database ${DB_NAME} removed."
-    else
-        ui_err "Failed to remove database ${DB_NAME}."
-    fi
-    ui_action "Removing user ${DB_USER}..."
-    if mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "DROP USER IF EXISTS '${DB_USER}'@'localhost';" 2>/tmp/user_remove_error.log; then
-        ui_ok "User ${DB_USER} removed."
-    else
-        ui_err "Failed to remove user ${DB_USER}."
+    local bot_names=() d
+    if [ -d "$BOTS_DIR" ]; then
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            bot_names+=("$(basename "$d")")
+        done
     fi
 
-    ui_action "Removing bot directory ${BOT_PATH}..."
-    rm -rf "$BOT_PATH" || { ui_err "Failed to remove bot directory."; return 1; }
+    local total="${#bot_names[@]}"
+    local page_size=20
+    local page="${1:-0}"
+    local last_page=$(( (total - 1) / page_size ))
+    [ "$last_page" -lt 0 ] && last_page=0
 
-    local APACHE_CONF="/etc/apache2/sites-available/${DOMAIN_NAME}.conf"
-    if [ -f "$APACHE_CONF" ]; then
-        ui_action "Removing Apache 2 configuration for ${DOMAIN_NAME}..."
-        a2dissite "${DOMAIN_NAME}.conf" >/dev/null 2>&1
-        rm -f "$APACHE_CONF" "/etc/apache2/sites-enabled/${DOMAIN_NAME}.conf"
-        systemctl reload apache2
-    else
-        ui_warn "Apache 2 configuration for ${DOMAIN_NAME} not found."
+    if [ "$total" -gt 0 ]; then
+        local start=$((page * page_size))
+        local end=$((start + page_size))
+        [ "$end" -gt "$total" ] && end="$total"
+        local i name
+        for ((i = start; i < end; i++)); do
+            name="${bot_names[$i]}"
+            rows+=("app_${name}|$(service_state "app_${name}")")
+        done
     fi
 
-    ui_ok "${SELECTED_BOT} has been successfully removed."
-}
+    ui_status_table "Service Status" "$C_CYAN" "${rows[@]}"
 
-# ─── EXPORT ADDITIONAL BOT DATABASE ────────────────────────────────────────
-export_additional_bot_database() {
-    show_logo
-    ui_panel "EXPORT ADDITIONAL BOT DATABASE" "$C_BOLD$C_BLUE" "$C_BLUE" \
-        "${C_WHITE}Dumps a selected additional bot's MySQL database under /root.${C_RESET}"
-
-    local SELECTED_BOT
-    if ! _prompt_select_bot "Enter the bot name to export"; then return 1; fi
-
-    local BOT_PATH="/var/www/html/${SELECTED_BOT}"
-    local CONFIG_PATH="${BOT_PATH}/config.php"
-    [ -f "$CONFIG_PATH" ] || { ui_err "config.php not found for ${SELECTED_BOT}."; return 1; }
-
-    local ROOT_USER ROOT_PASS
-    if [ -f "$CRED_FILE" ]; then
-        ROOT_USER=$(grep '\$user =' "$CRED_FILE" | awk -F"'" '{print $2}')
-        ROOT_PASS=$(grep '\$pass =' "$CRED_FILE" | awk -F"'" '{print $2}')
-    else
-        ui_warn "Root credentials file not found."
-        printf '  %s❯%s Enter MySQL root password: ' "$C_YELLOW" "$C_RESET"
-        read -rs ROOT_PASS; echo
-        [ -z "$ROOT_PASS" ] && { ui_err "Password cannot be empty. Exiting..."; return 1; }
-        ROOT_USER="root"
-        if ! echo "SELECT 1" | mysql -u "$ROOT_USER" -p"$ROOT_PASS" 2>/dev/null; then
-            ui_err "Invalid root credentials. Exiting..."
-            return 1
-        fi
-    fi
-
-    local DB_USER DB_PASS DB_NAME
-    DB_USER=$(grep '^\$usernamedb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_PASS=$(grep '^\$passworddb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_NAME=$(grep '^\$dbname'     "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ]; then
-        ui_err "Failed to extract database credentials from ${CONFIG_PATH}."
-        return 1
-    fi
-
-    ui_action "Verifying database existence..."
-    if ! mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "USE ${DB_NAME};" 2>/dev/null; then
-        ui_err "Database ${DB_NAME} does not exist or credentials are incorrect."
-        return 1
-    fi
-
-    local BACKUP_FILE="/root/${DB_NAME}_backup.sql"
-    ui_action "Creating backup at ${BACKUP_FILE}..."
-    if ! mysqldump -u "$ROOT_USER" -p"$ROOT_PASS" "$DB_NAME" > "$BACKUP_FILE"; then
-        ui_err "Failed to create database backup."
-        return 1
-    fi
-    ui_ok "Backup successfully created at ${BACKUP_FILE}."
-}
-
-# ─── IMPORT ADDITIONAL BOT DATABASE ────────────────────────────────────────
-import_additional_bot_database() {
-    show_logo
-    ui_panel "IMPORT ADDITIONAL BOT DATABASE" "$C_BOLD$C_BLUE" "$C_BLUE" \
-        "${C_WHITE}Restore a previously-saved SQL dump into a selected additional bot.${C_RESET}"
-
-    local ROOT_USER ROOT_PASS
-    if [ -f "$CRED_FILE" ]; then
-        ROOT_USER=$(grep '\$user =' "$CRED_FILE" | awk -F"'" '{print $2}')
-        ROOT_PASS=$(grep '\$pass =' "$CRED_FILE" | awk -F"'" '{print $2}')
-    else
-        ui_warn "Root credentials file not found."
-        printf '  %s❯%s Enter MySQL root password: ' "$C_YELLOW" "$C_RESET"
-        read -rs ROOT_PASS; echo
-        [ -z "$ROOT_PASS" ] && { ui_err "Password cannot be empty."; return 1; }
-        ROOT_USER="root"
-        if ! echo "SELECT 1" | mysql -u "$ROOT_USER" -p"$ROOT_PASS" 2>/dev/null; then
-            ui_err "Invalid root credentials."
-            return 1
-        fi
-    fi
-
-    local SQL_FILES SELECTED_FILE FILE_SELECTION
-    SQL_FILES=$(find /root -maxdepth 1 -type f -name "*.sql")
-    if [ -z "$SQL_FILES" ]; then
-        ui_err "No .sql files found in /root. Please provide a valid .sql file."
-        return 1
-    fi
-    printf '\n  %sAvailable .sql files:%s\n' "$C_CYAN" "$C_RESET"
-    printf '%s\n' "$SQL_FILES" | nl -w 2 -s ') '
-
-    printf '\n  %s❯%s Enter the number of the file or provide a full path: ' "$C_YELLOW" "$C_RESET"
-    read -r FILE_SELECTION
-    if [[ "$FILE_SELECTION" =~ ^[0-9]+$ ]]; then
-        SELECTED_FILE=$(echo "$SQL_FILES" | sed -n "${FILE_SELECTION}p")
-    else
-        SELECTED_FILE="$FILE_SELECTION"
-    fi
-    [ -f "$SELECTED_FILE" ] || { ui_err "Selected file does not exist."; return 1; }
-
-    local SELECTED_BOT
-    if ! _prompt_select_bot "Select a bot to import into"; then return 1; fi
-
-    local BOT_PATH="/var/www/html/${SELECTED_BOT}"
-    local CONFIG_PATH="${BOT_PATH}/config.php"
-    [ -f "$CONFIG_PATH" ] || { ui_err "config.php not found for ${SELECTED_BOT}."; return 1; }
-
-    local DB_USER DB_PASS DB_NAME
-    DB_USER=$(grep '^\$usernamedb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_PASS=$(grep '^\$passworddb' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_NAME=$(grep '^\$dbname'     "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ]; then
-        ui_err "Failed to extract database credentials from ${CONFIG_PATH}."
-        return 1
-    fi
-
-    ui_action "Verifying database existence..."
-    if ! mysql -u "$ROOT_USER" -p"$ROOT_PASS" -e "USE ${DB_NAME};" 2>/dev/null; then
-        ui_err "Database ${DB_NAME} does not exist or credentials are incorrect."
-        return 1
-    fi
-
-    ui_action "Importing database from ${SELECTED_FILE} into ${DB_NAME}..."
-    if ! mysql -u "$ROOT_USER" -p"$ROOT_PASS" "$DB_NAME" < "$SELECTED_FILE"; then
-        ui_err "Failed to import database."
-        return 1
-    fi
-    ui_ok "Database successfully imported from ${SELECTED_FILE} into ${DB_NAME}."
-}
-
-# ─── CONFIGURE BACKUP FOR ADDITIONAL BOT ───────────────────────────────────
-configure_backup_additional_bot() {
-    show_logo
-    ui_panel "AUTOMATED BACKUP — ADDITIONAL BOT" "$C_BOLD$C_CYAN" "$C_CYAN" \
-        "${C_WHITE}Schedule recurring backups of an additional bot's database.${C_RESET}"
-
-    local SELECTED_BOT
-    if ! _prompt_select_bot "Select a bot"; then return 1; fi
-
-    local BOT_PATH="/var/www/html/${SELECTED_BOT}"
-    local CONFIG_PATH="${BOT_PATH}/config.php"
-    [ -f "$CONFIG_PATH" ] || { ui_err "config.php not found for ${SELECTED_BOT}."; return 1; }
-
-    local DB_NAME DB_USER DB_PASS TELEGRAM_TOKEN TELEGRAM_CHAT_ID
-    DB_NAME=$(grep '^\$dbname'         "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_USER=$(grep '^\$usernamedb'     "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    DB_PASS=$(grep '^\$passworddb'     "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    TELEGRAM_TOKEN=$(grep '^\$APIKEY'      "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    TELEGRAM_CHAT_ID=$(grep '^\$adminnumber' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-
-    if [ -z "$DB_NAME" ] || [ -z "$DB_USER" ] || [ -z "$DB_PASS" ]; then
-        ui_err "Failed to extract database credentials from ${CONFIG_PATH}."
-        return 1
-    fi
-    if [ -z "$TELEGRAM_TOKEN" ] || [ -z "$TELEGRAM_CHAT_ID" ]; then
-        ui_err "Telegram token or chat ID not found in ${CONFIG_PATH}."
-        return 1
-    fi
-
-    local frequency cron_time
-    while true; do
-        printf '\n  %sChoose backup frequency:%s\n' "$C_CYAN" "$C_RESET"
-        printf '  %s1)%s Every minute\n' "$C_CYAN" "$C_RESET"
-        printf '  %s2)%s Every hour\n'   "$C_CYAN" "$C_RESET"
-        printf '  %s3)%s Every day\n'    "$C_CYAN" "$C_RESET"
-        printf '  %s4)%s Every week\n'   "$C_CYAN" "$C_RESET"
-        printf '\n  %s❯%s Enter your choice (1-4): ' "$C_YELLOW" "$C_RESET"
-        read -r frequency
-        case "$frequency" in
-            1) cron_time="* * * * *" ; break ;;
-            2) cron_time="0 * * * *" ; break ;;
-            3) cron_time="0 0 * * *" ; break ;;
-            4) cron_time="0 0 * * 0" ; break ;;
-            *) ui_err "Invalid option. Please try again." ;;
+    if [ "$last_page" -gt 0 ]; then
+        printf '  %s(additional bots — page %d of %d)%s\n' "$C_DIM" "$((page + 1))" "$((last_page + 1))" "$C_RESET"
+        local nav_hint=""
+        [ "$page" -lt "$last_page" ] && nav_hint="${nav_hint}n) next page  "
+        [ "$page" -gt 0 ] && nav_hint="${nav_hint}p) previous page  "
+        printf '\n  %s❯%s %s(Enter to continue): ' "$C_YELLOW" "$C_RESET" "$nav_hint"
+        local nav
+        read -r nav
+        case "$nav" in
+            n|N)
+                [ "$page" -lt "$last_page" ] && page=$((page + 1))
+                show_logo
+                service_status_all "$page"
+                return
+                ;;
+            p|P)
+                [ "$page" -gt 0 ] && page=$((page - 1))
+                show_logo
+                service_status_all "$page"
+                return
+                ;;
         esac
-    done
-
-    local BACKUP_SCRIPT="/root/${SELECTED_BOT}_auto_backup.sh"
-    cat > "$BACKUP_SCRIPT" <<EOF
-#!/usr/bin/env bash
-DB_NAME="${DB_NAME}"
-DB_USER="${DB_USER}"
-DB_PASS="${DB_PASS}"
-TELEGRAM_TOKEN="${TELEGRAM_TOKEN}"
-TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID}"
-
-BACKUP_FILE="/root/\${DB_NAME}_\$(date +"%Y%m%d_%H%M%S").sql"
-if mysqldump -u "\$DB_USER" -p"\$DB_PASS" "\$DB_NAME" > "\$BACKUP_FILE"; then
-    curl -F document=@"\$BACKUP_FILE" "https://api.telegram.org/bot\$TELEGRAM_TOKEN/sendDocument" -F chat_id="\$TELEGRAM_CHAT_ID"
-    [ \$? -eq 0 ] && rm "\$BACKUP_FILE"
-else
-    echo "[ERROR] Failed to create database backup."
-fi
-EOF
-    chmod +x "$BACKUP_SCRIPT"
-    (crontab -l 2>/dev/null; echo "${cron_time} bash ${BACKUP_SCRIPT}") | crontab -
-    ui_ok "Automated backup configured successfully for ${SELECTED_BOT}."
+    fi
 }
 
-# ─── DISABLE BACKUP FOR ADDITIONAL BOT ─────────────────────────────────────
-disable_backup_additional_bot() {
+menu_service_management() {
     show_logo
-    ui_panel "DISABLE AUTOMATED BACKUP" "$C_BOLD$C_RED" "$C_RED" \
-        "${C_WHITE}Removes the cron entry and helper script for an additional bot's backup.${C_RESET}"
+    ui_panel "SERVICE STATUS & MANAGEMENT" "$C_BOLD$C_CYAN" "$C_CYAN" \
+        "${C_WHITE}Start, stop, restart, or view logs for any container.${C_RESET}" \
+        "${C_DIM}PHP-FPM runs inside the app container — there is no separate PHP-FPM service.${C_RESET}"
 
-    local SELECTED_BOT
-    if ! _prompt_select_bot "Select a bot"; then return 1; fi
-
-    local BACKUP_SCRIPT="/root/${SELECTED_BOT}_auto_backup.sh"
-    local CURRENT_CRON
-    CURRENT_CRON=$(crontab -l 2>/dev/null | grep "$BACKUP_SCRIPT")
-    if [ -z "$CURRENT_CRON" ]; then
-        ui_warn "No automated backup found for ${SELECTED_BOT}."
+    if [ ! -f "$COMPOSE_FILE" ]; then
+        ui_err "Faoxima Bot is not installed."
         return 1
     fi
-    crontab -l 2>/dev/null | grep -v "$BACKUP_SCRIPT" | crontab -
-    [ -f "$BACKUP_SCRIPT" ] && rm "$BACKUP_SCRIPT"
-    ui_ok "Automated backup disabled successfully for ${SELECTED_BOT}."
+
+    service_status_all
+
+    ui_menu_list "Service Management" \
+        "${C_WHITE}[1]${C_RESET} Start a Service" \
+        "${C_WHITE}[2]${C_RESET} Stop a Service" \
+        "${C_WHITE}[3]${C_RESET} Restart a Service" \
+        "${C_WHITE}[4]${C_RESET} View Logs" \
+        "${C_RED}[5]${C_RESET} Back"
+
+    local option
+    printf '  %s❯%s Select an option [1-5]: ' "$C_YELLOW" "$C_RESET"
+    read -r option
+
+    case "$option" in
+        1) service_action start ;;
+        2) service_action stop ;;
+        3) service_action restart ;;
+        4) service_logs ;;
+        5) return 0 ;;
+        *) ui_err "Invalid option." ;;
+    esac
 }
 
-# ─── CHANGE ADDITIONAL BOT DOMAIN ──────────────────────────────────────────
-change_additional_bot_domain() {
-    show_logo
-    ui_panel "CHANGE ADDITIONAL BOT DOMAIN" "$C_BOLD$C_BLUE" "$C_BLUE" \
-        "${C_WHITE}Re-issues SSL, updates config.php and re-registers the Telegram webhook.${C_RESET}"
+get_latest_version() {
+    local tag
+    tag=$(curl -s --max-time 4 "https://api.github.com/repos/${FAOXIMA_REPO}/releases/latest" 2>/dev/null \
+        | grep -o '"tag_name"[^,]*' | head -1 | cut -d'"' -f4)
+    [ -n "$tag" ] && printf '%s' "$tag" || printf 'unknown'
+}
 
-    log_action "Initiating additional bot domain change workflow."
-    local SELECTED_BOT
-    if ! _prompt_select_bot "Select a bot"; then
-        log_warn "No bot selected during additional-bot domain change."
-        return 1
+webhook_field() {
+    local json="$1" field="$2"
+    printf '%s' "$json" | grep -o "\"${field}\":[^,}]*" | head -1 | sed -E 's/^"[^"]+": ?"?([^"}]*)"?$/\1/'
+}
+
+service_state() {
+    local service="$1" cid info running restart_count started_at started_ts now_ts uptime
+    cid=$(dc ps -q "$service" 2>/dev/null)
+    if [ -z "$cid" ]; then
+        printf '%s● inactive%s' "$C_RED" "$C_RESET"
+        return
     fi
 
-    local BOT_PATH="/var/www/html/${SELECTED_BOT}"
-    local BOT_PARENT_DIR
-    BOT_PARENT_DIR="$(dirname "$BOT_PATH")"
-    local CONFIG_PATH="${BOT_PATH}/config.php"
-    if [ ! -f "$CONFIG_PATH" ]; then
-        ui_err "config.php not found for ${SELECTED_BOT}."
-        log_error "config.php missing for $SELECTED_BOT while changing domain."
-        return 1
+    info=$(docker inspect -f '{{.State.Running}}|{{.RestartCount}}|{{.State.StartedAt}}' "$cid" 2>/dev/null)
+    running="${info%%|*}"
+    info="${info#*|}"
+    restart_count="${info%%|*}"
+    started_at="${info#*|}"
+
+    if [ "$running" != "true" ]; then
+        printf '%s● inactive%s' "$C_RED" "$C_RESET"
+        return
     fi
 
-    local current_domainhosts sanitized current_domain
-    current_domainhosts=$(grep '^\$domainhosts' "$CONFIG_PATH" | awk -F"'" '{print $2}')
-    sanitized=${current_domainhosts#http://}
-    sanitized=${sanitized#https://}
-    sanitized=${sanitized#/}
-    current_domain=${sanitized%%/*}
-    log_info "Processing domain change for bot '${SELECTED_BOT}' (current domain: ${current_domain:-unknown})."
-
-    local NEW_DOMAIN
-    while true; do
-        printf '  %s❯%s Enter the new domain (e.g. example.com): ' "$C_YELLOW" "$C_RESET"
-        read -r NEW_DOMAIN
-        if [[ "$NEW_DOMAIN" =~ ^[a-zA-Z0-9.-]+$ ]]; then
-            log_info "User entered new domain '$NEW_DOMAIN' for bot '$SELECTED_BOT'."
-            break
+    if [[ "$restart_count" =~ ^[0-9]+$ ]] && [ "$restart_count" -ge 3 ]; then
+        started_ts=$(date -d "$started_at" +%s 2>/dev/null || echo 0)
+        now_ts=$(date +%s)
+        uptime=$((now_ts - started_ts))
+        if [ "$uptime" -lt 60 ]; then
+            printf '%s● crash-looping (%s restarts)%s' "$C_RED" "$restart_count" "$C_RESET"
+            return
         fi
-        ui_err "Invalid domain format. Please try again."
-    done
-
-    log_action "Disabling Apache 2 service before domain change..."
-    systemctl disable apache2 >/dev/null 2>&1 || true
-
-    if ! configure_apache_vhost "$NEW_DOMAIN" "$BOT_PARENT_DIR"; then
-        log_error "Unable to prepare Apache 2 virtual host for ${NEW_DOMAIN} (bot ${SELECTED_BOT})."
-        restore_apache_service
-        return 1
-    fi
-    log_action "Stopping Apache 2 to configure SSL..."
-    if ! systemctl stop apache2; then
-        log_error "Failed to stop Apache 2 while preparing SSL for ${NEW_DOMAIN}."
-        restore_apache_service
-        return 1
-    fi
-    log_action "Configuring SSL certificate for ${NEW_DOMAIN}..."
-    if ! wait_for_certbot; then
-        log_error "Certbot is already running. Please try again after the current process completes."
-        restore_apache_service
-        return 1
-    fi
-    if ! certbot --apache --redirect --agree-tos --preferred-challenges http \
-            --non-interactive --force-renewal --cert-name "$NEW_DOMAIN" -d "$NEW_DOMAIN"; then
-        log_error "SSL configuration failed for ${NEW_DOMAIN}, rolling back certificate changes."
-        if wait_for_certbot; then
-            certbot delete --cert-name "$NEW_DOMAIN" 2>/dev/null
-        fi
-        restore_apache_service
-        return 1
     fi
 
-    local path_segment full_domain_path NEW_SECRET BOT_TOKEN updated_domainhosts WEBHOOK_URL webhook_response
-    if [ -f "$CONFIG_PATH" ]; then
-        cp "$CONFIG_PATH" "${CONFIG_PATH}.$(date +%s).bak"
-        sanitized=${current_domainhosts#http://}
-        sanitized=${sanitized#https://}
-        sanitized=${sanitized#/}
-        path_segment=""
-        if [[ "$sanitized" == */* ]]; then
-            path_segment=${sanitized#*/}
-            path_segment=${path_segment%/}
-        fi
-        [ -z "$path_segment" ] && path_segment="$SELECTED_BOT"
-        full_domain_path="${NEW_DOMAIN}/${path_segment}"
-        sed -i "s|\$domainhosts = '.*';|\$domainhosts = '${full_domain_path}';|" "$CONFIG_PATH"
+    printf '%s● active%s' "$C_GREEN" "$C_RESET"
+}
 
-        NEW_SECRET=$(openssl rand -base64 12 | tr -dc 'a-zA-Z0-9')
-        sed -i "s|\$secrettoken = '.*';|\$secrettoken = '${NEW_SECRET}';|" "$CONFIG_PATH"
+show_menu() {
+    local UI_FIXED_WIDTH
+    UI_FIXED_WIDTH=$(ui_term_width)
 
-        BOT_TOKEN=$(awk -F"'" '/\$APIKEY/{print $2}' "$CONFIG_PATH")
-        updated_domainhosts=$(awk -F"'" '/\$domainhosts/{print $2}' "$CONFIG_PATH" | head -1)
-        updated_domainhosts=${updated_domainhosts%/}
-        if [[ "$updated_domainhosts" =~ ^https?:// ]]; then
-            WEBHOOK_URL="${updated_domainhosts}/index.php"
-        else
-            WEBHOOK_URL="https://${updated_domainhosts}/index.php"
-        fi
+    local installed=0
+    [ -f "$ENV_FILE" ] && [ -f "$COMPOSE_FILE" ] && installed=1
 
-        webhook_response=$(curl -s -X POST "https://api.telegram.org/bot${BOT_TOKEN}/setWebhook" \
-            -F "url=${WEBHOOK_URL}" -F "secret_token=${NEW_SECRET}")
-        if echo "$webhook_response" | grep -q '"ok":true'; then
-            log_info "Telegram webhook updated successfully for ${NEW_DOMAIN} (bot ${SELECTED_BOT})."
-        else
-            log_warn "Webhook update returned a warning for ${NEW_DOMAIN}: ${webhook_response}"
-        fi
-    else
-        log_error "Config file missing at ${CONFIG_PATH}; aborting domain change."
-        restore_apache_service
-        return 1
+    local latest_version
+    latest_version=$(cache_get "latest_version" 1800)
+    if [ -z "$latest_version" ]; then
+        latest_version=$(get_latest_version)
+        cache_set "latest_version" "$latest_version"
+    fi
+    local latest_line="${C_CYAN}Latest${C_RESET}    : ${C_GREEN}${FAOXIMA_VERSION} (up to date)${C_RESET}"
+    if [ "$latest_version" != "unknown" ] && [ "$latest_version" != "$FAOXIMA_VERSION" ]; then
+        latest_line="${C_CYAN}Latest${C_RESET}    : ${C_YELLOW}${latest_version} (update available!)${C_RESET}"
     fi
 
-    if [ -n "$current_domain" ] && [ "$current_domain" != "$NEW_DOMAIN" ] \
-        && [ -f "/etc/apache2/sites-available/${current_domain}.conf" ]; then
-        a2dissite "${current_domain}.conf" >/dev/null 2>&1
-        log_info "Disabled old Apache 2 site ${current_domain}.conf."
-    fi
-
-    local attempt http_status=""
-    for attempt in {1..5}; do
-        http_status=$(curl -s -o /dev/null -w "%{http_code}" --max-time 10 "$WEBHOOK_URL")
-        [[ "$http_status" =~ ^(200|301|302)$ ]] && break
-        log_warn "Endpoint ${WEBHOOK_URL} not ready yet (HTTP ${http_status:-000}). Retrying in 3 seconds..."
-        sleep 3
-    done
-    if [[ "$http_status" =~ ^(200|301|302)$ ]]; then
-        log_info "Additional bot domain successfully migrated to ${full_domain_path}."
-    else
-        log_warn "Final verification failed for ${WEBHOOK_URL} (HTTP ${http_status:-000})."
-    fi
-
-    if [ -n "$current_domain" ] && [ "$current_domain" != "$NEW_DOMAIN" ] \
-        && [ -d "/etc/letsencrypt/live/${current_domain}" ]; then
-        local delete_old_cert
-        printf '  %s❯%s Delete old SSL certificate for %s? (y/n): ' "$C_YELLOW" "$C_RESET" "$current_domain"
-        read -r delete_old_cert
-        if [[ "$delete_old_cert" =~ ^[Yy]$ ]]; then
-            if wait_for_certbot; then
-                certbot delete --cert-name "$current_domain" 2>/dev/null \
-                    || ui_warn "Failed to delete certificate for ${current_domain}."
-                log_info "Requested deletion of old certificate for ${current_domain}."
-            else
-                log_warn "Certbot is busy; skipping deletion of legacy certificate for ${current_domain}."
+    local bot_token="" wh_url="" wh_pending=""
+    if [ "$installed" -eq 1 ]; then
+        bot_token=$(env_get TELEGRAM_BOT_TOKEN)
+        if [ -n "$bot_token" ]; then
+            local wh_json
+            wh_json=$(cache_get "webhook_info" 30)
+            if [ -z "$wh_json" ]; then
+                wh_json=$(curl -s --max-time 4 "https://api.telegram.org/bot${bot_token}/getWebhookInfo" 2>/dev/null)
+                cache_set "webhook_info" "$wh_json"
             fi
+            wh_url=$(webhook_field "$wh_json" "url")
+            wh_pending=$(webhook_field "$wh_json" "pending_update_count")
         fi
     fi
 
-    ui_ok "Domain updated successfully for ${SELECTED_BOT}."
-    log_info "Domain change completed for '${SELECTED_BOT}'. New domain: ${NEW_DOMAIN}."
-    restore_apache_service
-    printf '\n  %s❯%s Press Enter to return to the Additional Bot menu... ' "$C_YELLOW" "$C_RESET"; read -r
-    manage_additional_bots
+    show_animated_logo "$latest_line"
+
+    local bot_state domain pma_state
+        if [ "$installed" -eq 1 ]; then
+            bot_state="${C_GREEN}● installed${C_RESET}"
+            domain=$(env_get DOMAIN)
+            pma_state="${C_DIM}not enabled${C_RESET}"
+            local pma_running
+            pma_running=$(cache_get "pma_running" 30)
+            if [ -z "$pma_running" ]; then
+                if dc ps -q phpmyadmin >/dev/null 2>&1 && [ -n "$(dc ps -q phpmyadmin 2>/dev/null)" ]; then
+                    pma_running="1"
+                else
+                    pma_running="0"
+                fi
+                cache_set "pma_running" "$pma_running"
+            fi
+            [ "$pma_running" = "1" ] && pma_state="${C_GREEN}https://${domain}/phpmyadmin/${C_RESET}"
+
+            local ssl_line="${C_DIM}— not issued${C_RESET}"
+            local cert_enddate
+            cert_enddate=$(cache_get "cert_enddate" 600)
+            if [ -z "$cert_enddate" ]; then
+                cert_enddate=$(get_cert_enddate "$domain")
+                cache_set "cert_enddate" "$cert_enddate"
+            fi
+            if [ -n "$cert_enddate" ]; then
+                local expiry_ts now_ts days_left
+                expiry_ts=$(date -d "$cert_enddate" +%s 2>/dev/null || echo 0)
+                now_ts=$(date +%s)
+                if [ "$expiry_ts" -gt 0 ]; then
+                    days_left=$(( (expiry_ts - now_ts) / 86400 ))
+                    if [ "$days_left" -gt 0 ]; then
+                        ssl_line="${C_GREEN}● valid (${days_left} day$([ "$days_left" -ne 1 ] && printf 's') left)${C_RESET}"
+                    else
+                        ssl_line="${C_RED}● expired${C_RESET}"
+                    fi
+                fi
+            fi
+            ui_section "Bot Status" \
+                "State|${bot_state}" \
+                "SSL|${ssl_line}" \
+                "Domain|${C_WHITE}https://${domain}/faoxima${C_RESET}" \
+                "phpMyAdmin|${pma_state}"
+
+            if [ -n "$bot_token" ]; then
+                ui_section "Webhook" \
+                    "URL|${C_GREEN}● set${C_RESET}  ${C_DIM}${wh_url:-unknown}${C_RESET}" \
+                    "Pending|${C_WHITE}${wh_pending:-0} update(s)${C_RESET}"
+            fi
+        else
+            ui_section "Bot Status" \
+                "State|${C_RED}● not installed${C_RESET}"
+        fi
+
+        local os_name docker_ver compose_ver
+        os_name=$(cache_get "os_name" 3600)
+        if [ -z "$os_name" ]; then
+            os_name=$( . /etc/os-release 2>/dev/null && echo "$PRETTY_NAME" )
+            cache_set "os_name" "$os_name"
+        fi
+        docker_ver=$(cache_get "docker_ver" 3600)
+        if [ -z "$docker_ver" ]; then
+            docker_ver=$(docker --version 2>/dev/null | sed -E 's/^Docker version ([^,]+),.*/\1/')
+            cache_set "docker_ver" "$docker_ver"
+        fi
+        compose_ver=$(cache_get "compose_ver" 3600)
+        if [ -z "$compose_ver" ]; then
+            compose_ver=$(docker compose version --short 2>/dev/null)
+            cache_set "compose_ver" "$compose_ver"
+        fi
+        if [ "$installed" -eq 1 ]; then
+            ui_section "System" \
+                "OS|${C_WHITE}${os_name:-unknown}${C_RESET}" \
+                "Docker|${C_WHITE}${docker_ver:-unknown}${C_RESET}" \
+                "Compose|${C_WHITE}${compose_ver:-unknown}${C_RESET}" \
+                "nginx|$(service_state nginx)" \
+                "app|$(service_state app)" \
+                "db|$(service_state db)"
+        else
+            ui_section "System" \
+                "OS|${C_WHITE}${os_name:-unknown}${C_RESET}" \
+                "Docker|${C_WHITE}${docker_ver:-unknown}${C_RESET}" \
+                "Compose|${C_WHITE}${compose_ver:-unknown}${C_RESET}"
+        fi
+
+        local ram disk cpu_load uptime_str
+        ram=$(free -m 2>/dev/null | awk '/^Mem:/{printf "%sMB / %sMB (%.0f%%)", $3, $2, ($3*100)/$2}')
+        disk=$(df -h / 2>/dev/null | awk 'NR==2{printf "%s / %s (%s)", $3, $2, $5}')
+        cpu_load=$(uptime 2>/dev/null | awk -F'load average:' '{print $2}' | sed 's/^ *//')
+        uptime_str=$(uptime -p 2>/dev/null)
+        ui_section "Resources" \
+            "RAM|${C_WHITE}${ram:-unknown}${C_RESET}" \
+            "Disk|${C_WHITE}${disk:-unknown}${C_RESET}" \
+            "CPU load|${C_WHITE}${cpu_load:-unknown}${C_RESET}" \
+            "Uptime|${C_WHITE}${uptime_str:-unknown}${C_RESET}"
+
+        ui_menu_list "Menu" \
+            "${C_WHITE}[1]${C_RESET} Bot" \
+            "${C_WHITE}[2]${C_RESET} Additional Bots" \
+            "${C_WHITE}[3]${C_RESET} Database" \
+            "${C_WHITE}[4]${C_RESET} Domain & SSL" \
+            "${C_WHITE}[5]${C_RESET} Maintenance" \
+            "${C_RED}[6]${C_RESET} Exit"
+
+    local option
+    printf '  %s❯%s Select a category [1-6]: ' "$C_YELLOW" "$C_RESET"
+    read -r option
+
+    case "$option" in
+        1) menu_bot ;;
+        2) menu_additional_bots ;;
+        3) menu_database ;;
+        4) menu_domain_ssl ;;
+        5) menu_maintenance ;;
+        6)
+            ui_ok "Exiting... goodbye!"
+            exit 0
+            ;;
+        *)
+            ui_err "Invalid option. Please try again."
+            sleep 2
+            ;;
+    esac
+    show_menu
 }
 
-# ============================================================================
-#  ENTRY POINT
-# ============================================================================
+menu_bot() {
+    show_logo
+    ui_menu_list "Bot" \
+        "${C_WHITE}[1]${C_RESET} Install Faoxima Bot" \
+        "${C_YELLOW}[2]${C_RESET} Install Beta" \
+        "${C_WHITE}[3]${C_RESET} Update Faoxima Bot" \
+        "${C_WHITE}[4]${C_RESET} Remove Faoxima Bot" \
+        "${C_RED}[5]${C_RESET} Back to main menu"
+
+    local option
+    printf '  %s❯%s Select an option [1-5]: ' "$C_YELLOW" "$C_RESET"
+    read -r option
+
+    case "$option" in
+        1) install_bot ;;
+        2) install_beta_bot ;;
+        3) update_bot ;;
+        4) remove_bot ;;
+        5) return 0 ;;
+        *)
+            ui_err "Invalid option. Please try again."
+            sleep 2
+            menu_bot
+            return 0
+            ;;
+    esac
+    printf '\n  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"; read -r
+}
+
+menu_additional_bots() {
+    show_logo
+
+    if [ -d "$BOTS_DIR" ] && [ -n "$(find "$BOTS_DIR" -mindepth 1 -maxdepth 1 -type d 2>/dev/null)" ]; then
+        local all_names=() d
+        for d in "${BOTS_DIR}"/*/; do
+            [ -d "$d" ] || continue
+            all_names+=("$(basename "$d")")
+        done
+
+        local preview_limit=20
+        local shown="${#all_names[@]}"
+        [ "$shown" -gt "$preview_limit" ] && shown="$preview_limit"
+
+        local rows=() name domain domain_line i
+        for ((i = 0; i < shown; i++)); do
+            name="${all_names[$i]}"
+            domain=""
+            [ -f "${BOTS_DIR}/${name}/.env" ] && domain=$(grep -E '^DOMAIN=' "${BOTS_DIR}/${name}/.env" | tail -1 | cut -d'=' -f2-)
+            if [ -n "$domain" ]; then
+                domain_line="https://${domain}/${name}"
+            else
+                domain_line="unknown"
+            fi
+            rows+=("${name}|${C_GREEN}${domain_line}${C_RESET}")
+        done
+        ui_status_table "Installed Additional Bots (${#all_names[@]} total)" "$C_CYAN" "${rows[@]}"
+        if [ "${#all_names[@]}" -gt "$preview_limit" ]; then
+            ui_info "Showing the first ${preview_limit} of ${#all_names[@]} — use 'List Additional Bots' below to page through all of them."
+        fi
+    fi
+
+    ui_menu_list "Additional Bots" \
+        "${C_WHITE}[1]${C_RESET} Install Additional Bot" \
+        "${C_YELLOW}[2]${C_RESET} Install Beta" \
+        "${C_WHITE}[3]${C_RESET} List Additional Bots" \
+        "${C_WHITE}[4]${C_RESET} Update Additional Bots" \
+        "${C_RED}[5]${C_RESET} Remove Additional Bot" \
+        "${C_RED}[6]${C_RESET} Back to main menu"
+
+    local option
+    printf '  %s❯%s Select an option [1-6]: ' "$C_YELLOW" "$C_RESET"
+    read -r option
+
+    case "$option" in
+        1) install_additional_bot ;;
+        2) install_beta_additional_bot ;;
+        3) list_additional_bots ;;
+        4) menu_update_additional_bots ;;
+        5) remove_additional_bot ;;
+        6) return 0 ;;
+        *)
+            ui_err "Invalid option. Please try again."
+            sleep 2
+            menu_additional_bots
+            return 0
+            ;;
+    esac
+    printf '\n  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"; read -r
+}
+
+menu_database() {
+    show_logo
+    ui_menu_list "Database" \
+        "${C_WHITE}[1]${C_RESET} Export Database — All Bots (Main + Additional)" \
+        "${C_WHITE}[2]${C_RESET} Export Database — Single Bot" \
+        "${C_WHITE}[3]${C_RESET} Import Database" \
+        "${C_WHITE}[4]${C_RESET} Optimize Database & Server" \
+        "${C_WHITE}[5]${C_RESET} Install / Enable Redis" \
+        "${C_RED}[6]${C_RESET} Back to main menu"
+
+    local option
+    printf '  %s❯%s Select an option [1-6]: ' "$C_YELLOW" "$C_RESET"
+    read -r option
+
+    case "$option" in
+        1) export_database_all ;;
+        2) export_database_single ;;
+        3) import_database ;;
+        4) optimize_database ;;
+        5) install_redis ;;
+        6) return 0 ;;
+        *)
+            ui_err "Invalid option. Please try again."
+            sleep 2
+            menu_database
+            return 0
+            ;;
+    esac
+    printf '\n  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"; read -r
+}
+
+menu_domain_ssl() {
+    show_logo
+    ui_menu_list "Domain & SSL" \
+        "${C_WHITE}[1]${C_RESET} Renew SSL Certificates" \
+        "${C_WHITE}[2]${C_RESET} Change Domain" \
+        "${C_WHITE}[3]${C_RESET} Enable SSL Auto-Renewal" \
+        "${C_RED}[4]${C_RESET} Back to main menu"
+
+    local option
+    printf '  %s❯%s Select an option [1-4]: ' "$C_YELLOW" "$C_RESET"
+    read -r option
+
+    case "$option" in
+        1) renew_ssl ;;
+        2) change_domain ;;
+        3) enable_ssl_auto_renew ;;
+        4) return 0 ;;
+        *)
+            ui_err "Invalid option. Please try again."
+            sleep 2
+            menu_domain_ssl
+            return 0
+            ;;
+    esac
+    printf '\n  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"; read -r
+}
+
+menu_maintenance() {
+    show_logo
+    ui_menu_list "Maintenance" \
+        "${C_WHITE}[1]${C_RESET} View Error Logs" \
+        "${C_WHITE}[2]${C_RESET} Increase Upload Limit" \
+        "${C_WHITE}[3]${C_RESET} Database Credentials & Info" \
+        "${C_WHITE}[4]${C_RESET} Service Status & Management" \
+        "${C_WHITE}[5]${C_RESET} Set Max Database Connections" \
+        "${C_RED}[6]${C_RESET} Back to main menu"
+
+    local option
+    printf '  %s❯%s Select an option [1-6]: ' "$C_YELLOW" "$C_RESET"
+    read -r option
+
+    case "$option" in
+        1) view_error_logs ;;
+        2) increase_upload_limit ;;
+        3) menu_db_credentials ;;
+        4) menu_service_management ;;
+        5) set_max_connections ;;
+        6) return 0 ;;
+        *)
+            ui_err "Invalid option. Please try again."
+            sleep 2
+            menu_maintenance
+            return 0
+            ;;
+    esac
+    printf '\n  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"; read -r
+}
+
 process_arguments() {
+    if [ "$1" = "--ssl-auto-renew-check" ]; then
+        ssl_auto_renew_check
+        exit 0
+    fi
+
+    install_docker
+
     local version=""
     case "$1" in
         -v*)
@@ -3379,16 +3863,13 @@ process_arguments() {
                 if [ -n "$2" ]; then
                     install_bot "-v" "$2"
                 else
-                    ui_err "Please specify a version with -v (e.g. -v 0.0.2)"
+                    ui_err "Please specify a version with -v (e.g. -v 1.0.0)"
                     exit 1
                 fi
             fi
             ;;
         -beta|--beta)
             install_bot "-beta"
-            ;;
-        -update)
-            update_bot "$2"
             ;;
         *)
             show_menu

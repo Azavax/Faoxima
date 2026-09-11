@@ -15,14 +15,25 @@ if (isset($update['pre_checkout_query'])) {
     if ($Payment_report['payment_Status'] == "paid") {
         return;
     }
+    $atomicStarPay = $pdo->prepare("UPDATE Payment_report SET payment_Status = 'paid' WHERE id_order = :o AND payment_Status <> 'paid'");
+    $atomicStarPay->execute([':o' => $Payment_report['id_order']]);
+    if ($atomicStarPay->rowCount() < 1) {
+        return;
+    }
     update("Payment_report", "dec_not_confirmed", json_encode($update['pre_checkout_query']), "id_order", $Payment_report['id_order']);
     DirectPayment($Payment_report['id_order']);
     $pricecashback = select("PaySetting", "ValuePay", "NamePay", "chashbackstar", "select")['ValuePay'];
     $Balance_id = select("user", "*", "id", $Payment_report['id_user'], "select");
-    if ($pricecashback != "0") {
+    $cashbackEligible = !function_exists('rx_cashbackEligibleForKey')
+        || rx_cashbackEligibleForKey("chashbackstar", $Balance_id['register'] ?? null, $Payment_report['id_invoice'] ?? null, $Balance_id['id'] ?? null, $Payment_report['id_order'] ?? null);
+    if ($cashbackEligible && $pricecashback != "0") {
         $result = ($Payment_report['price'] * $pricecashback) / 100;
-        $Balance_confrim = intval($Balance_id['Balance']) + $result;
-        update("user", "Balance", $Balance_confrim, "id", $Balance_id['id']);
+        if (function_exists('balance_atomic_credit')) {
+            balance_atomic_credit($Balance_id['id'], $result);
+        } else {
+            $Balance_confrim = intval($Balance_id['Balance']) + $result;
+            update("user", "Balance", $Balance_confrim, "id", $Balance_id['id']);
+        }
         $text_report = sprintf($textbotlang['users']['Discount']['gift-deposit'], $result);
         sendmessage($Balance_id['id'], $text_report, null, 'HTML');
     }
@@ -34,7 +45,6 @@ if (isset($update['pre_checkout_query'])) {
             'parse_mode' => "HTML"
         ]);
     }
-    update("Payment_report", "payment_Status", "paid", "id_order", $Payment_report['id_order']);
 } elseif (preg_match('/extends_(\w+)_(.*)/', $datain, $dataget)) {
     $username = $dataget[1];
     $invoiceIdForExtend = $dataget[2] ?? '';
@@ -84,11 +94,11 @@ if (isset($update['pre_checkout_query'])) {
             Editmessagetext($from_id, $message_id, "❌ برای این سرویس موجودی انبار قابل تمدید وجود ندارد.", json_encode(['inline_keyboard' => [[['text' => $textbotlang['users']['stateus']['backlist'] ?? '🏠 بازگشت به لیست سرویس ها', 'callback_data' => 'backorder']]]], JSON_UNESCAPED_UNICODE), 'HTML');
             return;
         }
-        Editmessagetext($from_id, $message_id, "📦 وضعیت نت ملی فعال است؛ محصول انباری تمدید را انتخاب کنید:", $stockKeyboard, 'HTML');
+        Editmessagetext($from_id, $message_id, "📦 وضعیت نت ملی فعال است؛ فقط محصولات موجود در انبار برای تمدید نمایش داده می‌شوند. یکی را انتخاب کنید:", $stockKeyboard, 'HTML');
         return;
     }
 
-    $query = "SELECT * FROM product WHERE (Location = :location OR Location = '/all') AND (agent = :agent OR agent = 'all' OR agent = '' OR agent IS NULL)";
+    $query = "SELECT * FROM product WHERE (FIND_IN_SET(:location, Location) > 0 OR Location = '/all') AND (agent = :agent OR agent = 'all' OR agent = '' OR agent IS NULL)";
     $queryParams = [
         ':location' => $location,
         ':agent' => $user['agent']
@@ -102,7 +112,10 @@ if (isset($update['pre_checkout_query'])) {
         $datakeyboard = "prodcutserviceom_";
     }
     $statuscustom = ($statuscustomvolume == "1" && $marzban_list_get['type'] != "Manualsale");
-    Editmessagetext($from_id, $message_id, $textbotlang['users']['extend']['selectservice'], KeyboardProduct($marzban_list_get['name_panel'], $query, $user['pricediscount'], "serviceextendselects-", false, "backuser", $username, "customsellvolume", $user['agent'], $queryParams));
+    $textextend = faoxima_render_text($textbotlang['users']['extend']['selectservice'], [
+        'panel' => $marzban_list_get['name_panel'],
+    ]);
+    Editmessagetext($from_id, $message_id, $textextend, KeyboardProduct($marzban_list_get['name_panel'], $query, $user['pricediscount'], "serviceextendselects-", false, "backuser", $username, "customsellvolume", $user['agent'], $queryParams));
 } elseif (preg_match('/^serviceextendselects-(.*)-(.*)/', $datain, $dataget)) {
     deletemessage($from_id, $message_id);
     $codeproduct = $dataget[1];
@@ -110,7 +123,7 @@ if (isset($update['pre_checkout_query'])) {
     if (function_exists('rxResolveProductForPanel')) {
         $prodcut = rxResolveProductForPanel($codeproduct, $user['Processing_value'], $user['agent']);
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :processing_value OR Location = '/all') AND code_product = :code_product AND agent = :agent");
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:processing_value, Location) > 0 OR Location = '/all') AND code_product = :code_product AND agent = :agent");
         $stmt->execute([
             ':processing_value' => $user['Processing_value'],
             ':code_product' => $codeproduct,
@@ -130,7 +143,8 @@ if (isset($update['pre_checkout_query'])) {
             ]
         ]
     ]);
-    sendmessage($from_id, sprintf($textbotlang['users']['extend']['renewalinvoice'], $username, $prodcut['name_product'], $prodcut['price_product'], $prodcut['Service_time'], $prodcut['Volume_constraint'], $prodcut['note'], $user['Balance']), $keyboardextend, 'html');
+    $prodcutVolumeLabel = intval($prodcut['Volume_constraint']) == 0 ? $textbotlang['users']['stateus']['Unlimited'] : $prodcut['Volume_constraint'];
+    sendmessage($from_id, sprintf($textbotlang['users']['extend']['renewalinvoice'], $username, $prodcut['name_product'], $prodcut['price_product'], $prodcut['Service_time'], $prodcutVolumeLabel, $prodcut['note'], $user['Balance']), $keyboardextend, 'html');
 } elseif (preg_match('/^confirmserivces-(.*)-(.*)/', $datain, $dataget)) {
     $codeproduct = $dataget[1];
     $usernamePanelExtends = $dataget[2];
@@ -138,7 +152,7 @@ if (isset($update['pre_checkout_query'])) {
     if (function_exists('rxResolveProductForPanel')) {
         $prodcut = rxResolveProductForPanel($codeproduct, $user['Processing_value'], $user['agent']);
     } else {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location = :processing_value OR Location = '/all') AND code_product = :code_product AND agent = :agent");
+        $stmt = $pdo->prepare("SELECT * FROM product WHERE (FIND_IN_SET(:processing_value, Location) > 0 OR Location = '/all') AND code_product = :code_product AND agent = :agent");
         $stmt->execute([
             ':processing_value' => $user['Processing_value'],
             ':code_product' => $codeproduct,
@@ -166,7 +180,7 @@ if (isset($update['pre_checkout_query'])) {
         $nameloc = $stmtInvoice->fetch(PDO::FETCH_ASSOC);
     }
     if ($user['Balance'] < $prodcut['price_product'] && $user['agent'] != "n2") {
-        $marzbandirectpay = select('shopSetting', "*", "Namevalue", "statusdirectpabuy", "select")['value'];
+        $marzbandirectpay = panel_feature_enabled($nameloc['Service_location'], 'directbuy') ? "ondirectbuy" : "offdirectbuy";
         if ($marzbandirectpay == "offdirectbuy") {
             $minbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "minbalance", "select")['ValuePay'], true)[$user['agent']]);
             $maxbalance = number_format(json_decode(select("PaySetting", "*", "NamePay", "maxbalance", "select")['ValuePay'], true)[$user['agent']]);
@@ -211,14 +225,15 @@ if (isset($update['pre_checkout_query'])) {
         }
         $stockNew = function_exists('nmStockReserveForProduct') ? nmStockReserveForProduct($marzban_list_get, $prodcut, $from_id, $nameloc['id_invoice'], 'normal_extend_national_stock') : false;
         if (!$stockNew) {
-            sendmessage($from_id, "❌ موجودی انبار برای این محصول تمام شده است. مبلغی کسر نشد.", $keyboard, 'HTML');
+            sendmessage($from_id, $datatextbot['dyn_errors_stock_depleted_no_charge'] ?? "❌ موجودی انبار برای این محصول تمام شده است. مبلغی کسر نشد.", $keyboard, 'HTML');
             return;
         }
         $__pp = (float)$prodcut['price_product'];
         $__allowNeg = ($user['agent'] === 'n2') ? (int)($user['maxbuyagent'] ?? 0) : 0;
         $__charge = function_exists('balance_atomic_charge') ? balance_atomic_charge($from_id, $__pp, $__allowNeg) : ['ok' => false, 'reason' => 'helper-missing'];
         if (empty($__charge['ok'])) {
-            sendmessage($from_id, "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", $keyboard, 'HTML');
+            if (function_exists('nmStockReleaseReservation')) nmStockReleaseReservation($stockNew);
+            sendmessage($from_id, $datatextbot['dyn_errors_concurrency_insufficient_stock'] ?? "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", $keyboard, 'HTML');
             return;
         }
         $Balance_Low_user = $__charge['new_balance'];
@@ -240,7 +255,7 @@ if (isset($update['pre_checkout_query'])) {
             'source_panel_code' => $marzban_list_get['code_panel'],
         ]);
         nmStockDeliverConfig($stockNew, $invoiceNew, '✅ تمدید سرویس از انبار شبکه‌ملی با موفقیت انجام شد');
-        sendmessage($from_id, "✅ تمدید انباری انجام شد و موجودی انبار یک عدد کم شد.", $keyboard, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_stock_extend_success'] ?? "✅ تمدید انباری انجام شد و موجودی انبار یک عدد کم شد.", $keyboard, 'HTML');
         return;
     }
 
@@ -253,7 +268,7 @@ if (isset($update['pre_checkout_query'])) {
     $__allowNeg2 = ($user['agent'] === 'n2') ? (int)($user['maxbuyagent'] ?? 0) : 0;
     $__charge2 = function_exists('balance_atomic_charge') ? balance_atomic_charge($from_id, $__pp2, $__allowNeg2) : ['ok' => false, 'reason' => 'helper-missing'];
     if (empty($__charge2['ok'])) {
-        sendmessage($from_id, "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", $keyboard, 'HTML');
+        sendmessage($from_id, $datatextbot['dyn_errors_concurrency_insufficient_stock'] ?? "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", $keyboard, 'HTML');
         return;
     }
     $Balance_Low_user = $__charge2['new_balance'];
@@ -263,16 +278,20 @@ if (isset($update['pre_checkout_query'])) {
         $Balance_Low_user = $user['Balance'];
     }
     if ($extend['status'] == false) {
-        $fallbackInvoice = is_array($nameloc) ? $nameloc : ['id_invoice' => '', 'id_user' => $from_id, 'username' => $usernamePanelExtends, 'Service_location' => $marzban_list_get['name_panel'], 'name_product' => $prodcut['name_product'], 'Volume' => $prodcut['Volume_constraint'], 'Service_time' => $prodcut['Service_time']];
-        if (nmStockCompleteExtendFallback($from_id, $user, array_merge($fallbackInvoice, ['username' => $usernamePanelExtends]), $prodcut, 0, 'paid_extend_panel_fallback')) {
-            return;
-        }
+        $rxStockEmpty = ($extend['code'] ?? '') === 'manual_stock_empty';
+        $rxQueuedExists = ($extend['code'] ?? '') === 'queued_renewal_exists';
         $extend['msg'] = json_encode($extend['msg']);
         $textreports = "خطای تمدید سرویس
-        نام پنل : {$marzban_list_get['name_panel']}
-        نام کاربری سرویس : $usernamePanelExtends
-        دلیل خطا : {$extend['msg']}";
-        sendmessage($from_id, "❌خطایی در تمدید سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
+        <blockquote>نام پنل : {$marzban_list_get['name_panel']}</blockquote>
+        <blockquote>نام کاربری سرویس : $usernamePanelExtends</blockquote>
+        <blockquote>دلیل خطا : {$extend['msg']}</blockquote>";
+        if ($rxStockEmpty) {
+            sendmessage($from_id, $datatextbot['dyn_errors_renewal_stock_empty'] ?? "❌ موجودی انبار برای این محصول تمام شده است. مبلغی از حساب شما کسر نشد.", null, 'HTML');
+        } elseif ($rxQueuedExists) {
+            sendmessage($from_id, $datatextbot['dyn_errors_queued_renewal_exists'] ?? "❌ یک رزرو اشتراک برای این سرویس در انتظار فعال‌سازی است. مبلغی از حساب شما کسر نشد.", null, 'HTML');
+        } else {
+            sendmessage($from_id, $datatextbot['dyn_errors_renewal_support_error'] ?? "❌خطایی در تمدید سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
+        }
         if (strlen($setting['Channel_Report'] ?? '') > 0) {
             telegram('sendmessage', [
                 'chat_id' => $setting['Channel_Report'],
@@ -314,13 +333,27 @@ if (isset($update['pre_checkout_query'])) {
     ]);
     $prodcut['price_product'] = number_format($prodcut['price_product']);
     $balanceformatsell = number_format(select("user", "Balance", "id", $from_id, "select")['Balance'], 0);
-    $textextend = "✅ تمدید برای سرویس شما با موفقیت صورت گرفت
+    if (!empty($extend['queued'])) {
+        $rxQueuedSuccessTpl = $datatextbot['dyn_renewconfirm_queued_success'] ?? '✅ سرویس خریداری شده رزرو شد و به محض پایان سرویس فعلی فعال می‌گردد.';
+        $textextend = "$rxQueuedSuccessTpl
 
 ▫️نام سرویس : $usernamePanelExtends
 ▫️نام محصول : {$prodcut['name_product']}
 ▫️مبلغ تمدید {$prodcut['price_product']} تومان
 ";
+    } else {
+        $textextend = "✅ تمدید برای سرویس شما با موفقیت صورت گرفت
+
+▫️نام سرویس : $usernamePanelExtends
+▫️نام محصول : {$prodcut['name_product']}
+▫️مبلغ تمدید {$prodcut['price_product']} تومان
+";
+    }
     sendmessage($from_id, $textextend, $keyboard, 'HTML');
+    if ($marzban_list_get['type'] == "Manualsale") {
+        $manualSubLink = is_array($extend) ? rxResolveConnectionLink($marzban_list_get, $extend['subscription_url'] ?? "", $extend['file_ext'] ?? null) : "";
+        sendMessageService($marzban_list_get, "", $manualSubLink, $usernamePanelExtends, null, $textextend, $nameloc['id_invoice'] ?? "", $from_id);
+    }
     $timejalali = jdate('Y/m/d H:i:s');
     $text_report = sprintf($textbotlang['Admin']['reportgroup']['renewaldetails'], $from_id, $username, $usernamePanelExtends, $first_name, $marzban_list_get['name_panel'], $prodcut['name_product'], $prodcut['Volume_constraint'], $prodcut['Service_time'], $prodcut['price_product'], $balanceformatsell, $timejalali);
     if (strlen($setting['Channel_Report'] ?? '') > 0) {

@@ -16,15 +16,22 @@ if( !isset($_SESSION["user"]) || !$result ){
 }
 ?>
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" data-color="blue" data-theme="dark">
+<html lang="fa" dir="rtl" data-color="blue">
   <head>
+    <script>
+    (function(){try{var t=localStorage.getItem('faoxima_theme');
+    if(t!=='light'&&t!=='dark')t='dark';
+    document.documentElement.setAttribute('data-theme',t);
+    var c=localStorage.getItem('faoxima_color');
+    if(c)document.documentElement.setAttribute('data-color',c);}catch(e){}})();
+    </script>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>اینباندها — پنل فاکسیما</title>
-    <link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/theme.css?v=flat47">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-    <script src="js/theme.js" defer>
+    <script src="js/theme.js?v=flat5" defer>
 
 </script>
   </head>

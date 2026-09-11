@@ -95,13 +95,13 @@ final class ServiceConfigsHandler extends BaseHandler
         $body = trim($body);
 
 
-        if (preg_match('#^(vmess|vless|trojan|ss|ssr|hysteria2?|hy2|tuic|wireguard)://#im', $body)) {
+        if (preg_match('#^(vmess|vless|trojan|ss|ssr|hysteria2?|hy2|tuic|wireguard|wg|vpn|awg|amneziawg|tg)://#im', $body)) {
             return $this->splitConfigLines($body);
         }
 
 
         $decoded = $this->safeBase64Decode($body);
-        if ($decoded !== null && preg_match('#^(vmess|vless|trojan|ss|ssr|hysteria2?|hy2|tuic)://#im', $decoded)) {
+        if ($decoded !== null && preg_match('#^(vmess|vless|trojan|ss|ssr|hysteria2?|hy2|tuic|wireguard|wg|vpn|awg|amneziawg|tg)://#im', $decoded)) {
             return $this->splitConfigLines($decoded);
         }
 

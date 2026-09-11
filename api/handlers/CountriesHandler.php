@@ -17,7 +17,14 @@ final class CountriesHandler extends BaseHandler
             "SELECT * FROM marzban_panel
               WHERE status = 'active'
                 AND (agent = :agent OR agent = 'all')
-                AND type != 'Manualsale'",
+                AND (
+                    type != 'Manualsale'
+                    OR EXISTS (
+                        SELECT 1 FROM manualsell
+                         WHERE manualsell.codepanel = marzban_panel.code_panel
+                           AND manualsell.status = 'active'
+                    )
+                )",
             [':agent' => $this->user['agent']]
         );
 
@@ -31,6 +38,7 @@ final class CountriesHandler extends BaseHandler
 
         $customUsernameLabel = $textbotlang['users']['customusername'] ?? 'نام کاربری دلخواه';
         $alternateUsernameLabel = 'نام کاربری دلخواه + عدد رندوم';
+        $smartUsernameLabel = 'متن دلخواه کاربر + رندوم';
 
         $list = [];
         foreach ($rows as $row) {
@@ -40,17 +48,17 @@ final class CountriesHandler extends BaseHandler
                 continue;
             }
 
-            if (function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel($row)) {
-                continue;
-            }
-
             $isUsername = false;
             $isUsernameRequired = false;
+            $isUsernameRandom = false;
             $methodUsername = $row['MethodUsername'] ?? '';
-            if ($methodUsername === $customUsernameLabel || $methodUsername === $alternateUsernameLabel) {
+            if ($methodUsername === $customUsernameLabel || $methodUsername === $alternateUsernameLabel || $methodUsername === $smartUsernameLabel) {
                 $isUsername = true;
-                if ($methodUsername === $customUsernameLabel) {
+                if ($methodUsername === $customUsernameLabel || $methodUsername === $smartUsernameLabel) {
                     $isUsernameRequired = true;
+                }
+                if ($methodUsername === $alternateUsernameLabel || $methodUsername === $smartUsernameLabel) {
+                    $isUsernameRandom = true;
                 }
             }
 
@@ -64,6 +72,7 @@ final class CountriesHandler extends BaseHandler
                 'is_custom'            => $isCustom,
                 'is_username'          => $isUsername,
                 'is_username_required' => $isUsernameRequired,
+                'is_username_random'   => $isUsernameRandom,
                 'is_note'              => $isNoteGlobal,
             ];
         }

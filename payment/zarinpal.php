@@ -53,8 +53,7 @@ $datatextbot = array(
     'textaftertext' => '',
     'textmanual' => '',
     'textselectlocation' => '',
-    'text_wgdashboard' => '',
-    'textafterpayibsng' => ''
+    'text_wgdashboard' => ''
 );
 foreach ($datatxtbot as $item) {
     if (isset($datatextbot[$item['id_text']])) {
@@ -133,7 +132,9 @@ $response = json_decode($response,true);
     DirectPayment($invoice_id,"../images.jpg");
     $pricecashback = select("PaySetting", "ValuePay", "NamePay", "chashbackzarinpal","select")['ValuePay'];
     $Balance_id = select("user","*","id",$Payment_report['id_user'],"select");
-    if($pricecashback != "0"){
+    $cashbackEligible = !function_exists('rx_cashbackEligibleForKey')
+        || rx_cashbackEligibleForKey("chashbackzarinpal", $Balance_id['register'] ?? null, $Payment_report['id_invoice'] ?? null, $Balance_id['id'] ?? null, $Payment_report['id_order'] ?? null);
+    if($cashbackEligible && $pricecashback != "0"){
         $result = ($Payment_report['price'] * $pricecashback) / 100;
         $Balance_confrim = intval($Balance_id['Balance']) +$result;
         update("user","Balance",$Balance_confrim, "id",$Balance_id['id']);
@@ -147,12 +148,12 @@ $response = json_decode($response,true);
     $price = number_format($price);
 $text_report = "💵 پرداخت جدید
 
-آیدی عددی کاربر : {$Payment_report['id_user']}
-نام کاربری کاربر : {$Balance_id['username']}
-مبلغ تراکنش $price
-شماره تراکنش پرداخت : $refcode
-شماره کارت کاربر : $cart_number
-روش پرداخت :  درگاه زرین پال";
+<blockquote>آیدی عددی کاربر : {$Payment_report['id_user']}</blockquote>
+<blockquote>نام کاربری کاربر : {$Balance_id['username']}</blockquote>
+<blockquote>مبلغ تراکنش $price</blockquote>
+<blockquote>شماره تراکنش پرداخت : $refcode</blockquote>
+<blockquote>شماره کارت کاربر : $cart_number</blockquote>
+<blockquote>روش پرداخت :  درگاه زرین پال</blockquote>";
     if (strlen($setting['Channel_Report']) > 0) {
         telegram('sendmessage',[
         'chat_id' => $setting['Channel_Report'],

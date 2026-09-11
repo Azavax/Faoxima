@@ -25,13 +25,6 @@ final class ServiceRenewOptionsHandler extends BaseHandler
         }
 
         $panel = select('marzban_panel', '*', 'name_panel', $invoice['Service_location'], 'select');
-        if (!empty($panel) && function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel((array)$panel)) {
-            $emergencyMap = nmEmergencyReplacementMap();
-            $srcCode = (string)$panel['code_panel'];
-            if (isset($emergencyMap['by_code'][$srcCode])) {
-                $panel = $emergencyMap['by_code'][$srcCode];
-            }
-        }
         if (empty($panel)) {
             FaoximaResponse::notFound('Panel not found');
         }
@@ -40,19 +33,24 @@ final class ServiceRenewOptionsHandler extends BaseHandler
         }
 
         $agent = (string)($this->user['agent'] ?? 'f');
-        $statusShowPriceRow = select('shopSetting', '*', 'Namevalue', 'statusshowprice', 'select');
-        $statusShowPrice = is_array($statusShowPriceRow) ? (string)($statusShowPriceRow['value'] ?? 'onshowprice') : 'onshowprice';
+        $statusShowPrice = panel_feature_enabled($panel, 'showprice') ? 'onshowprice' : 'offshowprice';
         $userDiscount = (int)($this->user['pricediscount'] ?? 0);
 
 
         $products = FaoximaDb::fetchAll(
-            "SELECT * FROM product WHERE (Location = :loc OR Location = '/all') AND (agent = :agent OR agent = 'all')",
+            "SELECT * FROM product WHERE (FIND_IN_SET(:loc, Location) > 0 OR Location = '/all') AND (agent = :agent OR agent = 'all') ORDER BY (position = 0) ASC, position ASC, id ASC",
             [':loc' => $invoice['Service_location'], ':agent' => $agent]
         );
+
+        $nationalPanel = function_exists('nmPanelNationalEnabled') && nmPanelNationalEnabled($panel);
 
         $list = [];
         foreach ($products as $product) {
             if (!$this->productIsAllowedForAgent($product, $agent)) continue;
+            if ($nationalPanel && function_exists('nmStockHasAvailableForProduct')
+                && !nmStockHasAvailableForProduct($panel, $product)) {
+                continue;
+            }
 
             $price = (float)$product['price_product'];
             if ($userDiscount !== 0) {
@@ -68,6 +66,10 @@ final class ServiceRenewOptionsHandler extends BaseHandler
                 'price'        => $price,
                 'show_price'   => $statusShowPrice !== 'offshowprice',
                 'note'         => (string)($product['note'] ?? ''),
+                'ip_limit'     => (int)($product['ip_limit'] ?? 0),
+                'ip_limit_guard_active' => (($panel['ip_limit_guard'] ?? '') === 'onipguard'),
+                'symbolic_limit_enabled' => (faoxima_symbolic_limit_label($product) !== null),
+                'symbolic_limit_users'   => (int)($product['symbolic_limit_users'] ?? 0),
             ];
         }
 
@@ -121,7 +123,8 @@ final class ServiceRenewOptionsHandler extends BaseHandler
             && $hasVolPrice
             && (!$timeVariable || $hasTimePrice);
         $customEnabled   = $customConfigured
-            && ($customStatus === '1' || $custom_only);
+            && ($customStatus === '1' || $custom_only)
+            && !$nationalPanel;
 
 
         FaoximaResponse::ok([
@@ -144,7 +147,7 @@ final class ServiceRenewOptionsHandler extends BaseHandler
                 'max_volume_gb'  => $maxVol,
                 'min_time_days'  => $minTime,
                 'max_time_days'  => $maxTime,
-                'force'          => $custom_only,
+                'force'          => ($custom_only && !$nationalPanel),
             ],
         ]);
     }

@@ -6,19 +6,18 @@
     $step_payment = json_encode($step_payment);
 $keyboardhelpadmin = rx_kb_encode([
         [
-            rx_kb_style(['text' => "📚 اضافه کردن آموزش", 'callback_data' => 'help_add'], 'help_add', $_rx_helpa_styles),
+            rx_kb_style(['text' => "📚 افزودن آموزش", 'callback_data' => 'help_add'], 'help_add', $_rx_helpa_styles),
             rx_kb_style(['text' => "❌ حذف آموزش", 'callback_data' => 'help_del'], 'help_del', $_rx_helpa_styles)
         ],
         [rx_kb_style(['text' => "✏️ ویرایش آموزش", 'callback_data' => 'help_edit'], 'help_edit', $_rx_helpa_styles)],
         [
             rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'help_back'], 'help_back', $_rx_helpa_styles),
-            rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'adm_backmenu'], 'help_backmenu', $_rx_helpa_styles)
+            rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'help_backmenu'], 'help_backmenu', $_rx_helpa_styles)
         ]
     ]);
 $shopkeyboard = rx_kb_encode([
-        [rx_kb_style(['text' => "🛒 وضعیت قابلیت های فروشگاه", 'callback_data' => 'shop_status'], 'shop_status', $_rx_shp_styles)],
         [
-            rx_kb_style(['text' => "🗂 مدیریت دسته بندی", 'callback_data' => 'shop_category'], 'shop_category', $_rx_shp_styles),
+            rx_kb_style(['text' => "🗂 مدیریت دسته‌بندی", 'callback_data' => 'shop_category'], 'shop_category', $_rx_shp_styles),
             rx_kb_style(['text' => "🛍 مدیریت محصولات", 'callback_data' => 'shop_products'], 'shop_products', $_rx_shp_styles)
         ],
         [
@@ -30,7 +29,7 @@ $shopkeyboard = rx_kb_encode([
             rx_kb_style(['text' => "❌ حذف کد تخفیف", 'callback_data' => 'shop_discountdel'], 'shop_discountdel', $_rx_shp_styles)
         ],
         [
-            rx_kb_style(['text' => "⬇️ حداقل موجودی خرید عمده", 'callback_data' => 'shop_minbulk'], 'shop_minbulk', $_rx_shp_styles),
+            rx_kb_style(['text' => "⬇️ کف خرید عمده", 'callback_data' => 'shop_minbulk'], 'shop_minbulk', $_rx_shp_styles),
             rx_kb_style(['text' => "🎁 کش بک تمدید", 'callback_data' => 'shop_renewcb'], 'shop_renewcb', $_rx_shp_styles)
         ],
         [
@@ -40,7 +39,7 @@ $shopkeyboard = rx_kb_encode([
     ]);
 $keyboard_Category_manage = rx_kb_encode([
         [
-            rx_kb_style(['text' => "🛒 اضافه کردن دسته بندی", 'callback_data' => 'cat_add'], 'cat_add', $_rx_cat_styles),
+            rx_kb_style(['text' => "🛒 افزودن دسته‌بندی", 'callback_data' => 'cat_add'], 'cat_add', $_rx_cat_styles),
             rx_kb_style(['text' => "❌ حذف دسته بندی", 'callback_data' => 'cat_del'], 'cat_del', $_rx_cat_styles)
         ],
         [rx_kb_style(['text' => "✏️ ویرایش دسته بندی", 'callback_data' => 'cat_edit'], 'cat_edit', $_rx_cat_styles)],
@@ -48,12 +47,12 @@ $keyboard_Category_manage = rx_kb_encode([
     ]);
 $keyboard_shop_manage = rx_kb_encode([
         [
-            rx_kb_style(['text' => "🛍 اضافه کردن محصول", 'callback_data' => 'shopitem_add'], 'shopitem_add', $_rx_prod_styles),
+            rx_kb_style(['text' => "🛍 افزودن محصول", 'callback_data' => 'shopitem_add'], 'shopitem_add', $_rx_prod_styles),
             rx_kb_style(['text' => "❌ حذف محصول", 'callback_data' => 'shopitem_del'], 'shopitem_del', $_rx_prod_styles)
         ],
         [rx_kb_style(['text' => "✏️ ویرایش محصول", 'callback_data' => 'shopitem_edit'], 'shopitem_edit', $_rx_prod_styles)],
         [
-            rx_kb_style(['text' => "⬆️ افزایش گروهی قیمت", 'callback_data' => 'shopitem_priceinc'], 'shopitem_priceinc', $_rx_prod_styles),
+            rx_kb_style(['text' => "⬆️ افزایش قیمت", 'callback_data' => 'shopitem_priceinc'], 'shopitem_priceinc', $_rx_prod_styles),
             rx_kb_style(['text' => "⬇️ کاهش گروهی قیمت", 'callback_data' => 'shopitem_pricedec'], 'shopitem_pricedec', $_rx_prod_styles)
         ],
         [rx_kb_style(['text' => "⬅️ بازگشت به منوی فروشگاه", 'callback_data' => 'shopitem_back'], 'shopitem_back', $_rx_prod_styles)]
@@ -68,34 +67,137 @@ $request_contact = json_encode([
     'resize_keyboard' => true
 ]);
 $Feature_status = rx_kb_encode([
-        [rx_kb_style(['text' => "⚙️ قابلیت مشاهده اطلاعات اکانت", 'callback_data' => 'feat_info'], 'feat_info', $_rx_feat_styles)],
+        [rx_kb_style(['text' => "⚙️ مشاهده اطلاعات اکانت", 'callback_data' => 'feat_info'], 'feat_info', $_rx_feat_styles)],
         [
-            rx_kb_style(['text' => "🧪 قابلیت اکانت تست", 'callback_data' => 'feat_test'], 'feat_test', $_rx_feat_styles),
+            rx_kb_style(['text' => "🧪 اکانت تست", 'callback_data' => 'feat_test'], 'feat_test', $_rx_feat_styles),
             rx_kb_style(['text' => "📚 قابلیت آموزش", 'callback_data' => 'feat_help'], 'feat_help', $_rx_feat_styles)
         ],
         [
             rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'feat_back'], 'feat_back', $_rx_feat_styles),
-            rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'adm_backmenu'], 'feat_backmenu', $_rx_feat_styles)
+            rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'feat_backmenu'], 'feat_backmenu', $_rx_feat_styles)
         ]
     ]);
-$channelkeyboard = rx_kb_encode([
-        [
-            rx_kb_style(['text' => "➕ اضافه کردن کانال", 'callback_data' => 'ch_add'], 'ch_add', $_rx_chan_styles),
-            rx_kb_style(['text' => "❌ حذف کانال", 'callback_data' => 'ch_del'], 'ch_del', $_rx_chan_styles)
-        ],
-        [
-            rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'ch_back'], 'ch_back', $_rx_chan_styles),
-            rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'adm_backmenu'], 'ch_backmenu', $_rx_chan_styles)
-        ]
-    ]);
-$_rx_back_btn = rx_kb_style(['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"], 'nav_back', $_rx_nav_styles);
+if (!function_exists('rx_get_channel_keyboard')) {
+    function rx_get_channel_keyboard($forceInline = null)
+    {
+        global $pdo, $textbotlang, $_rx_chan_styles;
+        $styles = is_array($_rx_chan_styles) ? $_rx_chan_styles : (isset($GLOBALS['_rx_chan_styles']) && is_array($GLOBALS['_rx_chan_styles']) ? $GLOBALS['_rx_chan_styles'] : ['__rxplain__' => 1]);
+        $rows = [];
+        $rows[] = [
+            rx_kb_style(['text' => "➕ افزودن کانال", 'callback_data' => 'ch_add'], 'ch_add', $styles)
+        ];
+        if (isset($pdo) && ($pdo instanceof PDO)) {
+            try {
+                $stmt = $pdo->prepare("SELECT * FROM channels ORDER BY id ASC");
+                $stmt->execute();
+                $channels = $stmt->fetchAll(PDO::FETCH_ASSOC);
+                if (is_array($channels)) {
+                    foreach ($channels as $chan) {
+                        $chanId = isset($chan['id']) && $chan['id'] !== '' ? $chan['id'] : $chan['link'];
+                        $btnTitle = !empty($chan['remark']) ? $chan['remark'] : (!empty($chan['link']) ? $chan['link'] : 'کانال ' . $chanId);
+                        $rows[] = [
+                            rx_kb_style([
+                                'text' => "📢 " . $btnTitle,
+                                'callback_data' => "ch_manage_" . $chanId
+                            ], 'ch_manage_' . $chanId, $styles)
+                        ];
+                    }
+                }
+            } catch (Throwable $e) {
+                error_log('[rx_get_channel_keyboard] ' . $e->getMessage());
+            }
+        }
+        $rows[] = [
+            rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'adm_hub_main'], 'ch_back', $styles),
+            rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'ch_backmenu'], 'ch_backmenu', $styles)
+        ];
+        return rx_kb_encode($rows, $forceInline);
+    }
+}
+
+if (!function_exists('rx_get_channel_manage_keyboard')) {
+    function rx_get_channel_manage_keyboard($channelId, $forceInline = null)
+    {
+        global $textbotlang, $_rx_chan_styles;
+        $channelId = (int)$channelId;
+        $styles = is_array($_rx_chan_styles) ? $_rx_chan_styles : (isset($GLOBALS['_rx_chan_styles']) && is_array($GLOBALS['_rx_chan_styles']) ? $GLOBALS['_rx_chan_styles'] : ['__rxplain__' => 1]);
+        $rows = [
+            [
+                rx_kb_style(['text' => "✏️ ویرایش عنوان دکمه", 'callback_data' => "ch_editremark_" . $channelId], 'ch_editremark', $styles),
+                rx_kb_style(['text' => "🔗 ویرایش لینک عضویت", 'callback_data' => "ch_editjoin_" . $channelId], 'ch_editjoin', $styles)
+            ],
+            [
+                rx_kb_style(['text' => "🆔 ویرایش آیدی کانال", 'callback_data' => "ch_editlink_" . $channelId], 'ch_editlink', $styles),
+                rx_kb_style(['text' => "❌ حذف کانال", 'callback_data' => "ch_del_" . $channelId], 'ch_del', $styles)
+            ],
+            [
+                rx_kb_style(['text' => "🔙 بازگشت به لیست کانال‌ها", 'callback_data' => "set_channel"], 'ch_list', $styles),
+                rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'adm_hub_main'], 'ch_back', $styles)
+            ]
+        ];
+        return rx_kb_encode($rows, $forceInline);
+    }
+}
+
+if (!function_exists('rx_get_channel_edit_back_keyboard')) {
+    function rx_get_channel_edit_back_keyboard($channelId, $forceInline = null)
+    {
+        global $textbotlang, $_rx_chan_styles;
+        $channelId = (int)$channelId;
+        $styles = is_array($_rx_chan_styles) ? $_rx_chan_styles : (isset($GLOBALS['_rx_chan_styles']) && is_array($GLOBALS['_rx_chan_styles']) ? $GLOBALS['_rx_chan_styles'] : ['__rxplain__' => 1]);
+        $rows = [
+            [
+                rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => "ch_manage_" . $channelId], 'ch_manage', $styles),
+                rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'adm_hub_main'], 'ch_back', $styles)
+            ]
+        ];
+        return rx_kb_encode($rows, $forceInline);
+    }
+}
+
+if (!function_exists('rx_get_channel_wizard_back_keyboard')) {
+    function rx_get_channel_wizard_back_keyboard($forceInline = null)
+    {
+        global $textbotlang, $_rx_chan_styles;
+        $styles = is_array($_rx_chan_styles) ? $_rx_chan_styles : (isset($GLOBALS['_rx_chan_styles']) && is_array($GLOBALS['_rx_chan_styles']) ? $GLOBALS['_rx_chan_styles'] : ['__rxplain__' => 1]);
+        $rows = [
+            [
+                rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'set_channel'], 'ch_list', $styles),
+                rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'adm_hub_main'], 'ch_back', $styles)
+            ]
+        ];
+        return rx_kb_encode($rows, $forceInline);
+    }
+}
+
+if (!function_exists('rx_get_backadmin_keyboard')) {
+    function rx_get_backadmin_keyboard($forceInline = null)
+    {
+        global $textbotlang, $_rx_chan_styles;
+        $styles = is_array($_rx_chan_styles) ? $_rx_chan_styles : (isset($GLOBALS['_rx_chan_styles']) && is_array($GLOBALS['_rx_chan_styles']) ? $GLOBALS['_rx_chan_styles'] : ['__rxplain__' => 1]);
+        $rows = [
+            [
+                rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'adm_hub_main'], 'ch_back', $styles),
+                rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'adm_backmenu'], 'ch_backmenu', $styles)
+            ]
+        ];
+        return rx_kb_encode($rows, $forceInline);
+    }
+}
+
+$channelkeyboard = rx_get_channel_keyboard();
+$_rx_back_btn = rx_kb_style(['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"], 'backuser', $_rx_acc_styles);
 $backuser = json_encode(['inline_keyboard' => [[$_rx_back_btn]]]);
-$backadmin = json_encode([
+$_rx_genrandom_btn = rx_kb_style(['text' => '🎲 ساخت رندوم خودکار', 'callback_data' => 'gen_random_uname'], 'gen_random_uname', $_rx_nav_styles);
+$usernamePromptKb = json_encode(['inline_keyboard' => [[$_rx_genrandom_btn], [$_rx_back_btn]]]);
+$backadmin = rx_get_backadmin_keyboard();
+$getNameCustomKb = json_encode([
     'keyboard' => [
+        [['text' => '🎲 ساخت رندوم خودکار']],
         [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'adm_backmenu']]
     ],
     'resize_keyboard' => true,
-    'input_field_placeholder' =>"برای بازگشت روی دکمه زیر کلیک کنید"
+    'input_field_placeholder' =>"متن دلخواه را وارد کنید یا روی دکمه ساخت رندوم بزنید"
 ]);
 
 $stmt = $pdo->prepare("SHOW TABLES LIKE 'marzban_panel'");
@@ -107,7 +209,8 @@ if ($table_exists) {
     $stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE name_panel IS NOT NULL AND name_panel <> ''");
     $stmt->execute();
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        if (trim((string)$row['name_panel']) === '') continue; // skip corrupt/blank panel rows
+        $rxPanelName = trim((string)$row['name_panel']);
+        if ($rxPanelName === '' || $rxPanelName[0] === '{' || $rxPanelName[0] === '[') continue;
         $namepanel[] = [$row['name_panel']];
     }
     $list_marzban_panel = [
@@ -129,7 +232,8 @@ if ($table_exists) {
     $stmt->execute();
     $list_marzban_panel_edit_product = ['inline_keyboard' => []];
     while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        if (trim((string)$row['name_panel']) === '') continue; // skip corrupt/blank panel rows
+        $rxPanelName = trim((string)$row['name_panel']);
+        if ($rxPanelName === '' || $rxPanelName[0] === '{' || $rxPanelName[0] === '[') continue;
         $list_marzban_panel_edit_product['inline_keyboard'][] = [['text' =>$row['name_panel'],'callback_data' => 'locationedit_'.$row['code_panel']]];
     }
     $list_marzban_panel_edit_product['inline_keyboard'][] = [['text' =>"همه پنل ها",'callback_data' => 'locationedit_all']];
@@ -214,7 +318,7 @@ if ($table_exists) {
             ];
         }
                 $help_arrke['keyboard'][] = [
-            ['text' => $textbotlang['users']['backbtn']],
+            ['text' => $textbotlang['Admin']['backmenu']],
         ];
         $json_list_helpkey = json_encode($help_arrke);
 }
@@ -230,41 +334,10 @@ if ($table_exists) {
             $helpcwtgory['inline_keyboard'][] = [['text' => $result['category'], 'callback_data' => "helpctgoryـ{$result['category']}"]
             ];
         }
-if($setting['linkappstatus'] == "1"){
-    $helpcwtgory['inline_keyboard'][] = [
-        ['text' => "🔗 لینک دانلود برنامه", 'callback_data' => "linkappdownlod"],
-    ];
-    }
 $helpcwtgory['inline_keyboard'][] = [
     ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"],
 ];
 $json_list_helpـcategory = json_encode($helpcwtgory);
-
-
-    $stmt = $pdo->prepare("SELECT * FROM app");
-    $stmt->execute();
-    $helpapp = ['inline_keyboard' => []];
-    while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $helpapp['inline_keyboard'][] = [['text' => $result['name'], 'url' =>$result['link']]
-            ];
-        }
-$helpapp['inline_keyboard'][] = [
-    ['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"],
-];
-$json_list_helpـlink = json_encode($helpapp);
-
-    $stmt = $pdo->prepare("SELECT * FROM app");
-    $stmt->execute();
-    $helpappremove = ['keyboard' => [],'resize_keyboard' => true];
-    while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            $helpappremove['keyboard'][] = [
-            ['text' => $result['name']],
-        ];
-        }
-$helpappremove['keyboard'][] = [
-    ['text' => $textbotlang['Admin']['backadmin']],
-];
-$json_list_remove_helpـlink = json_encode($helpappremove);
 
     $stmt = $pdo->prepare("SELECT * FROM marzban_panel WHERE status = 'active' AND (agent = :agent OR agent = 'all')");
     $stmt->bindParam(':agent', $users['agent']);
@@ -274,8 +347,7 @@ $json_list_remove_helpـlink = json_encode($helpappremove);
     if ($panelcount > 10) {
         $temp_row = [];
         while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            if ($result['hide_user'] != null && in_array($from_id, json_decode($result['hide_user'], true))) continue;
-            if (function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel($result)) continue;
+            $rx_h = json_decode((string)($result['hide_user'] ?? ''), true); if (is_array($rx_h) && in_array($from_id, $rx_h)) continue;
             if ($result['type'] == "Manualsale") {
                 $manualStmt = $pdo->prepare("SELECT * FROM manualsell WHERE codepanel = :codepanel AND status = 'active'");
                 $manualStmt->bindParam(':codepanel', $result['code_panel']);
@@ -298,7 +370,6 @@ $json_list_remove_helpـlink = json_encode($helpappremove);
         }
     } else {
         while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
-            if (function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel($result)) continue;
             if ($result['type'] == "Manualsale") {
                 $stmts = $pdo->prepare("SELECT * FROM manualsell WHERE codepanel = :codepanel AND status = 'active'");
                 $stmts->bindParam(':codepanel', $result['code_panel']);
@@ -306,7 +377,7 @@ $json_list_remove_helpـlink = json_encode($helpappremove);
                 $configexits = $stmts->rowCount();
                 if (intval($configexits) == 0) continue;
             }
-            if ($result['hide_user'] != null && in_array($from_id, json_decode($result['hide_user'], true))) continue;
+            $rx_h = json_decode((string)($result['hide_user'] ?? ''), true); if (is_array($rx_h) && in_array($from_id, $rx_h)) continue;
             if ($users['step'] == "getusernameinfo") {
                 $list_marzban_panel_users['inline_keyboard'][] = [
                     ['text' => $result['name_panel'], 'callback_data' => "locationnotuser_{$result['code_panel']}"]
@@ -339,8 +410,7 @@ $list_marzban_panel_user = json_encode($list_marzban_panel_users);
     $stmt->execute();
     $list_marzban_panel_users_om = ['inline_keyboard' => []];
     while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        if($result['hide_user'] != null and in_array($from_id,json_decode($result['hide_user'],true)))continue;
-        if (function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel($result)) continue;
+        $rx_h = json_decode((string)($result['hide_user'] ?? ''), true); if (is_array($rx_h) and in_array($from_id, $rx_h)) continue;
             $list_marzban_panel_users_om['inline_keyboard'][] = [['text' => $result['name_panel'], 'callback_data' => "locationom_{$result['code_panel']}"]
             ];
     }
@@ -358,7 +428,6 @@ $list_marzban_panel_userom = json_encode($list_marzban_panel_users_om);
         $temp_row = [];
         while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
         if ($result['hide_user'] != null && in_array($from_id, json_decode($result['hide_user'], true))) continue;
-        if (function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel($result)) continue;
 
             $temp_row[] = ['text' => $result['name_panel'], 'callback_data' => "changelocselectlo-{$result['code_panel']}"];
         if (count($temp_row) == 2) {
@@ -371,8 +440,7 @@ if (!empty($temp_row)) {
 }
     }else{
     while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        if($result['hide_user'] != null and in_array($from_id,json_decode($result['hide_user'],true)))continue;
-        if (function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel($result)) continue;
+        $rx_h = json_decode((string)($result['hide_user'] ?? ''), true); if (is_array($rx_h) and in_array($from_id, $rx_h)) continue;
             $list_marzban_panel_users_change['inline_keyboard'][] = [['text' => $result['name_panel'], 'callback_data' => "changelocselectlo-{$result['code_panel']}"]
             ];
     }
@@ -387,8 +455,7 @@ $list_marzban_panel_userschange = json_encode($list_marzban_panel_users_change);
     $stmt->execute([':ag' => (string)($users['agent'] ?? '')]);
     $list_marzban_panel_usertest = ['inline_keyboard' => []];
     while ($result = $stmt->fetch(PDO::FETCH_ASSOC)) {
-        if($result['hide_user'] != null and in_array($from_id,json_decode($result['hide_user'],true)))continue;
-        if (function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel($result)) continue;
+        $rx_h = json_decode((string)($result['hide_user'] ?? ''), true); if (is_array($rx_h) and in_array($from_id, $rx_h)) continue;
             $list_marzban_panel_usertest['inline_keyboard'][] = [['text' => $result['name_panel'], 'callback_data' => "locationtest_{$result['code_panel']}"]
             ];
     }
@@ -400,26 +467,7 @@ $list_marzban_usertest = json_encode($list_marzban_panel_usertest);
 
 $textbot = json_encode([
     'keyboard' => [
-        [['text' => "تنظیم متن شروع"], ['text' => "دکمه سرویس خریداری شده"]],
-        [['text' => "دکمه اکانت تست"], ['text' => "دکمه سوالات متداول"]],
-        [['text' => "متن دکمه 📚 آموزش"], ['text' => "متن دکمه ☎️ پشتیبانی"]],
-        [['text' => "دکمه افزایش موجودی"],['text' => "متن دکمه زیرمجموعه گیری"]],
-        [['text' => "متن دکمه خرید اشتراک"], ['text' => "متن دکمه لیست تعرفه"]],
-        [['text' => "متن توضیحات لیست تعرفه"]],
-        [['text' => "متن دکمه کیف پول"],['text' => "متن پیش فاکتور"]],
-        [['text' => "📝 تنظیم متن توضیحات عضویت اجباری"]],
-        [['text' => "📝 تنظیم متن توضیحات سوالات متداول"]],
-        [['text' => "⚖️ متن قانون"],['text' => "متن بعد خرید"]],
-        [['text' => "متن بعد خرید ibsng"],['text' => "دکمه تمدید"]],
-        [['text' => "متن بعد گرفتن اکانت تست"],['text' =>"متن کرون تست"]],
-        [['text' => "متن بعد گرفتن اکانت دستی"]],
-        [['text' => "متن بعد گرفتن اکانت WGDashboard"]],
-        [['text' => "متن انتخاب لوکیشن"],['text' => "متن دکمه کد هدیه"]],
-        [['text' => "متن درخواست نمایندگی"],['text' => "متن دکمه  نمایندگی"]],
-        [['text' => "متن دکمه گردونه شانس"],['text' => "متن کارت به کارت"]],
-        [['text' => "تنظیم متن کارت به کارت خودکار"]],
-        [['text' => "متن توضیحات درخواست نمایندگی"]],
-        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'adm_backmenu']]
+        [['text' => $textbotlang['Admin']['backadmin']], ['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'adm_backmenu']]
     ],
     'resize_keyboard' => true
 ]);
@@ -562,13 +610,13 @@ $payment = json_encode([
     'inline_keyboard' => [
         [rx_kb_style(['text' => "💰 پرداخت و دریافت سرویس", 'callback_data' => "confirmandgetservice"], 'confirm_pay', $_rx_nav_styles)],
         [rx_kb_style(['text' => "🎁 ثبت کد تخفیف", 'callback_data' => "aptdc"], 'confirm_discount', $_rx_nav_styles)],
-        [rx_kb_style(['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"], 'confirm_back', $_rx_nav_styles)]
+        [rx_kb_style(['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"], 'backuser', $_rx_acc_styles)]
     ]
 ]);
 $paymentom = json_encode([
     'inline_keyboard' => [
         [rx_kb_style(['text' => "💰 پرداخت و دریافت سرویس", 'callback_data' => "confirmandgetservice"], 'confirm_pay', $_rx_nav_styles)],
-        [rx_kb_style(['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"], 'confirm_back', $_rx_nav_styles)]
+        [rx_kb_style(['text' => $textbotlang['users']['backbtn'], 'callback_data' => "backuser"], 'backuser', $_rx_acc_styles)]
     ]
 ]);
 $change_product = json_encode([
@@ -619,6 +667,24 @@ $MethodUsername = json_encode([
         [['text' => "آیدی عددی + حروف و عدد رندوم"]],
         [['text' => "نام کاربری + حروف و عدد رندوم"]],
         [['text' => "نام کاربری دلخواه + عدد رندوم"]],
+        [['text' => "متن دلخواه کاربر + رندوم"]],
+        [['text' => "متن دلخواه + عدد رندوم"]],
+        [['text' => "متن دلخواه + عدد ترتیبی"]],
+        [['text' => "نام کاربری + عدد به ترتیب"]],
+        [['text' => "آیدی عددی+عدد ترتیبی"]],
+        [['text' => "متن دلخواه نماینده + عدد ترتیبی"]],
+        [['text' => "نام کاربری دلخواه"]],
+        [['text' => $textbotlang['Admin']['backadmin']],['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'adm_backmenu']]
+    ],
+    'resize_keyboard' => true
+]);
+$MethodUsernameRemna = json_encode([
+    'keyboard' => [
+        [['text' => "آیدی عددی"]],
+        [['text' => "آیدی عددی + حروف و عدد رندوم"]],
+        [['text' => "نام کاربری + حروف و عدد رندوم"]],
+        [['text' => "نام کاربری دلخواه + عدد رندوم"]],
+        [['text' => "متن دلخواه کاربر + رندوم"]],
         [['text' => "متن دلخواه + عدد رندوم"]],
         [['text' => "متن دلخواه + عدد ترتیبی"]],
         [['text' => "نام کاربری + عدد به ترتیب"]],
@@ -696,7 +762,7 @@ if (!function_exists('rx_resolveAdminPanelCallback')) {
 
 
 if (!function_exists('rx_finalizeInlineAdminKb')) {
-    function rx_finalizeInlineAdminKb(string $json): string {
+    function rx_finalizeInlineAdminKb(string $json, bool $rxMarkPlain = true): string {
         $kb = json_decode($json, true);
         if (!is_array($kb)) return $json;
 
@@ -722,6 +788,7 @@ if (!function_exists('rx_finalizeInlineAdminKb')) {
                 }
 
                 unset($btn['request_contact'], $btn['request_location'], $btn['request_poll'], $btn['request_users'], $btn['request_chat']);
+                if ($rxMarkPlain) { $btn['_rxap'] = 1; } else { $btn['_rxkeep'] = 1; }
                 $newRow[] = $btn;
             }
             if (!empty($newRow)) $newRows[] = $newRow;
@@ -730,64 +797,32 @@ if (!function_exists('rx_finalizeInlineAdminKb')) {
     }
 }
 $rxAdminPanelBtn = function (string $text, string $menuKey, string $default = 'default') use ($rxAdminPanelStylesAll) {
-    $allowed = ['default','primary','success','danger'];
-    $map = $rxAdminPanelStylesAll[$menuKey] ?? [];
-
-    $rxUseDefaults = (!function_exists('rx_kb_use_defaults') || rx_kb_use_defaults());
-
-    if (is_array($map) && array_key_exists($text, $map)) {
-        $style = (string)$map[$text];
-    } else {
-        $style = $rxUseDefaults ? $default : 'default';
-
-
-        if ($rxUseDefaults && $default === 'default' && function_exists('rx_getKeyboardDefaultStyles')) {
-            $rxFallbackMap = rx_getKeyboardDefaultStyles($menuKey);
-            if (is_array($rxFallbackMap) && isset($rxFallbackMap[$text])) {
-                $rxFallback = (string)$rxFallbackMap[$text];
-                if (in_array($rxFallback, $allowed, true)) {
-                    $style = $rxFallback;
-                }
-            }
-        }
-
-
-        if ($rxUseDefaults && $style === 'default' && function_exists('rx_kb_guess_style_from_text')) {
-            $guessed = rx_kb_guess_style_from_text($text);
-            $style = ($guessed !== null && in_array($guessed, $allowed, true)) ? $guessed : 'primary';
-        }
-    }
-
-    if (!in_array($style, $allowed, true)) { $style = $rxUseDefaults ? $default : 'default'; }
-
     $btn = [
         'text' => $text,
         'callback_data' => rx_makeAdminPanelCallback($text),
     ];
-    if ($style !== 'default') { $btn['style'] = $style; }
     return $btn;
 };
 
 $optionMarzban = rx_finalizeInlineAdminKb(json_encode([
     'keyboard' => [
         [$rxAdminPanelBtn("⚙️ وضعیت قابلیت ها پنل", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("🔄 تغییر نوع پنل", 'admin_panel_marzban')],
         [$rxAdminPanelBtn("✍️ نام پنل", 'admin_panel_marzban'), $rxAdminPanelBtn("❌ حذف پنل", 'admin_panel_marzban', 'danger')],
-        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_marzban'), $rxAdminPanelBtn("👤 ویرایش نام کاربری", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_marzban'), $rxAdminPanelBtn("⚙️ تنظیم پروتکل و اینباند", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_marzban'), $rxAdminPanelBtn("💡 روش ساخت نام کاربری", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("🚨 محدودیت ساخت اکانت", 'admin_panel_marzban'), $rxAdminPanelBtn("📍 تغییر گروه کاربری", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("🔐 ویرایش رمز عبور", 'admin_panel_marzban'), $rxAdminPanelBtn("👤 ویرایش نام", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("🔗 ویرایش آدرس پنل", 'admin_panel_marzban'), $rxAdminPanelBtn("⚙️ پروتکل اینباند", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("🔋 روش تمدید سرویس", 'admin_panel_marzban'), $rxAdminPanelBtn("💡 ساخت نام کاربری", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("🚨 محدودیت اکانت", 'admin_panel_marzban'), $rxAdminPanelBtn("📍 تغییر گروه", 'admin_panel_marzban')],
         [$rxAdminPanelBtn("⏳ زمان سرویس تست", 'admin_panel_marzban'), $rxAdminPanelBtn("💾 حجم اکانت تست", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("⚙️ قیمت حجم سرویس دلخواه", 'admin_panel_marzban'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("⚙️ قیمت حجم دلخواه", 'admin_panel_marzban'), $rxAdminPanelBtn("➕ قیمت حجم اضافه", 'admin_panel_marzban')],
         [$rxAdminPanelBtn("⏳ قیمت زمان اضافه", 'admin_panel_marzban'), $rxAdminPanelBtn("⏳ قیمت زمان دلخواه", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("🌍 قیمت تغییر لوکیشن", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("📍 حداقل حجم دلخواه", 'admin_panel_marzban'), $rxAdminPanelBtn("📍 حداکثر حجم دلخواه", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("📍 حداقل زمان دلخواه", 'admin_panel_marzban'), $rxAdminPanelBtn("📍 حداکثر زمان دلخواه", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("🌍 قیمت تغییر مکان", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("📍 کف حجم دلخواه", 'admin_panel_marzban'), $rxAdminPanelBtn("📍 سقف حجم دلخواه", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("📍 کف زمان دلخواه", 'admin_panel_marzban'), $rxAdminPanelBtn("📍 سقف زمان دلخواه", 'admin_panel_marzban')],
         [$rxAdminPanelBtn("⚙️  اینباند اکانت غیرفعال", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("📦 انبار شبکه ملی", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("📌 ثبت پنل اضطراری", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("🚨 پنل اضطراری", 'admin_panel_marzban'), $rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("🫣 مخفی کردن پنل برای یک کاربر", 'admin_panel_marzban')],
-        [$rxAdminPanelBtn("❌  حذف کاربر از لیست مخفی شدگان", 'admin_panel_marzban', 'danger')],
+        [$rxAdminPanelBtn("🌐 وضعیت نت ملی", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("🫣 مخفی پنل برای کاربر", 'admin_panel_marzban')],
+        [$rxAdminPanelBtn("❌ حذف از لیست مخفی", 'admin_panel_marzban', 'danger')],
         [['text' => $textbotlang['Admin']['backadmin']], ['text' => $textbotlang['Admin']['backmenu']]]
     ],
     'resize_keyboard' => true

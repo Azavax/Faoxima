@@ -27,9 +27,13 @@ $datatextbot = array(
     'carttocart' => '',
     'textnowpayment' => '',
     'textnowpaymenttron' => '',
-    'iranpay1' => '',
     'iranpay2' => '',
     'iranpay3' => '',
+    'tonpay' => '',
+    'cubepay' => '',
+    'blupal' => '',
+    'atlaspay' => '',
+    'tetrapay' => '',
     'aqayepardakht' => '',
     'zarinpal' => '',
     'zarinpay' => '',
@@ -59,13 +63,14 @@ if ($table_exists) {
     }
 }
 $month_date_time_start = date('Y/m/d H:i:s', time() - 1800);
-$stmt = $pdo->prepare("SELECT * FROM Payment_report WHERE time < :cutoff AND payment_Status = 'Unpaid' ORDER BY id ASC LIMIT 200");
+$stmt = $pdo->prepare("SELECT * FROM Payment_report WHERE time < :cutoff AND payment_Status = 'Unpaid' AND (crypto_currency IS NULL OR crypto_currency = '') ORDER BY id ASC LIMIT 120");
 $stmt->execute([':cutoff' => $month_date_time_start]);
 $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
 
 $expireStmt = $pdo->prepare("UPDATE Payment_report SET payment_Status = 'expire' WHERE id_order = :o AND payment_Status = 'Unpaid'");
 
 foreach ($rows as $result) {
+    if (function_exists('rx_cron_time_up') && rx_cron_time_up()) break;
     $status_var_map = [
         'cart to cart' =>  $datatextbot['carttocart'],
         'aqayepardakht' => $datatextbot['aqayepardakht'],
@@ -75,9 +80,13 @@ foreach ($rows as $result) {
         'arze digital offline' => $datatextbot['textnowpaymenttron'],
         'Currency Rial 1' => $datatextbot['iranpay2'],
         'Currency Rial 2' => $datatextbot['iranpay3'],
-        'Currency Rial 3' => $datatextbot['iranpay1'],
+        'tonpay' => $datatextbot['tonpay'],
+        'cubepay' => $datatextbot['cubepay'],
+        'blupal' => $datatextbot['blupal'],
+        'atlaspay' => $datatextbot['atlaspay'],
+        'tetrapay' => $datatextbot['tetrapay'],
         'Currency Rial tow' => "پرداخت ارزی ریالی",
-        'Currency Rial gateway3' => "پرداخت ارزی ریالی دوم",
+        'Currency Rial gateway3' => "پرداخت ریالی دوم",
         'perfect' => "پرفکت مانی",
         'paymentnotverify' => $datatextbot['textpaymentnotverify'],
         'Star Telegram' => $datatextbot['text_star_telegram'],
@@ -95,6 +104,9 @@ foreach ($rows as $result) {
     $expireStmt->execute([':o' => $result['id_order']]);
     if ($expireStmt->rowCount() !== 1) {
         continue;
+    }
+    if (function_exists('rx_redis_del') && isset($result['id_user'])) {
+        rx_redis_del('faoxima:paystatus:' . $result['id_order'] . ':' . (string)$result['id_user']);
     }
     if (function_exists('rx_release_unpaid_discount')) {
         $rxRefTime = isValidDate($result['time'] ?? '') ? strtotime(str_replace('/', '-', (string)$result['time'])) : null;

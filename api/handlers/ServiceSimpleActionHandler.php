@@ -27,13 +27,6 @@ final class ServiceSimpleActionHandler extends BaseHandler
         }
 
         $panel = select('marzban_panel', '*', 'name_panel', $invoice['Service_location'], 'select');
-        if (!empty($panel) && function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel((array)$panel)) {
-            $emergencyMap = nmEmergencyReplacementMap();
-            $srcCode = (string)$panel['code_panel'];
-            if (isset($emergencyMap['by_code'][$srcCode])) {
-                $panel = $emergencyMap['by_code'][$srcCode];
-            }
-        }
         if (empty($panel)) {
             FaoximaResponse::notFound('Panel not found');
         }
@@ -86,9 +79,7 @@ final class ServiceSimpleActionHandler extends BaseHandler
 
     private function handleToggleStatus(array $invoice, array $panel): void
     {
-        $row = select('shopSetting', '*', 'Namevalue', 'statuschangeservice', 'select');
-        $val = is_array($row) ? (string)($row['value'] ?? '') : '';
-        if ($val === 'offstatus') {
+        if (!panel_feature_enabled($panel, 'changeservice')) {
             FaoximaResponse::fail(409, '❌ این قابلیت درحال حاضر در دسترس نیست');
         }
         if (($invoice['Status'] ?? '') === 'disablebyadmin') {
@@ -133,9 +124,7 @@ final class ServiceSimpleActionHandler extends BaseHandler
 
     private function handleReportProblem(array $invoice, array $panel): void
     {
-        $row = select('shopSetting', '*', 'Namevalue', 'statusdisorder', 'select');
-        $val = is_array($row) ? (string)($row['value'] ?? '') : '';
-        if ($val === 'offdisorder') {
+        if (!panel_feature_enabled($panel, 'disorder')) {
             FaoximaResponse::fail(409, '❌ این قابلیت درحال حاضر در دسترس نیست');
         }
 
@@ -152,11 +141,11 @@ final class ServiceSimpleActionHandler extends BaseHandler
 
         $report =
             "⚠️ گزارش اختلال سرویس (از مینی‌اپ)\n\n" .
-            "👤 کاربر: <code>{$userId}</code>" . ($userName !== '' ? ' (@' . htmlspecialchars($userName, ENT_QUOTES) . ')' : '') . "\n" .
-            "🌍 پنل: " . htmlspecialchars((string)$invoice['Service_location'], ENT_QUOTES) . "\n" .
-            "🛍 محصول: " . htmlspecialchars((string)$invoice['name_product'], ENT_QUOTES) . "\n" .
-            "👤 نام کاربری سرویس: <code>" . htmlspecialchars((string)$invoice['username'], ENT_QUOTES) . "</code>\n" .
-            ($userText !== '' ? "\n📝 توضیحات کاربر:\n" . htmlspecialchars($userText, ENT_QUOTES) . "\n" : '');
+            "<blockquote>👤 کاربر: <code>{$userId}</code>" . ($userName !== '' ? ' (@' . htmlspecialchars($userName, ENT_QUOTES) . ')' : '') . "</blockquote>\n" .
+            "<blockquote>🌍 پنل: " . htmlspecialchars((string)$invoice['Service_location'], ENT_QUOTES) . "</blockquote>\n" .
+            "<blockquote>🛍 محصول: " . htmlspecialchars((string)$invoice['name_product'], ENT_QUOTES) . "</blockquote>\n" .
+            "<blockquote>👤 نام کاربری سرویس: <code>" . htmlspecialchars((string)$invoice['username'], ENT_QUOTES) . "</code></blockquote>\n" .
+            ($userText !== '' ? "\n<blockquote>📝 توضیحات کاربر:\n" . htmlspecialchars($userText, ENT_QUOTES) . "</blockquote>\n" : '');
 
         if ($channel !== '') {
             try {

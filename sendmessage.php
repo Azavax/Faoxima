@@ -1,4 +1,10 @@
 <?php
+
+if (!defined('REFACTORED_LEGACY_ROOT')) {
+    define('REFACTORED_LEGACY_ROOT', __DIR__);
+}
+@chdir(__DIR__);
+
 require_once 'config.php';
 require_once 'botapi.php';
 

@@ -44,6 +44,7 @@ class ServiceMonitor
         $invoices = $this->getActiveInvoices();
         if ($invoices == false) return;
         foreach ($invoices as $invoice) {
+            if (function_exists('rx_cron_time_up') && rx_cron_time_up()) break;
             if ($invoice['time_cron'] != null) {
                 $time_cron = time() - $invoice['time_cron'];
                 if ($time_cron < 1600) continue;
@@ -52,6 +53,31 @@ class ServiceMonitor
             $check_send = json_decode($invoice['notifctions'], true);
             $data = $this->processInvoice($invoice);
             if (!is_array($data)) continue;
+            $currentUStatus = strtolower((string)($data['userData']['status'] ?? ''));
+            $currentUExp = is_numeric($data['userData']['expire'] ?? null) ? (int)$data['userData']['expire'] : 0;
+            $currentUDl = is_numeric($data['userData']['data_limit'] ?? null) ? (float)$data['userData']['data_limit'] : 0.0;
+            $currentUUt = is_numeric($data['userData']['used_traffic'] ?? null) ? (float)$data['userData']['used_traffic'] : 0.0;
+            if ($currentUExp > 0 && $currentUExp <= time()) {
+                $currentUStatus = 'expired';
+                $data['userData']['status'] = 'expired';
+            } elseif ($currentUDl > 0.0 && $currentUUt >= $currentUDl) {
+                $currentUStatus = 'limited';
+                $data['userData']['status'] = 'limited';
+            }
+            try {
+                update("invoice", "user_info", json_encode($data['userData'], JSON_UNESCAPED_UNICODE), "id_invoice", $invoice['id_invoice']);
+            } catch (Throwable $e) {
+            }
+            if ($currentUStatus === 'expired' && ($data['invoice']['Status'] ?? '') !== 'end_of_time') {
+                update("invoice", "Status", "end_of_time", "id_invoice", $invoice['id_invoice']);
+                $data['invoice']['Status'] = 'end_of_time';
+            } elseif ($currentUStatus === 'limited' && ($data['invoice']['Status'] ?? '') !== 'end_of_volume') {
+                update("invoice", "Status", "end_of_volume", "id_invoice", $invoice['id_invoice']);
+                $data['invoice']['Status'] = 'end_of_volume';
+            } elseif ($currentUStatus === 'on_hold' && ($data['invoice']['Status'] ?? '') !== 'send_on_hold') {
+                update("invoice", "Status", "send_on_hold", "id_invoice", $invoice['id_invoice']);
+                $data['invoice']['Status'] = 'send_on_hold';
+            }
             $result = false;
             if (!$check_send['volume']) {
                 if ($this->status_cron['volume']) $result = $this->checkVolumeThreshold($data['invoice'], $data['user'], $data['userData'], $invoice['username']);
@@ -109,13 +135,16 @@ class ServiceMonitor
 
         if ($isVolumeWarning) {
             $formattedVolume = formatBytes($remainingVolume);
-            $message = "با سلام خدمت شما کاربر گرامی 👋\n" .
-                "🚨 از حجم سرویس {$username} تنها {$formattedVolume} باقی مانده است. " .
-                "لطفاً در صورت تمایل برای خرید حجم اضافه و یا تمدید سرویستون از طریق بخش «{$this->text_Purchased_services}» اقدام بفرمایین";
-            $reportMessage = "📌 اطلاعیه کرون حجم\n\n" .
-                "نام کاربری سرویس :‌ <code>{$username}</code>\n" .
-                "وضعیت سرویس : {$userData['status']}\n" .
-                "حجم باقی مانده : {$formattedVolume}";
+            $message = faoxima_render_text(faoxima_textbot_get('dyn_cron_volume_warning_tpl', "با سلام خدمت شما کاربر گرامی 👋\n🚨 از حجم سرویس {username} تنها {volume} باقی مانده است. لطفاً در صورت تمایل برای خرید حجم اضافه و یا تمدید سرویستون از طریق بخش «{purchased_services}» اقدام بفرمایین"), [
+                'username' => $username,
+                'volume' => $formattedVolume,
+                'purchased_services' => $this->text_Purchased_services,
+            ]);
+            $reportMessage = faoxima_render_text(faoxima_textbot_get('dyn_cron_volume_warning_report_tpl', "📌 اطلاعیه کرون حجم\n\n<blockquote>نام کاربری سرویس :‌ <code>{username}</code></blockquote>\n<blockquote>وضعیت سرویس : {status}</blockquote>\n<blockquote>حجم باقی مانده : {volume}</blockquote>"), [
+                'username' => $username,
+                'status' => $userData['status'],
+                'volume' => $formattedVolume,
+            ]);
             $shouldNotify = !empty($user['status_cron'] ?? null);
             $this->send_notifactions($invoice, $shouldNotify, $message, true, $invoice['bottype']);
             $this->sendReportNotification($reportMessage);
@@ -123,9 +152,17 @@ class ServiceMonitor
             return true;
         }
     }
+    private function hasPendingQueuedRenewal($username)
+    {
+        $stmt = $this->pdo->prepare("SELECT id FROM queued_renewal WHERE username = :username AND status = 'pending' LIMIT 1");
+        $stmt->execute([':username' => $username]);
+        return $stmt->fetch(PDO::FETCH_ASSOC) !== false;
+    }
+
     private function shouldRemoveService($invoice, $user, $userData, $username)
     {
         if (!in_array($userData['status'], ['limited', 'expired'])) return false;
+        if ($this->hasPendingQueuedRenewal($username)) return false;
         $timeService = $userData['expire'] - time();
         $daysRemaining = intval($timeService / 86400);
         $removalThreshold = intval("-" . $this->setting['removedayc']);
@@ -142,8 +179,15 @@ class ServiceMonitor
         if ($result) {
             update("invoice", "status", "removeTime", "id_invoice", $invoice['id_invoice']);
             $this->Panel->RemoveUser($invoice['Service_location'], $username);
-            $message = "📌 کاربر گرامی بدلیل عدم تمدید، سرویس {$invoice['username']} از لیست سرویس های شما حذف گردید\n\n🌟 جهت تهیه سرویس جدید از بخش خرید سرویس اقدام فرمایید";
-            $reportMessage = "📌 اطلاعیه کرون حذف\n\nنام کاربری سرویس :‌ <code>{$invoice['username']}</code>\nوضعیت سرویس : $statusText\nتعداد روز باقی مانده ‌:‌$daysRemaining\nحجم باقی مانده : $remainingVolume";
+            $message = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_notice_tpl', "📌 کاربر گرامی بدلیل عدم تمدید، سرویس {username} از لیست سرویس های شما حذف گردید\n\n🌟 جهت تهیه سرویس جدید از بخش خرید سرویس اقدام فرمایید"), [
+                'username' => $invoice['username'],
+            ]);
+            $reportMessage = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_report_tpl', "📌 اطلاعیه کرون حذف\n\n<blockquote>نام کاربری سرویس :‌ <code>{username}</code></blockquote>\n<blockquote>وضعیت سرویس : {status}</blockquote>\n<blockquote>تعداد روز باقی مانده ‌:‌{days}</blockquote>\n<blockquote>حجم باقی مانده : {volume}</blockquote>"), [
+                'username' => $invoice['username'],
+                'status' => $statusText,
+                'days' => $daysRemaining,
+                'volume' => $remainingVolume,
+            ]);
             $shouldNotify = !empty($user['status_cron'] ?? null);
             $this->send_notifactions($invoice, $shouldNotify, $message, false, $invoice['bottype']);
             $this->sendReportNotification($reportMessage);
@@ -152,8 +196,9 @@ class ServiceMonitor
     private function shouldRemoveServiceـvolume($invoice, $user, $userData, $username)
     {
         if (!in_array($userData['status'], ['limited', 'expired'])) return false;
+        if ($this->hasPendingQueuedRenewal($username)) return false;
         $panel = select("marzban_panel", "*", "name_panel", $invoice['Service_location'], "select");
-        if ($panel['type'] != "marzban") return;
+        if (!in_array($panel['type'], ["marzban", "rebecca", "pasarguard"], true)) return;
         if ($userData['data_limit_reset'] != "no_reset") return;
         if ($userData['status'] == "Unsuccessful") return;
         if (in_array($userData['status'], ['Unknown', 'active', 'on_hold', 'disabled', 'expired'])) return;
@@ -180,10 +225,16 @@ class ServiceMonitor
         if ($result) {
             update("invoice", "status", "removevolume", "id_invoice", $invoice['id_invoice']);
             $this->Panel->RemoveUser($invoice['Service_location'], $username);
-            $message = "📌 کاربر گرامی بدلیل عدم تمدید، سرویس $username از لیست سرویس های شما حذف گردید
-
-🌟 جهت تهیه سرویس جدید از بخش خرید سرویس اقدام فرمایید";
-            $reportMessage = "📌  اطلاعیه کرون حذف حجم \nنام کاربری سرویس : $username \n وضعیت سرویس : $statusText \nتعداد روز باقی مانده :$daysRemaining \n حجم باقی مانده : $remainingVolume\nآخرین اتصال کاربر : {$userData['online_at']}";
+            $message = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_volume_notice_tpl', "📌 کاربر گرامی بدلیل عدم تمدید، سرویس {username} از لیست سرویس های شما حذف گردید\n\n🌟 جهت تهیه سرویس جدید از بخش خرید سرویس اقدام فرمایید"), [
+                'username' => $username,
+            ]);
+            $reportMessage = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_volume_report_tpl', "📌  اطلاعیه کرون حذف حجم \n<blockquote>نام کاربری سرویس : {username} </blockquote>\n<blockquote> وضعیت سرویس : {status} </blockquote>\n<blockquote>تعداد روز باقی مانده :{days} </blockquote>\n<blockquote> حجم باقی مانده : {volume}</blockquote>\n<blockquote>آخرین اتصال کاربر : {last_online}</blockquote>"), [
+                'username' => $username,
+                'status' => $statusText,
+                'days' => $daysRemaining,
+                'volume' => $remainingVolume,
+                'last_online' => $userData['online_at'],
+            ]);
             $shouldNotify = !empty($user['status_cron'] ?? null);
             $this->send_notifactions($invoice, $shouldNotify, $message, false, $invoice['bottype']);
             $this->sendReportNotification($reportMessage);
@@ -206,7 +257,14 @@ class ServiceMonitor
     private function checkTimeExpiration($invoice, $user, $userData, $username)
     {
         $validStatuses = ['expired', 'on_hold', 'limited'];
-        if (in_array($userData['status'], $validStatuses)) return;
+        if (in_array($userData['status'], $validStatuses)) {
+            if ($userData['status'] === 'expired' && ($invoice['Status'] ?? '') !== 'end_of_time') {
+                update("invoice", "Status", "end_of_time", "id_invoice", $invoice['id_invoice']);
+            } elseif ($userData['status'] === 'limited' && ($invoice['Status'] ?? '') !== 'end_of_volume') {
+                update("invoice", "Status", "end_of_volume", "id_invoice", $invoice['id_invoice']);
+            }
+            return;
+        }
         $timeRemaining = $userData['expire'] - time();
         $daysRemaining = intval($timeRemaining / self::SECONDS_PER_DAY);
         $warningThreshold = intval($this->setting['daywarn']) * self::SECONDS_PER_DAY;
@@ -214,14 +272,16 @@ class ServiceMonitor
         $isTimeWarning = $timeRemaining <= $warningThreshold && $timeRemaining > 0;
 
         if ($isTimeWarning) {
-            $message = "با سلام خدمت شما کاربر گرامی 👋\n" .
-                "📌 از مهلت زمانی استفاده از سرویس {$username} فقط {$daysRemaining} روز باقی مانده است. " .
-                "لطفاً در صورت تمایل برای تمدید این سرویس، از طریق بخش «{$this->text_Purchased_services}» اقدام بفرمایین. " .
-                "با تشکر از همراهی شما";
-            $reportMessage = "📌 اطلاعیه کرون زمان\n\n" .
-                "نام کاربری سرویس :‌ <code>{$invoice['username']}</code>\n" .
-                "وضعیت سرویس : {$userData['status']}\n" .
-                "تعداد روز باقی مانده ‌:‌{$daysRemaining}";
+            $message = faoxima_render_text(faoxima_textbot_get('dyn_cron_time_warning_tpl', "با سلام خدمت شما کاربر گرامی 👋\n📌 از مهلت زمانی استفاده از سرویس {username} فقط {days} روز باقی مانده است. لطفاً در صورت تمایل برای تمدید این سرویس، از طریق بخش «{purchased_services}» اقدام بفرمایین. با تشکر از همراهی شما"), [
+                'username' => $username,
+                'days' => $daysRemaining,
+                'purchased_services' => $this->text_Purchased_services,
+            ]);
+            $reportMessage = faoxima_render_text(faoxima_textbot_get('dyn_cron_time_warning_report_tpl', "📌 اطلاعیه کرون زمان\n\n<blockquote>نام کاربری سرویس :‌ <code>{username}</code></blockquote>\n<blockquote>وضعیت سرویس : {status}</blockquote>\n<blockquote>تعداد روز باقی مانده ‌:‌{days}</blockquote>"), [
+                'username' => $invoice['username'],
+                'status' => $userData['status'],
+                'days' => $daysRemaining,
+            ]);
             $shouldNotify = !empty($user['status_cron'] ?? null);
             $this->send_notifactions($invoice, $shouldNotify, $message, true, $invoice['bottype']);
             $this->sendReportNotification($reportMessage);
@@ -245,7 +305,7 @@ class ServiceMonitor
         return json_encode([
             'inline_keyboard' => [
                 [
-                    ['text' => "💊 تمدید سرویس", 'callback_data' => 'extend_' . $invoiceId],
+                    rx_cron_btn('cron_extend', ['text' => faoxima_textbot_get('dyn_cron_extend_service_btn', "💊 تمدید سرویس"), 'callback_data' => 'extend_' . $invoiceId]),
                 ],
             ]
         ]);

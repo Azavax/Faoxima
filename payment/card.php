@@ -18,6 +18,10 @@ use Endroid\QrCode\RoundBlockSizeMode;
 use Endroid\QrCode\Writer\PngWriter;
 
 $PaySetting = mysqli_fetch_assoc(mysqli_query($connect, "SELECT (ValuePay) FROM PaySetting WHERE NamePay = 'statuscardautoconfirm'"))['ValuePay'];
+$_cvSetting = mysqli_fetch_assoc(mysqli_query($connect, "SELECT card_verify_status FROM setting LIMIT 1"));
+if (is_array($_cvSetting) && (($_cvSetting['card_verify_status'] ?? 'offcardverify') === 'oncardverify')) {
+    return;
+}
 if($PaySetting == "onautoconfirm"){
 $name_post = array_keys($_POST);
 $name_post = array_map('htmlspecialchars', $name_post);
@@ -41,8 +45,7 @@ $datatextbot = array(
     'textaftertext' => '',
     'textmanual' => '',
     'textselectlocation' => '',
-    'text_wgdashboard' => '',
-    'textafterpayibsng' => ''
+    'text_wgdashboard' => ''
 );
 foreach ($datatxtbot as $item) {
     if (isset($datatextbot[$item['id_text']])) {
@@ -157,11 +160,11 @@ if(isset($amountInteger) && $amountInteger !== NULL){
     $text_report = "یک رسید توسط ربات  تایید شد
 
 اطلاعات :
-💰 مبلغ پرداخت : {$Payment_report['price']}
-👤  آیدی عددی کاربر : {$Balance_id['id']}
-👤 نام کاربری کاربر : @{$Balance_id['username']}
-موجودی کاربر : $balanceformatsell تومان
-کد پیگیری پرداخت : $order_id";
+<blockquote>💰 مبلغ پرداخت : {$Payment_report['price']}</blockquote>
+<blockquote>👤  آیدی عددی کاربر : {$Balance_id['id']}</blockquote>
+<blockquote>👤 نام کاربری کاربر : @{$Balance_id['username']}</blockquote>
+<blockquote>موجودی کاربر : $balanceformatsell تومان</blockquote>
+<blockquote>کد پیگیری پرداخت : $order_id</blockquote>";
     if (strlen($setting['Channel_Report']) > 0) {
         telegram('sendmessage',[
         'chat_id' => $setting['Channel_Report'],

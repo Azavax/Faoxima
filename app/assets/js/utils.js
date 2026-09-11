@@ -50,6 +50,7 @@ export function fmtNumber(value) {
 /** Format GB with up to 2 decimal places. */
 export function fmtGb(value) {
     const n = Number(value);
+    if (n === 0) return 'نامحدود';
     if (!Number.isFinite(n)) return '—';
     return `${n.toFixed(2)} GB`;
 }

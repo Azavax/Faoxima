@@ -28,6 +28,8 @@ final class CryptoInvoiceInitHandler extends BaseHandler
         $amount       = FaoximaInput::int($this->data, 'amount', 0);
         $currency     = strtoupper(FaoximaInput::string($this->data, 'currency_code'));
         $purchaseUser = FaoximaInput::nullableString($this->data, 'purchase_username');
+        $pendingKind  = FaoximaInput::string($this->data, 'pending_kind');
+        $pendingOne   = FaoximaInput::string($this->data, 'pending_one');
 
         if ($amount <= 0) {
             FaoximaResponse::badRequest('amount must be > 0');
@@ -36,6 +38,9 @@ final class CryptoInvoiceInitHandler extends BaseHandler
             FaoximaResponse::badRequest('currency_code is required');
         }
         $supported = crypto_supported_currencies();
+        if (function_exists('crypto_manual_currencies')) {
+            $supported += crypto_manual_currencies();
+        }
         if (!isset($supported[$currency])) {
             FaoximaResponse::fail(422, '❌ ارز انتخابی پشتیبانی نمی‌شود');
         }
@@ -43,6 +48,12 @@ final class CryptoInvoiceInitHandler extends BaseHandler
 
         update('user', 'Processing_value', $amount, 'id', $this->user['id']);
         $this->user['Processing_value'] = $amount;
+
+        $pendingActionMap = [
+            'renew'         => 'getextenduser',
+            'extra_time'    => 'getextratimeuser',
+            'extra_volume'  => 'getextravolumeuser',
+        ];
 
         $invoiceMeta = '';
         if ($purchaseUser !== null && $purchaseUser !== '') {
@@ -59,6 +70,13 @@ final class CryptoInvoiceInitHandler extends BaseHandler
             $this->user['Processing_value_one'] = $purchaseUser;
             $this->user['Processing_value_tow'] = 'getconfigafterpay';
             $invoiceMeta = 'getconfigafterpay|' . $purchaseUser;
+        } elseif ($pendingKind !== '' && isset($pendingActionMap[$pendingKind]) && $pendingOne !== '') {
+            $action = $pendingActionMap[$pendingKind];
+            update('user', 'Processing_value_one', $pendingOne, 'id', $this->user['id']);
+            update('user', 'Processing_value_tow', $action, 'id', $this->user['id']);
+            $this->user['Processing_value_one'] = $pendingOne;
+            $this->user['Processing_value_tow'] = $action;
+            $invoiceMeta = $action . '|' . $pendingOne;
         } else {
             update('user', 'Processing_value_one', '', 'id', $this->user['id']);
             update('user', 'Processing_value_tow', '', 'id', $this->user['id']);
@@ -101,16 +119,17 @@ final class CryptoInvoiceInitHandler extends BaseHandler
             $formattedAmount = rtrim(rtrim($formattedAmount, '0'), '.');
         }
         FaoximaResponse::ok([
-            'kind'         => 'crypto_invoice',
-            'order_id'     => (string)$result['order_id'],
-            'currency'     => $currency,
-            'network'      => (string)($result['network'] ?? ''),
-            'wallet_to'    => (string)$result['wallet'],
-            'wallet_memo'  => (string)($result['wallet_memo'] ?? ''),
-            'crypto_amount'=> $formattedAmount,
-            'amount_toman' => $amount,
-            'rate'         => (float)($result['rate'] ?? 0),
-            'expires_at'   => (int)($result['expires_at'] ?? 0),
+            'kind'               => 'crypto_invoice',
+            'order_id'           => (string)$result['order_id'],
+            'currency'           => $currency,
+            'network'            => (string)($result['network'] ?? ''),
+            'wallet_to'          => (string)$result['wallet'],
+            'wallet_memo'        => (string)($result['wallet_memo'] ?? ''),
+            'crypto_amount'      => $formattedAmount,
+            'amount_toman'       => $amount,
+            'amount_toman_final' => (int)($result['final_amount_irt'] ?? $amount),
+            'rate'               => (float)($result['rate'] ?? 0),
+            'expires_at'         => (int)($result['expires_at'] ?? 0),
         ]);
     }
 }

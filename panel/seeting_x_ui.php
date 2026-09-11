@@ -129,14 +129,21 @@ if ($action === 'change' && $selectedPanelCode !== '') {
 $settingsValueForTextarea = htmlspecialchars($settingsValue, ENT_NOQUOTES, 'UTF-8');
 ?>
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" data-color="blue" data-theme="dark">
+<html lang="fa" dir="rtl" data-color="blue">
   <head>
+    <script>
+    (function(){try{var t=localStorage.getItem('faoxima_theme');
+    if(t!=='light'&&t!=='dark')t='dark';
+    document.documentElement.setAttribute('data-theme',t);
+    var c=localStorage.getItem('faoxima_color');
+    if(c)document.documentElement.setAttribute('data-color',c);}catch(e){}})();
+    </script>
     <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>تنظیمات X-UI — پنل فاکسیما</title>
-    <link rel="stylesheet" href="css/theme.css">
+    <link rel="stylesheet" href="css/theme.css?v=flat47">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.2/css/all.min.css">
-    <script src="js/theme.js" defer>
+    <script src="js/theme.js?v=flat5" defer>
 
 </script>
     <style>
@@ -160,7 +167,7 @@ $settingsValueForTextarea = htmlspecialchars($settingsValue, ENT_NOQUOTES, 'UTF-
         border: 1px solid var(--border-mid);
         border-radius: 8px;
         color: var(--text-main);
-        font-family: 'Arad', system-ui, sans-serif;
+        font-family: 'Vazirmatn', system-ui, sans-serif;
         font-size: 13px;
         transition: border-color .15s ease;
       }

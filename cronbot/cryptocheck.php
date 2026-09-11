@@ -45,7 +45,6 @@ $datatextbot = [
     'textmanual' => '',
     'textselectlocation' => '',
     'text_wgdashboard' => '',
-    'textafterpayibsng' => '',
 ];
 if (is_array($datatextbotget)) {
     foreach ($datatextbotget as $row) {
@@ -67,9 +66,8 @@ if (!($pdo instanceof PDO)) {
 }
 
 
-$ttl = 1800;
-$ttlIranian = 1800;
-$expireBefore = date('Y/m/d H:i:s', time() - min($ttl, $ttlIranian));
+$ttlUnpaid = 14400;
+$expireBefore = date('Y/m/d H:i:s', time() - $ttlUnpaid);
 
 try {
     $expireStmt = $pdo->prepare(
@@ -82,9 +80,9 @@ try {
     );
     $expireStmt->execute([':cutoff' => $expireBefore]);
     while ($row = $expireStmt->fetch(PDO::FETCH_ASSOC)) {
-        $perRowTtl = $ttl;
+        if (function_exists('rx_cron_time_up') && rx_cron_time_up()) break;
         $rowTs = strtotime(str_replace('/', '-', (string) ($row['time'] ?? '')));
-        if ($rowTs === false || $rowTs === 0 || $rowTs > time() - $perRowTtl) {
+        if ($rowTs === false || $rowTs === 0 || $rowTs > time() - $ttlUnpaid) {
             continue;
         }
         $upd = $pdo->prepare(
@@ -93,6 +91,9 @@ try {
         );
         $upd->execute([':o' => $row['id_order']]);
         if ($upd->rowCount() > 0) {
+            if (function_exists('rx_redis_del') && isset($row['id_user'])) {
+                rx_redis_del('faoxima:paystatus:' . $row['id_order'] . ':' . (string)$row['id_user']);
+            }
             $textExpire = "⭕️ کاربر گرامی، فاکتور کریپتویی زیر به دلیل عدم پرداخت در مدت مجاز منقضی شد.\n\n"
                 . "🛒 کد فاکتور: <code>{$row['id_order']}</code>\n"
                 . "💎 ارز: " . htmlspecialchars((string) $row['crypto_currency']) . "\n"
@@ -108,6 +109,48 @@ try {
     }
 } catch (Throwable $e) {
     error_log('[cryptocheck] expire pass: ' . $e->getMessage());
+}
+
+$hashExpireCutoff = time() - 1800;
+try {
+    $expireHashStmt = $pdo->prepare(
+        "SELECT id_user, id_order, message_id, crypto_currency
+           FROM Payment_report
+          WHERE payment_Status = 'AwaitingHash'
+            AND crypto_currency IS NOT NULL
+            AND crypto_currency IN ('TRX','TON','USDT_TRC20','USDT_TON')
+            AND crypto_hash_at IS NOT NULL
+            AND crypto_hash_at > 0
+            AND crypto_hash_at < :cutoff
+          LIMIT 50"
+    );
+    $expireHashStmt->execute([':cutoff' => $hashExpireCutoff]);
+    while ($hashRow = $expireHashStmt->fetch(PDO::FETCH_ASSOC)) {
+        if (function_exists('rx_cron_time_up') && rx_cron_time_up()) break;
+        $updHash = $pdo->prepare(
+            "UPDATE Payment_report SET payment_Status = 'expire'
+               WHERE id_order = :o AND payment_Status = 'AwaitingHash'"
+        );
+        $updHash->execute([':o' => $hashRow['id_order']]);
+        if ($updHash->rowCount() > 0) {
+            if (function_exists('rx_redis_del') && isset($hashRow['id_user'])) {
+                rx_redis_del('faoxima:paystatus:' . $hashRow['id_order'] . ':' . (string)$hashRow['id_user']);
+            }
+            $textHashExpire = "⭕️ کاربر گرامی، فاکتور کریپتویی زیر به دلیل عدم تایید هش در مدت ۳۰ دقیقه منقضی شد.\n\n"
+                . "🛒 کد فاکتور: <code>{$hashRow['id_order']}</code>\n"
+                . "💎 ارز: " . htmlspecialchars((string) $hashRow['crypto_currency']) . "\n"
+                . "❗️ اگر وجهی پرداخت کرده‌اید، با پشتیبانی تماس بگیرید.";
+            if (function_exists('sendmessage')) {
+                @sendmessage($hashRow['id_user'], $textHashExpire, null, 'HTML');
+            }
+            $mid = isset($hashRow['message_id']) ? (int) $hashRow['message_id'] : 0;
+            if ($mid > 0 && function_exists('deletemessage')) {
+                @deletemessage($hashRow['id_user'], $mid);
+            }
+        }
+    }
+} catch (Throwable $e) {
+    error_log('[cryptocheck] hash-expire pass: ' . $e->getMessage());
 }
 
 
@@ -170,6 +213,7 @@ try {
     if (!empty($stuckList)) {
         $rxCryptoLog('INFO', 'found stuck paid invoices', ['count' => count($stuckList)]);
         foreach ($stuckList as $stuckRow) {
+            if (function_exists('rx_cron_time_up') && rx_cron_time_up()) break;
             $stuckOrderId  = (string) $stuckRow['id_order'];
             $stuckUserId   = (string) $stuckRow['id_user'];
             $stuckPriceIrr = (int) ($stuckRow['price'] ?? 0);
@@ -180,14 +224,6 @@ try {
             }
             try {
                 $pdo->beginTransaction();
-                $balStmt = $pdo->prepare("SELECT Balance FROM user WHERE id = :id LIMIT 1");
-                $balStmt->execute([':id' => $stuckUserId]);
-                $stuckUserRow = $balStmt->fetch(PDO::FETCH_ASSOC);
-                $oldBalance = $stuckUserRow ? (int) $stuckUserRow['Balance'] : 0;
-                $newBalance = $oldBalance + $stuckPriceIrr;
-
-                $updBal = $pdo->prepare("UPDATE user SET Balance = :b WHERE id = :id");
-                $updBal->execute([':b' => $newBalance, ':id' => $stuckUserId]);
 
                 $markNote = '[auto-refund: stuck service creation at ' . date('Y-m-d H:i:s') . ']';
                 $mark = $pdo->prepare("
@@ -197,8 +233,28 @@ try {
                             ELSE CONCAT(dec_not_confirmed, ' | ', :note2)
                         END
                     WHERE id_order = :o
+                      AND payment_Status = 'paid'
+                      AND (dec_not_confirmed IS NULL OR (dec_not_confirmed NOT LIKE '%auto-refund%' AND dec_not_confirmed NOT LIKE '%service-created%'))
                 ");
                 $mark->execute([':note' => $markNote, ':note2' => $markNote, ':o' => $stuckOrderId]);
+                if ($mark->rowCount() < 1) {
+                    $pdo->commit();
+                    $rxCryptoLog('WARN', 'stuck invoice refund claim lost (already claimed)', ['order' => $stuckOrderId]);
+                    continue;
+                }
+
+                $balStmt = $pdo->prepare("SELECT Balance FROM user WHERE id = :id LIMIT 1");
+                $balStmt->execute([':id' => $stuckUserId]);
+                $stuckUserRow = $balStmt->fetch(PDO::FETCH_ASSOC);
+                $oldBalance = $stuckUserRow ? (int) $stuckUserRow['Balance'] : 0;
+                $newBalance = $oldBalance + $stuckPriceIrr;
+
+                $updBal = $pdo->prepare("UPDATE user SET Balance = :b WHERE id = :id");
+                $updBal->execute([':b' => $newBalance, ':id' => $stuckUserId]);
+
+                if (function_exists('wallet_ledger_record')) {
+                    wallet_ledger_record($stuckUserId, 'credit', $stuckPriceIrr, 'refund', 'بازگشت خودکار پرداخت گیرکرده', $stuckOrderId);
+                }
 
                 $pdo->commit();
                 $rxCryptoLog('OK', 'stuck invoice refunded', [
@@ -227,11 +283,11 @@ try {
                     @telegram('sendmessage', [
                         'chat_id'    => $setting['Channel_Report'],
                         'text'       => "💰 <b>برگشت پول خودکار (سرویس گیرکرده)</b>\n\n"
-                            . "🛒 کد فاکتور: <code>{$stuckOrderId}</code>\n"
-                            . "👤 کاربر: <code>{$stuckUserId}</code>\n"
-                            . "💎 ارز: " . htmlspecialchars($stuckCurrency) . "\n"
-                            . "💵 مبلغ: " . number_format($stuckPriceIrr) . " تومان\n"
-                            . "⚠️ علت: فاکتور paid شد ولی سرویس ساخته نشد ({$stuckRow['inv_status']}, uuid=" . ($stuckRow['inv_uuid'] ?: 'NULL') . ")",
+                            . "<blockquote>🛒 کد فاکتور: <code>{$stuckOrderId}</code></blockquote>\n"
+                            . "<blockquote>👤 کاربر: <code>{$stuckUserId}</code></blockquote>\n"
+                            . "<blockquote>💎 ارز: " . htmlspecialchars($stuckCurrency) . "</blockquote>\n"
+                            . "<blockquote>💵 مبلغ: " . number_format($stuckPriceIrr) . " تومان</blockquote>\n"
+                            . "<blockquote>⚠️ علت: فاکتور paid شد ولی سرویس ساخته نشد ({$stuckRow['inv_status']}, uuid=" . ($stuckRow['inv_uuid'] ?: 'NULL') . ")</blockquote>",
                         'parse_mode' => 'HTML',
                     ]);
                 }
@@ -273,6 +329,7 @@ try {
     if (!empty($retryList)) {
         $rxCryptoLog('INFO', 'retry pass: found stuck service-creation invoices', ['count' => count($retryList)]);
         foreach ($retryList as $retryRow) {
+            if (function_exists('rx_cron_time_up') && rx_cron_time_up()) break;
             $rOrderId       = (string) $retryRow['id_order'];
             $rUserId        = (string) $retryRow['id_user'];
             $rServiceUser   = (string) ($retryRow['service_username'] ?? '');
@@ -352,6 +409,7 @@ try {
            FROM Payment_report
           WHERE payment_Status = 'AwaitingHash'
             AND crypto_currency IS NOT NULL
+            AND crypto_currency IN ('TRX','TON','USDT_TRC20','USDT_TON')
             AND crypto_tx_hash IS NOT NULL
             AND crypto_tx_hash <> ''
             AND COALESCE(crypto_check_count, 0) < :maxChecks
@@ -372,6 +430,7 @@ try {
 }
 
 foreach ($rows as $row) {
+    if (function_exists('rx_cron_time_up') && rx_cron_time_up()) break;
     $orderId = (string) $row['id_order'];
     $currency = (string) $row['crypto_currency'];
     $hashShort = substr((string) ($row['crypto_tx_hash'] ?? ''), 0, 16) . '…';
@@ -518,19 +577,19 @@ foreach ($rows as $row) {
                             $existing = crypto_lookup_verified_hash((string)($row['crypto_tx_hash'] ?? ''));
                             if (is_array($existing) && (string)($existing['order_id'] ?? '') !== $orderId) {
                                 $dupWarn = "\n\n⚠️ <b>این هش قبلاً تایید شده</b>\n"
-                                    . "🛒 فاکتور قبلی: <code>" . htmlspecialchars((string)$existing['order_id']) . "</code>\n"
-                                    . "👤 کاربر قبلی: <code>" . htmlspecialchars((string)($existing['user_id'] ?? '-')) . "</code>";
+                                    . "<blockquote>🛒 فاکتور قبلی: <code>" . htmlspecialchars((string)$existing['order_id']) . "</code></blockquote>\n"
+                                    . "<blockquote>👤 کاربر قبلی: <code>" . htmlspecialchars((string)($existing['user_id'] ?? '-')) . "</code></blockquote>";
                             }
                         }
                         $adminCaption = "❌ <b>هش کریپتو توسط ربات تایید نشد</b>\n\n"
-                            . "🛒 کد فاکتور: <code>{$orderId}</code>\n"
-                            . "👤 کاربر: <code>" . htmlspecialchars((string)($row['id_user'] ?? '-')) . "</code>\n"
-                            . "💎 ارز: " . htmlspecialchars((string)($row['crypto_currency'] ?? '-')) . "\n"
-                            . "🪙 مقدار ادعاشده: <code>" . htmlspecialchars((string)($row['crypto_amount'] ?? '-')) . "</code>\n"
-                            . "💸 معادل تومانی: " . number_format((int)($row['price'] ?? 0)) . " تومان\n"
-                            . "🔗 هش: <code>" . htmlspecialchars((string)($row['crypto_tx_hash'] ?? '-')) . "</code>\n"
-                            . "📝 دلیل عدم تایید: " . htmlspecialchars($faReason) . "\n"
-                            . "🔍 <a href=\"" . htmlspecialchars($explorerUrl, ENT_QUOTES) . "\">مشاهده در بلاکچین</a>"
+                            . "<blockquote>🛒 کد فاکتور: <code>{$orderId}</code></blockquote>\n"
+                            . "<blockquote>👤 کاربر: <code>" . htmlspecialchars((string)($row['id_user'] ?? '-')) . "</code></blockquote>\n"
+                            . "<blockquote>💎 ارز: " . htmlspecialchars((string)($row['crypto_currency'] ?? '-')) . "</blockquote>\n"
+                            . "<blockquote>🪙 مقدار ادعاشده: <code>" . htmlspecialchars((string)($row['crypto_amount'] ?? '-')) . "</code></blockquote>\n"
+                            . "<blockquote>💸 معادل تومانی: " . number_format((int)($row['price'] ?? 0)) . " تومان</blockquote>\n"
+                            . "<blockquote>🔗 هش: <code>" . htmlspecialchars((string)($row['crypto_tx_hash'] ?? '-')) . "</code></blockquote>\n"
+                            . "<blockquote>📝 دلیل عدم تایید: " . htmlspecialchars($faReason) . "</blockquote>\n"
+                            . "<blockquote>🔍 <a href=\"" . htmlspecialchars($explorerUrl, ENT_QUOTES) . "\">مشاهده در بلاکچین</a></blockquote>"
                             . $dupWarn
                             . "\n\n💡 اگر کاربر درخواست بررسی دستی بده، اعلان جدید با دکمه‌های اقدام به پی‌وی شما ارسال می‌شود.";
 
@@ -669,6 +728,9 @@ foreach ($rows as $row) {
             if (function_exists('update')) {
                 update('user', 'Balance', $newBalance, 'id', $Balance_id['id']);
             }
+            if (function_exists('wallet_ledger_record')) {
+                wallet_ledger_record($Balance_id['id'], 'credit', $bonus, 'cashback', 'هدیه بازگشت وجه کریپتو', $orderId);
+            }
             if (function_exists('sendmessage')) {
                 @sendmessage(
                     (string) $Balance_id['id'],
@@ -686,14 +748,14 @@ foreach ($rows as $row) {
         $username = isset($Balance_id['username']) ? '@' . $Balance_id['username'] : '—';
 
         $textReport = "💵 پرداخت کریپتو جدید (هش‌چکر)\n"
-            . "- 👤 نام کاربری: {$username}\n"
-            . "- 🆔 آیدی عددی: {$Balance_id['id']}\n"
-            . "- 💸 مبلغ تراکنش (تومان): " . number_format((int) $row['price']) . "\n"
-            . "- 💎 ارز: " . htmlspecialchars($currency) . "\n"
-            . "- 📥 مبلغ روی شبکه: " . htmlspecialchars((string) $verifiedAmount) . "\n"
-            . "- 🔗 <a href=\"" . htmlspecialchars($explorerUrl, ENT_QUOTES) . "\">لینک تراکنش</a>\n"
-            . "- 🛒 کد فاکتور: <code>{$orderId}</code>\n"
-            . "- 💳 روش پرداخت: ارز آفلاین (تایید خودکار)";
+            . "<blockquote>- 👤 نام کاربری: {$username}</blockquote>\n"
+            . "<blockquote>- 👤 آیدی عددی: {$Balance_id['id']}</blockquote>\n"
+            . "<blockquote>- 💸 مبلغ تراکنش (تومان): " . number_format((int) $row['price']) . "</blockquote>\n"
+            . "<blockquote>- 💎 ارز: " . htmlspecialchars($currency) . "</blockquote>\n"
+            . "<blockquote>- 📥 مبلغ روی شبکه: " . htmlspecialchars((string) $verifiedAmount) . "</blockquote>\n"
+            . "<blockquote>- 🔗 <a href=\"" . htmlspecialchars($explorerUrl, ENT_QUOTES) . "\">لینک تراکنش</a></blockquote>\n"
+            . "<blockquote>- 🛒 کد فاکتور: <code>{$orderId}</code></blockquote>\n"
+            . "<blockquote>- 💳 روش پرداخت: ارز آفلاین (تایید خودکار)</blockquote>";
 
         if (!empty($setting['Channel_Report']) && function_exists('telegram')) {
             $payload = [

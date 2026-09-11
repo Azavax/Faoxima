@@ -20,6 +20,22 @@ if (($_SERVER['HTTP_IF_NONE_MATCH'] ?? '') === $__etag) {
     exit;
 }
 
+$__qrRootDir = dirname(__DIR__);
+if (is_file($__qrRootDir . '/config.php') && is_file($__qrRootDir . '/function.php')) {
+    @require_once $__qrRootDir . '/config.php';
+    @require_once $__qrRootDir . '/function.php';
+}
+if (function_exists('isQrDisabled') && isQrDisabled()) {
+    http_response_code(404);
+    exit;
+} elseif (!function_exists('isQrDisabled') && function_exists('select')) {
+    $__qrDisRow = select("shopSetting", "*", "Namevalue", "qr_disabled", "select");
+    if (is_array($__qrDisRow) && ((string)($__qrDisRow['value'] ?? '0')) === '1') {
+        http_response_code(404);
+        exit;
+    }
+}
+
 $payload = isset($_GET['d']) ? (string) $_GET['d'] : '';
 $payload = substr($payload, 0, 2048);
 if ($payload === '') {

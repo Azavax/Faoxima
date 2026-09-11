@@ -1,4 +1,10 @@
 <?php
+
+if (!defined('REFACTORED_LEGACY_ROOT')) {
+    define('REFACTORED_LEGACY_ROOT', __DIR__);
+}
+@chdir(__DIR__);
+
 include('config.php');
 require_once 'function.php';
 require_once 'request.php';

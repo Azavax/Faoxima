@@ -18,6 +18,7 @@ $ManagePanel = new ManagePanel();
 
 $giftFile = __DIR__ . '/gift';
 $queueFile = __DIR__ . '/username.json';
+$notifiedFile = __DIR__ . '/gift_notified.json';
 
 $setting = select("setting", "*");
 $errorreport = select("topicid","idreport","report","errorreport","select")['idreport'];
@@ -55,9 +56,10 @@ $info = json_decode(file_get_contents($giftFile),true);
 if(count($userid) == 0){
     if(isset($info['id_admin'])){
     deletemessage($info['id_admin'], $info['id_message']);
-    sendmessage($info['id_admin'], "📌 عملیات برای تمامی سرویس های درخواستی انجام شد.", null, 'HTML');
+    sendmessage($info['id_admin'], faoxima_textbot_get('dyn_gift_all_done', '📌 عملیات برای تمامی سرویس های درخواستی انجام شد.'), null, 'HTML');
     unlink($giftFile);
     unlink($queueFile);
+    @unlink($notifiedFile);
     }
     return;
 
@@ -75,6 +77,24 @@ $logFailedUser = function ($username) use (&$failedUsers, $failedFile) {
     $failedUsers[] = $username;
     $failedUsers = array_values(array_unique($failedUsers));
     file_put_contents($failedFile, json_encode($failedUsers, JSON_UNESCAPED_UNICODE));
+};
+
+$notifiedUsers = [];
+if (is_file($notifiedFile)) {
+    $notifiedUsers = json_decode(file_get_contents($notifiedFile), true) ?: [];
+}
+
+$notifyUserOnce = function ($id_user, $text) use (&$notifiedUsers, $notifiedFile) {
+    if ($id_user === null || $id_user === '') {
+        return;
+    }
+    $key = (string) $id_user;
+    if (in_array($key, $notifiedUsers, true)) {
+        return;
+    }
+    sendmessage($id_user, $text, null, "html");
+    $notifiedUsers[] = $key;
+    file_put_contents($notifiedFile, json_encode($notifiedUsers, JSON_UNESCAPED_UNICODE));
 };
 
 $batchSize = 5;
@@ -126,7 +146,11 @@ while (!empty($userid) && $processed < $batchSize) {
         if ($extra_volume['status'] == false) {
             $hadPersistentError = true;
             $extra_volume['msg'] = json_encode($extra_volume['msg']);
-            $textreports = "خطای اضافه شدن هدیه حجم\nنام پنل : {$marzban_list_get['name_panel']}\nنام کاربری سرویس : {$iduser->username}\nدلیل خطا : {$extra_volume['msg']}";
+            $textreports = faoxima_render_text(faoxima_textbot_get('dyn_gift_error_report_tpl', "خطای اضافه شدن هدیه حجم\n<blockquote>نام پنل : {panel_name}</blockquote>\n<blockquote>نام کاربری سرویس : {username}</blockquote>\n<blockquote>دلیل خطا : {reason}</blockquote>"), [
+                'panel_name' => $marzban_list_get['name_panel'],
+                'username' => $iduser->username,
+                'reason' => $extra_volume['msg'],
+            ]);
             if (strlen($setting['Channel_Report']) > 0) {
                 telegram('sendmessage', [
                     'chat_id' => $setting['Channel_Report'],
@@ -136,7 +160,7 @@ while (!empty($userid) && $processed < $batchSize) {
                 ]);
             }
         } else {
-            sendmessage($invoce['id_user'], $info['text'], null, "html");
+            $notifyUserOnce($invoce['id_user'], $info['text']);
         }
 
         $data_for_database = json_encode(array(
@@ -163,7 +187,11 @@ while (!empty($userid) && $processed < $batchSize) {
         if ($extra_time['status'] == false) {
             $hadPersistentError = true;
             $extra_time['msg'] = json_encode($extra_time['msg']);
-            $textreports = "خطای اضافه شدن هدیه حجم\nنام پنل : {$marzban_list_get['name_panel']}\nنام کاربری سرویس : {$iduser->username}\nدلیل خطا : {$extra_time['msg']}";
+            $textreports = faoxima_render_text(faoxima_textbot_get('dyn_gift_error_report_tpl', "خطای اضافه شدن هدیه حجم\n<blockquote>نام پنل : {panel_name}</blockquote>\n<blockquote>نام کاربری سرویس : {username}</blockquote>\n<blockquote>دلیل خطا : {reason}</blockquote>"), [
+                'panel_name' => $marzban_list_get['name_panel'],
+                'username' => $iduser->username,
+                'reason' => $extra_time['msg'],
+            ]);
             if (strlen($setting['Channel_Report']) > 0) {
                 telegram('sendmessage', [
                     'chat_id' => $setting['Channel_Report'],
@@ -173,7 +201,7 @@ while (!empty($userid) && $processed < $batchSize) {
                 ]);
             }
         } else {
-            sendmessage($invoce['id_user'], $info['text'], null, "html");
+            $notifyUserOnce($invoce['id_user'], $info['text']);
         }
 
         $data_for_database = json_encode(array(
@@ -208,14 +236,15 @@ while (!empty($userid) && $processed < $batchSize) {
 if (empty($userid)) {
     if(isset($info['id_admin'])){
     deletemessage($info['id_admin'], $info['id_message']);
-    $successText = "📌 عملیات برای تمامی سرویس های درخواستی انجام شد.";
+    $successText = faoxima_textbot_get('dyn_gift_all_done', '📌 عملیات برای تمامی سرویس های درخواستی انجام شد.');
     if (!empty($failedUsers)) {
         $failedList = implode("\n", $failedUsers);
-        $successText .= "\n⚠️ کاربران با خطای اعمال هدیه:\n" . $failedList;
+        $successText .= faoxima_render_text(faoxima_textbot_get('dyn_gift_failed_users_suffix_tpl', "\n⚠️ کاربران با خطای اعمال هدیه:\n{list}"), ['list' => $failedList]);
     }
     sendmessage($info['id_admin'], $successText, null, 'HTML');
     unlink($giftFile);
     unlink($queueFile);
+    @unlink($notifiedFile);
     if (empty($failedUsers) && is_file($failedFile)) {
         unlink($failedFile);
     }

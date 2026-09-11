@@ -23,21 +23,55 @@ final class DiscountValidateHandler extends BaseHandler
         $username = FaoximaInput::nullableString($this->data, 'username');
         $codeProduct = FaoximaInput::string($this->data, 'product_code');
         $codePanel   = FaoximaInput::string($this->data, 'code_panel');
+        $codeCategory = FaoximaInput::string($this->data, 'category');
+        $namePanel = '';
 
-        if (($codeProduct === '' || $codePanel === '') && $username !== null && $username !== '') {
+        if ($codePanel !== '') {
+            $panelByCode = select('marzban_panel', '*', 'code_panel', $codePanel, 'select');
+            if (is_array($panelByCode)) {
+                $namePanel = (string)($panelByCode['name_panel'] ?? '');
+            }
+        }
+
+        if (($codePanel === '' || $codeCategory === '') && $username !== null && $username !== '') {
             $invoice = FaoximaDb::fetchOne(
                 'SELECT * FROM invoice WHERE id_user = :u AND username = :n LIMIT 1',
                 [':u' => $this->user['id'], ':n' => $username]
             );
             if (is_array($invoice)) {
-                $panel = select('marzban_panel', '*', 'name_panel', $invoice['Service_location'], 'select');
-                if ($codePanel === '' && is_array($panel)) {
-                    $codePanel = (string)($panel['code_panel'] ?? '');
+                if ($codePanel === '') {
+                    $panel = select('marzban_panel', '*', 'name_panel', $invoice['Service_location'], 'select');
+                    if (is_array($panel)) {
+                        $codePanel = (string)($panel['code_panel'] ?? '');
+                        $namePanel = (string)($invoice['Service_location'] ?? '');
+                    }
+                }
+                if ($codeCategory === '') {
+                    $sourceProduct = FaoximaDb::fetchOne(
+                        "SELECT category FROM product WHERE name_product = :n AND (FIND_IN_SET(:loc, Location) > 0 OR Location = '/all') LIMIT 1",
+                        [':n' => (string)($invoice['name_product'] ?? ''), ':loc' => (string)($invoice['Service_location'] ?? '')]
+                    );
+                    if (is_array($sourceProduct)) {
+                        $codeCategory = (string)($sourceProduct['category'] ?? '');
+                    }
                 }
             }
         }
 
-        $result = MiniDiscount::validateSell($code, $section, $codeProduct, $codePanel, $this->user);
+        if ($codeCategory === '' && $codeProduct !== '') {
+            $productRow = FaoximaDb::fetchOne(
+                "SELECT category FROM product WHERE code_product = :cp AND (FIND_IN_SET(:loc, Location) > 0 OR Location = '/all') LIMIT 1",
+                [':cp' => $codeProduct, ':loc' => $namePanel]
+            );
+            if (is_array($productRow)) {
+                $codeCategory = (string)($productRow['category'] ?? '');
+            }
+        }
+
+        $codeCategories = array_values(array_filter(array_map('trim', explode(',', $codeCategory)), function ($v) {
+            return $v !== '';
+        }));
+        $result = MiniDiscount::validateSellForCategories($code, $section, $codeProduct, $codePanel, $codeCategories, $this->user);
         if (empty($result['ok'])) {
             FaoximaResponse::fail(422, (string)($result['reason'] ?? '❌ کد تخفیف نامعتبر است.'));
         }

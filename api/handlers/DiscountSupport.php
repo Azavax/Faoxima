@@ -28,7 +28,11 @@ final class MiniDiscount
         $val = (float)($row['price'] ?? 0);
         if ($vt === 'free')   return 'رایگان';
         if ($vt === 'amount') return number_format($val) . ' تومان';
-        return rtrim(rtrim((string)$val, '0'), '.') . '٪';
+        $percentStr = (string)$val;
+        if (strpos($percentStr, '.') !== false) {
+            $percentStr = rtrim(rtrim($percentStr, '0'), '.');
+        }
+        return $percentStr . '٪';
     }
 
     public static function applyToPrice(array $row, float $price): float
@@ -91,6 +95,9 @@ final class MiniDiscount
 
         update('Discount', 'limitused', (string)($limitUsed + 1), 'code', $code);
         self::recordConsumed($code, (string)$user['id'], 'gift');
+        if (function_exists('wallet_ledger_record')) {
+            wallet_ledger_record($user['id'], 'credit', $amount, 'gift_code', 'استفاده از کد هدیه', null, 'Discount', $code);
+        }
 
         $newBalance = FaoximaDb::fetchScalar('SELECT Balance FROM user WHERE id = :u', [':u' => $user['id']]);
         $newBalance = $newBalance === null ? ((float)($user['Balance'] ?? 0) + $amount) : (float)$newBalance;
@@ -98,50 +105,68 @@ final class MiniDiscount
         return ['ok' => true, 'amount' => $amount, 'new_balance' => $newBalance];
     }
 
-    public static function validateSell(string $code, string $section, string $codeProduct, string $codePanel, array $user, bool $blockIfUserDiscount = true): array
+    private static function normalizeTargeting(string $codeProduct, string $codePanel, string $codeCategory): array
     {
-        $code = trim($code);
-        if ($code === '') {
-            return ['ok' => false, 'reason' => '❌ کد تخفیف را وارد کنید.'];
-        }
+        if ($codeProduct === '')  $codeProduct = 'all';
+        if ($codePanel === '')    $codePanel = '/all';
+        if ($codeCategory === '') $codeCategory = 'all';
+        return [$codeProduct, $codePanel, $codeCategory];
+    }
 
-        $section = in_array($section, self::SECTIONS, true) ? $section : 'all';
+    private static function targetingClause(): string
+    {
+        return "(
+                    (COALESCE(NULLIF(targeting_mode,''),'none') = 'none'
+                      AND (code_product = :cp OR code_product = 'all')
+                      AND (code_panel = :cpan OR code_panel = '/all'))
+                 OR (COALESCE(NULLIF(targeting_mode,''),'none') = 'panel'
+                      AND (code_panel = '/all' OR FIND_IN_SET(:cpan2, code_panel) > 0))
+                 OR (COALESCE(NULLIF(targeting_mode,''),'none') = 'category'
+                      AND (code_category = 'all' OR FIND_IN_SET(:cat, code_category) > 0))
+               )";
+    }
 
-        if ($blockIfUserDiscount && $section !== 'charge') {
-            $userDiscount = (int)($user['pricediscount'] ?? 0);
-            if ($userDiscount !== 0) {
-                return ['ok' => false, 'reason' => '❌ شما تخفیف اختصاصی دارید و امکان استفاده از کد تخفیف وجود ندارد.'];
+    private static function targetingClauseMulti(array $codeCategories, string $paramPrefix = 'catm'): array
+    {
+        $categoryOr = "code_category = 'all'";
+        $extraParams = [];
+        $codeCategories = array_values(array_unique(array_filter(array_map('strval', $codeCategories), function ($v) {
+            return trim($v) !== '';
+        })));
+        if ($codeCategories) {
+            $parts = [];
+            foreach ($codeCategories as $i => $value) {
+                $key = ":{$paramPrefix}{$i}";
+                $parts[] = "FIND_IN_SET({$key}, code_category) > 0";
+                $extraParams[$key] = $value;
             }
+            $categoryOr .= ' OR ' . implode(' OR ', $parts);
         }
+        $clause = "(
+                    (COALESCE(NULLIF(targeting_mode,''),'none') = 'none'
+                      AND (code_product = :cp OR code_product = 'all')
+                      AND (code_panel = :cpan OR code_panel = '/all'))
+                 OR (COALESCE(NULLIF(targeting_mode,''),'none') = 'panel'
+                      AND (code_panel = '/all' OR FIND_IN_SET(:cpan2, code_panel) > 0))
+                 OR (COALESCE(NULLIF(targeting_mode,''),'none') = 'category'
+                      AND ({$categoryOr}))
+               )";
+        return [$clause, $extraParams];
+    }
 
-        $agent = (string)($user['agent'] ?? 'f');
-        if ($codeProduct === '') $codeProduct = 'all';
-        if ($codePanel === '')   $codePanel = '/all';
+    private static function agentClause(): string
+    {
+        return "(agent = 'allusers' OR agent = 'all' OR FIND_IN_SET(:agent, agent) > 0)";
+    }
 
-        $row = FaoximaDb::fetchOne(
-            "SELECT * FROM DiscountSell
-              WHERE codeDiscount = :code
-                AND (code_product = :cp OR code_product = 'all')
-                AND (code_panel = :cpan OR code_panel = '/all')
-                AND (agent = :agent OR agent = 'allusers' OR agent = 'all')
-                AND (COALESCE(NULLIF(section, ''), type, 'all') = :section
-                     OR COALESCE(NULLIF(section, ''), type, 'all') = 'all')
-                AND (status IS NULL OR status = '' OR status = 'active')
-                AND (target_user IS NULL OR target_user = '' OR target_user = :uid)
-              LIMIT 1",
-            [
-                ':code' => $code,
-                ':cp' => $codeProduct,
-                ':cpan' => $codePanel,
-                ':agent' => $agent,
-                ':section' => $section,
-                ':uid' => (string)$user['id'],
-            ]
-        );
-        if ($row === null) {
-            return ['ok' => false, 'reason' => '❌ کد تخفیف نامعتبر است یا برای این بخش فعال نیست.'];
-        }
+    private static function sectionClause(): string
+    {
+        return "(COALESCE(NULLIF(section, ''), type, 'all') = 'all'
+                 OR FIND_IN_SET(:section, COALESCE(NULLIF(section, ''), type, 'all')) > 0)";
+    }
 
+    private static function rowPassesUsageChecks(array $row, string $code, array $user): array
+    {
         $expiry = (int)($row['time'] ?? 0);
         if ($expiry !== 0 && time() >= $expiry) {
             return ['ok' => false, 'reason' => '❌ زمان کد تخفیف به پایان رسیده است.'];
@@ -180,6 +205,142 @@ final class MiniDiscount
             return ['ok' => false, 'reason' => '❌ مبلغ کد تخفیف نامعتبر است.'];
         }
 
+        return ['ok' => true];
+    }
+
+    public static function hasEligible(string $section, string $codeProduct, string $codePanel, string $codeCategory, array $user): bool
+    {
+        $section = in_array($section, self::SECTIONS, true) ? $section : 'all';
+
+        if ($section !== 'charge') {
+            $userDiscount = (int)($user['pricediscount'] ?? 0);
+            if ($userDiscount !== 0) {
+                return false;
+            }
+        }
+
+        [$codeProduct, $codePanel, $codeCategory] = self::normalizeTargeting($codeProduct, $codePanel, $codeCategory);
+        $agent = (string)($user['agent'] ?? 'f');
+
+        $rows = FaoximaDb::fetchAll(
+            "SELECT * FROM DiscountSell
+              WHERE " . self::agentClause() . "
+                AND " . self::sectionClause() . "
+                AND (status IS NULL OR status = '' OR status = 'active')
+                AND (target_user IS NULL OR target_user = '' OR target_user = :uid)
+                AND " . self::targetingClause(),
+            [
+                ':agent' => $agent,
+                ':section' => $section,
+                ':uid' => (string)$user['id'],
+                ':cp' => $codeProduct,
+                ':cpan' => $codePanel,
+                ':cpan2' => $codePanel,
+                ':cat' => $codeCategory,
+            ]
+        );
+
+        foreach ($rows as $row) {
+            $check = self::rowPassesUsageChecks($row, (string)($row['codeDiscount'] ?? ''), $user);
+            if (!empty($check['ok'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function hasEligibleForCategories(string $section, string $codeProduct, string $codePanel, array $codeCategories, array $user): bool
+    {
+        $section = in_array($section, self::SECTIONS, true) ? $section : 'all';
+
+        if ($section !== 'charge') {
+            $userDiscount = (int)($user['pricediscount'] ?? 0);
+            if ($userDiscount !== 0) {
+                return false;
+            }
+        }
+
+        [$codeProduct, $codePanel, ] = self::normalizeTargeting($codeProduct, $codePanel, 'all');
+        $agent = (string)($user['agent'] ?? 'f');
+        [$targeting, $targetingParams] = self::targetingClauseMulti($codeCategories);
+
+        $rows = FaoximaDb::fetchAll(
+            "SELECT * FROM DiscountSell
+              WHERE " . self::agentClause() . "
+                AND " . self::sectionClause() . "
+                AND (status IS NULL OR status = '' OR status = 'active')
+                AND (target_user IS NULL OR target_user = '' OR target_user = :uid)
+                AND " . $targeting,
+            [
+                ':agent' => $agent,
+                ':section' => $section,
+                ':uid' => (string)$user['id'],
+                ':cp' => $codeProduct,
+                ':cpan' => $codePanel,
+                ':cpan2' => $codePanel,
+            ] + $targetingParams
+        );
+
+        foreach ($rows as $row) {
+            $check = self::rowPassesUsageChecks($row, (string)($row['codeDiscount'] ?? ''), $user);
+            if (!empty($check['ok'])) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    public static function validateSellForCategories(string $code, string $section, string $codeProduct, string $codePanel, array $codeCategories, array $user, bool $blockIfUserDiscount = true): array
+    {
+        $code = trim($code);
+        if ($code === '') {
+            return ['ok' => false, 'reason' => '❌ کد تخفیف را وارد کنید.'];
+        }
+
+        $section = in_array($section, self::SECTIONS, true) ? $section : 'all';
+
+        if ($blockIfUserDiscount && $section !== 'charge') {
+            $userDiscount = (int)($user['pricediscount'] ?? 0);
+            if ($userDiscount !== 0) {
+                return ['ok' => false, 'reason' => '❌ شما تخفیف اختصاصی دارید و امکان استفاده از کد تخفیف وجود ندارد.'];
+            }
+        }
+
+        $agent = (string)($user['agent'] ?? 'f');
+        [$codeProduct, $codePanel, ] = self::normalizeTargeting($codeProduct, $codePanel, 'all');
+        [$targeting, $targetingParams] = self::targetingClauseMulti($codeCategories);
+
+        $row = FaoximaDb::fetchOne(
+            "SELECT * FROM DiscountSell
+              WHERE codeDiscount = :code
+                AND " . self::agentClause() . "
+                AND " . self::sectionClause() . "
+                AND (status IS NULL OR status = '' OR status = 'active')
+                AND (target_user IS NULL OR target_user = '' OR target_user = :uid)
+                AND " . $targeting . "
+              LIMIT 1",
+            [
+                ':code' => $code,
+                ':agent' => $agent,
+                ':section' => $section,
+                ':uid' => (string)$user['id'],
+                ':cp' => $codeProduct,
+                ':cpan' => $codePanel,
+                ':cpan2' => $codePanel,
+            ] + $targetingParams
+        );
+        if ($row === null) {
+            return ['ok' => false, 'reason' => '❌ کد تخفیف نامعتبر است یا برای این بخش فعال نیست.'];
+        }
+
+        $check = self::rowPassesUsageChecks($row, $code, $user);
+        if (empty($check['ok'])) {
+            return $check;
+        }
+
+        $vt = self::valueType($row);
+        $val = (float)($row['price'] ?? 0);
+
         return [
             'ok'         => true,
             'code'       => $code,
@@ -188,6 +349,114 @@ final class MiniDiscount
             'label'      => self::describe($row),
             'row'        => $row,
         ];
+    }
+
+    public static function validateSell(string $code, string $section, string $codeProduct, string $codePanel, string $codeCategory, array $user, bool $blockIfUserDiscount = true): array
+    {
+        $code = trim($code);
+        if ($code === '') {
+            return ['ok' => false, 'reason' => '❌ کد تخفیف را وارد کنید.'];
+        }
+
+        $section = in_array($section, self::SECTIONS, true) ? $section : 'all';
+
+        if ($blockIfUserDiscount && $section !== 'charge') {
+            $userDiscount = (int)($user['pricediscount'] ?? 0);
+            if ($userDiscount !== 0) {
+                return ['ok' => false, 'reason' => '❌ شما تخفیف اختصاصی دارید و امکان استفاده از کد تخفیف وجود ندارد.'];
+            }
+        }
+
+        $agent = (string)($user['agent'] ?? 'f');
+        [$codeProduct, $codePanel, $codeCategory] = self::normalizeTargeting($codeProduct, $codePanel, $codeCategory);
+
+        $row = FaoximaDb::fetchOne(
+            "SELECT * FROM DiscountSell
+              WHERE codeDiscount = :code
+                AND " . self::agentClause() . "
+                AND " . self::sectionClause() . "
+                AND (status IS NULL OR status = '' OR status = 'active')
+                AND (target_user IS NULL OR target_user = '' OR target_user = :uid)
+                AND " . self::targetingClause() . "
+              LIMIT 1",
+            [
+                ':code' => $code,
+                ':agent' => $agent,
+                ':section' => $section,
+                ':uid' => (string)$user['id'],
+                ':cp' => $codeProduct,
+                ':cpan' => $codePanel,
+                ':cpan2' => $codePanel,
+                ':cat' => $codeCategory,
+            ]
+        );
+        if ($row === null) {
+            return ['ok' => false, 'reason' => '❌ کد تخفیف نامعتبر است یا برای این بخش فعال نیست.'];
+        }
+
+        $check = self::rowPassesUsageChecks($row, $code, $user);
+        if (empty($check['ok'])) {
+            return $check;
+        }
+
+        $vt = self::valueType($row);
+        $val = (float)($row['price'] ?? 0);
+
+        return [
+            'ok'         => true,
+            'code'       => $code,
+            'value_type' => $vt,
+            'value'      => $val,
+            'label'      => self::describe($row),
+            'row'        => $row,
+        ];
+    }
+
+    public static function logOrderDiscount(array $ctx): void
+    {
+        try {
+            $pdo = FaoximaDb::pdo();
+            $pdo->prepare(
+                'INSERT INTO order_discount_log
+                    (id_user, id_invoice, code, kind, value_type, value_raw, price_before, discount_amount, price_after, section, created_at)
+                 VALUES (:id_user, :id_invoice, :code, :kind, :value_type, :value_raw, :price_before, :discount_amount, :price_after, :section, :created_at)'
+            )->execute([
+                ':id_user'         => (string)($ctx['id_user'] ?? ''),
+                ':id_invoice'      => $ctx['id_invoice'] ?? null,
+                ':code'            => (string)($ctx['code'] ?? ''),
+                ':kind'            => (string)($ctx['kind'] ?? 'sell'),
+                ':value_type'      => (string)($ctx['value_type'] ?? 'percent'),
+                ':value_raw'       => $ctx['value_raw'] ?? null,
+                ':price_before'    => (int)round((float)($ctx['price_before'] ?? 0)),
+                ':discount_amount' => (int)round((float)($ctx['discount_amount'] ?? 0)),
+                ':price_after'     => (int)round((float)($ctx['price_after'] ?? 0)),
+                ':section'         => $ctx['section'] ?? null,
+                ':created_at'      => (string)time(),
+            ]);
+        } catch (Throwable $e) {
+        }
+    }
+
+    public static function logSale(array $ctx): void
+    {
+        try {
+            $pdo = FaoximaDb::pdo();
+            $pdo->prepare(
+                'INSERT INTO sale_ledger
+                    (id_user, id_invoice, Service_location, kind, name_product, amount, source, created_at)
+                 VALUES (:id_user, :id_invoice, :panel, :kind, :name_product, :amount, :source, :created_at)'
+            )->execute([
+                ':id_user'      => (string)($ctx['id_user'] ?? ''),
+                ':id_invoice'   => $ctx['id_invoice'] ?? null,
+                ':panel'        => (string)($ctx['Service_location'] ?? ''),
+                ':kind'         => (string)($ctx['kind'] ?? ''),
+                ':name_product' => $ctx['name_product'] ?? null,
+                ':amount'       => (int)round((float)($ctx['amount'] ?? 0)),
+                ':source'       => (string)($ctx['source'] ?? 'bot'),
+                ':created_at'   => (string)time(),
+            ]);
+        } catch (Throwable $e) {
+        }
     }
 
     public static function markSellUsed(string $code, array $user): void

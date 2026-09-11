@@ -141,8 +141,8 @@ try {
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>پیام همگانی | پنل فاکسیما</title>
-    <link rel="stylesheet" href="css/theme.css">
-    <script src="js/theme.js" defer>
+    <link rel="stylesheet" href="css/theme.css?v=flat47">
+    <script src="js/theme.js?v=flat5" defer>
 
 </script>
     <style>
@@ -162,7 +162,7 @@ try {
             background: var(--surface-3);
             border: 1px solid var(--border-mid);
             color: var(--text-main);
-            font-family: 'Arad', sans-serif;
+            font-family: 'Vazirmatn', sans-serif;
             font-size: 14px;
             line-height: 1.9;
             resize: vertical;

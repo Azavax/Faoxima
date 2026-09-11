@@ -65,20 +65,16 @@ function faoxima_schema_ready(PDO $pdo): void {
 
 
     faoxima_schema_ensure_column(
-        $pdo, 'marzban_panel', 'emergency_panel_status',
-        "VARCHAR(50) NOT NULL DEFAULT 'off_emergency_panel'"
-    );
-    faoxima_schema_ensure_column(
         $pdo, 'marzban_panel', 'national_net_status',
         "VARCHAR(50) NOT NULL DEFAULT 'off_national_net'"
     );
     faoxima_schema_ensure_column(
-        $pdo, 'marzban_panel', 'emergency_source_panel',
+        $pdo, 'marzban_panel', 'stock_source_panel',
         "VARCHAR(191) NULL"
     );
     faoxima_schema_ensure_column(
-        $pdo, 'marzban_panel', 'stock_source_panel',
-        "VARCHAR(191) NULL"
+        $pdo, 'setting', 'redis_enabled',
+        "VARCHAR(20) NOT NULL DEFAULT '0'"
     );
 
 
@@ -95,6 +91,7 @@ function faoxima_schema_ready(PDO $pdo): void {
                 max_irt BIGINT NOT NULL DEFAULT 100000000,
                 cashback_percent DECIMAL(6,2) NOT NULL DEFAULT 0,
                 rate_irt_override DECIMAL(20,4) DEFAULT NULL,
+                verification_mode ENUM('automated','manual') NOT NULL DEFAULT 'automated',
                 created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
                 updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
                 UNIQUE KEY uniq_currency (currency)
@@ -114,6 +111,10 @@ function faoxima_schema_ready(PDO $pdo): void {
             error_log('[schema] crypto_wallets: ' . $e->getMessage());
         }
     }
+    faoxima_schema_ensure_column(
+        $pdo, 'crypto_wallets', 'verification_mode',
+        "ENUM('automated','manual') NOT NULL DEFAULT 'automated'"
+    );
 
 
     if (!faoxima_schema_table_exists($pdo, 'app')) {

@@ -23,12 +23,13 @@ final class PaymentMethodsHandler extends BaseHandler
         $cart           = $get('Cartstatus');
         $cartPv         = $get('Cartstatuspv');
         $cartUsername   = $get('CartDirect');
-        $aqayepardakht  = $get('statusaqayepardakht');
         $zarinpal       = $get('zarinpalstatus');
-        $zarinpey       = $get('zarinpeystatus');
-        $iranpay1Active = $get('statusSwapWallet');
         $iranpay2Active = $get('statustarnado');
-        $iranpay3Active = $get('statusiranpay3');
+        $tonpayActive   = $get('statustonpay');
+        $cubepayActive  = $get('statuscubepay');
+        $blupalActive   = $get('statusblupal');
+        $atlaspayActive = $get('statusatlaspay');
+        $tetrapayActive = $get('statustetrapay');
         $plisio         = $get('nowpaymentstatus');
         $nowpayment     = $get('statusnowpayment');
         $digi           = $get('digistatus');
@@ -46,15 +47,16 @@ final class PaymentMethodsHandler extends BaseHandler
         $perMethodKeys = [
             'carttocart'    => ['minbalancecart',          'maxbalancecart'],
             'carttocart_pv' => ['minbalancecart',          'maxbalancecart'],
-            'aqayepardakht' => ['minbalanceaqayepardakht', 'maxbalanceaqayepardakht'],
             'zarinpal'      => ['minbalancezarinpal',      'maxbalancezarinpal'],
-            'zarinpey'      => ['minbalancezarinpey',      'maxbalancezarinpey'],
             'plisio'        => ['minbalanceplisio',        'maxbalanceplisio'],
             'nowpayment'    => ['minbalancenowpayment',    'maxbalancenowpayment'],
             'digitaltron'   => ['minbalancedigitaltron',   'maxbalancedigitaltron'],
-            'iranpay1'      => ['minbalanceiranpay1',      'maxbalanceiranpay1'],
             'iranpay2'      => ['minbalanceiranpay2',      'maxbalanceiranpay2'],
-            'iranpay3'      => ['minbalanceiranpay',       'maxbalanceiranpay'],
+            'tonpay'        => ['minbalancetonpay',        'maxbalancetonpay'],
+            'cubepay'       => ['minbalancecubepay',       'maxbalancecubepay'],
+            'blupal'        => ['minbalanceblupal',        'maxbalanceblupal'],
+            'atlaspay'      => ['minbalanceatlaspay',      'maxbalanceatlaspay'],
+            'tetrapay'      => ['minbalancetetrapay',      'maxbalancetetrapay'],
         ];
         $methodLimitsResolver = function (string $methodId) use ($perMethodKeys, $get, $minBalance, $maxBalance): array {
             if (isset($perMethodKeys[$methodId])) {
@@ -98,7 +100,7 @@ final class PaymentMethodsHandler extends BaseHandler
                 if ($cartPv === 'oncardpv' && $cartUsername !== '') {
                     $methods[] = [
                         'id'    => 'carttocart_pv',
-                        'label' => $L('carttocart', '🔌 کارت به کارت'),
+                        'label' => $L('carttocart', '🔌 کارت‌به‌کارت'),
                         'icon'  => '💳',
                         'kind'  => 'url',
                         'url'   => 'https://t.me/' . ltrim($cartUsername, '@'),
@@ -106,7 +108,7 @@ final class PaymentMethodsHandler extends BaseHandler
                 } else {
                     $methods[] = [
                         'id'    => 'carttocart',
-                        'label' => $L('carttocart', '🔌 کارت به کارت'),
+                        'label' => $L('carttocart', '🔌 کارت‌به‌کارت'),
                         'icon'  => '💳',
                         'kind'  => 'form',
                     ];
@@ -141,36 +143,43 @@ final class PaymentMethodsHandler extends BaseHandler
         }
 
 
-        if ($iranpay1Active === 'onSwapinoBot') {
-            $methods[] = [
-                'id'    => 'iranpay1',
-                'label' => $L('iranpay2', '🌸 درگاه پرداخت ریالی'),
-                'icon'  => '🌸',
-                'kind'  => 'form',
-            ];
-        }
         if ($iranpay2Active === 'onternado') {
             $methods[] = [
                 'id'    => 'iranpay2',
-                'label' => $L('iranpay3', '🌸 درگاه پرداخت ریالی دوم'),
+                'label' => $L('iranpay3', 'ترونادو'),
                 'icon'  => '🌸',
                 'kind'  => 'form',
             ];
         }
-        if ($iranpay3Active === 'oniranpay3' && $paymentExits >= 2) {
+        if ($tonpayActive === 'ontonpay') {
             $methods[] = [
-                'id'    => 'iranpay3',
-                'label' => $L('iranpay1', '🌸 درگاه پرداخت ریالی سوم'),
-                'icon'  => '🌸',
+                'id'    => 'tonpay',
+                'label' => $L('tonpay', '💠 تون‌پی'),
+                'icon'  => '💠',
                 'kind'  => 'form',
             ];
         }
-
-        if ($aqayepardakht === 'onaqayepardakht') {
+        if ($cubepayActive === 'oncubepay') {
             $methods[] = [
-                'id'    => 'aqayepardakht',
-                'label' => $L('aqayepardakht', '🌸 آقای پرداخت'),
-                'icon'  => '🌸',
+                'id'    => 'cubepay',
+                'label' => $L('cubepay', '🟦 کیوب‌پی'),
+                'icon'  => '🟦',
+                'kind'  => 'form',
+            ];
+        }
+        if ($atlaspayActive === 'onatlaspay') {
+            $methods[] = [
+                'id'    => 'atlaspay',
+                'label' => $L('atlaspay', '🌐 اطلس‌پی'),
+                'icon'  => '🌐',
+                'kind'  => 'form',
+            ];
+        }
+        if ($tetrapayActive === 'ontetrapay') {
+            $methods[] = [
+                'id'    => 'tetrapay',
+                'label' => $L('tetrapay', '🔷 تتراپی'),
+                'icon'  => '🔷',
                 'kind'  => 'form',
             ];
         }
@@ -182,22 +191,21 @@ final class PaymentMethodsHandler extends BaseHandler
                 'kind'  => 'form',
             ];
         }
-        if ($zarinpey === 'onzarinpey') {
+        if ($blupalActive === 'onblupal') {
             $methods[] = [
-                'id'    => 'zarinpey',
-                'label' => $L('zarinpey', '🟠 زرین پی'),
-                'icon'  => '🟠',
+                'id'    => 'blupal',
+                'label' => $L('blupal', '💙 بلوپال'),
+                'icon'  => '💙',
                 'kind'  => 'form',
             ];
         }
-
         $cryptoOfflineStatus = function_exists('crypto_pay_setting')
             ? crypto_pay_setting('cryptocheck_status', 'offcrypto')
             : 'offcrypto';
         if ($cryptoOfflineStatus === 'oncrypto') {
             $methods[] = [
                 'id'    => 'crypto_offline',
-                'label' => $L('cryptopay', '🪙 ارز آفلاین (هش‌چکر)'),
+                'label' => $L('textnowpaymenttron', $L('cryptopay', '🪙 ارز آفلاین (هش‌چکر)')),
                 'icon'  => '🟢',
                 'kind'  => 'crypto_offline',
             ];
@@ -241,11 +249,24 @@ final class PaymentMethodsHandler extends BaseHandler
         $displayMin = $envMin !== null ? $envMin : (int)$minBalance;
         $displayMax = $envMax !== null ? $envMax : (int)$maxBalance;
 
+        $randomWalletDefaultAmounts = [50000, 75000, 100000, 150000, 200000, 250000, 500000, 1000000];
+        $randomWalletDecoded = json_decode($get('randomwallet_amounts'), true);
+        $randomWalletAmounts = (is_array($randomWalletDecoded) && count($randomWalletDecoded) === 8)
+            ? array_values(array_filter($randomWalletDecoded, 'is_numeric'))
+            : $randomWalletDefaultAmounts;
+        if (count($randomWalletAmounts) !== 8) {
+            $randomWalletAmounts = $randomWalletDefaultAmounts;
+        }
+
         FaoximaResponse::ok([
             'methods'  => $methods,
             'limits'   => [
                 'min' => $displayMin,
                 'max' => $displayMax,
+            ],
+            'randomWallet' => [
+                'enabled' => $get('randomwallet_status') === '1',
+                'amounts' => $randomWalletAmounts,
             ],
             'balance'  => (float)($user['Balance'] ?? 0),
             'currency' => 'تومان',

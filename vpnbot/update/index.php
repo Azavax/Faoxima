@@ -621,9 +621,6 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
 
 🧑‍🦯 شما میتوانید شیوه اتصال را  با فشردن دکمه زیر و انتخاب سیستم عامل خود را دریافت کنید";
     }
-    if ($marzban_list_get['type'] == "ibsng") {
-        $datatextbot['textafterpay'] = $datatextbot['textafterpayibsng'];
-    }
     $textcreatuser = str_replace('{username}', $dataoutput['username'], $datatextbot['textaftertext']);
     $textcreatuser = str_replace('{name_service}', "تست", $textcreatuser);
     $textcreatuser = str_replace('{location}', $marzban_list_get['name_panel'], $textcreatuser);
@@ -640,34 +637,20 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
     }
     $connectionLinksBlock = implode("\n\n", $connectionSections);
     $textcreatuser = str_replace('{connection_links}', $connectionLinksBlock, $textcreatuser);
-    if ($marzban_list_get['type'] == "ibsng" || $marzban_list_get['type'] == "ibsng") {
-        $textcreatuser = str_replace('{password}', $dataoutput['subscription_url'], $textcreatuser);
-        update("invoice", "user_info", $dataoutput['subscription_url'], "id_invoice", $randomString);
+    if (function_exists('isQrDisabled')) {
+        $__vpnQrOff2 = isQrDisabled();
+    } elseif (function_exists('select')) {
+        $__row2 = select("shopSetting", "*", "Namevalue", "qr_disabled", "select");
+        $__vpnQrOff2 = is_array($__row2) && ((string)($__row2['value'] ?? '0')) === '1';
+    } else {
+        $__vpnQrOff2 = false;
     }
     if ($marzban_list_get['sublink'] == "onsublink") {
-        $urlimage = "$from_id$randomString.png";
-        $qrCode = createqrcode($output_config_link);
-        file_put_contents($urlimage, $qrCode->getString());
-        if (!addBackgroundImage($urlimage, $qrCode, $Pathfiles . 'images.jpg')) {
-            error_log("Unable to apply background image for QR code using path '{$Pathfiles}images.jpg'");
-        }
-        telegram('sendphoto', [
-            'chat_id' => $from_id,
-            'photo' => new CURLFile($urlimage),
-            'caption' => $textcreatuser,
-            'parse_mode' => "HTML",
-        ]);
-        unlink($urlimage);
-        if ($marzban_list_get['type'] == "WGDashboard") {
-            $urlimage = "{$marzban_list_get['inboundid']}_{$dataoutput['username']}.conf";
-            file_put_contents($urlimage, $output_config_link);
-            sendDocument($from_id, $urlimage, "⚙️ کانفیگ شما");
-            unlink($urlimage);
-        }
-    } elseif ($marzban_list_get['config'] == "onconfig") {
-        if (count($dataoutput['configs']) == 1) {
+        if ($__vpnQrOff2) {
+            sendmessage($from_id, $textcreatuser, null, 'HTML');
+        } else {
             $urlimage = "$from_id$randomString.png";
-            $qrCode = createqrcode($config);
+            $qrCode = createqrcode($output_config_link);
             file_put_contents($urlimage, $qrCode->getString());
             if (!addBackgroundImage($urlimage, $qrCode, $Pathfiles . 'images.jpg')) {
                 error_log("Unable to apply background image for QR code using path '{$Pathfiles}images.jpg'");
@@ -679,6 +662,32 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
                 'parse_mode' => "HTML",
             ]);
             unlink($urlimage);
+        }
+        if ($marzban_list_get['type'] == "WGDashboard") {
+            $urlimage = "{$marzban_list_get['inboundid']}_{$dataoutput['username']}.conf";
+            file_put_contents($urlimage, $output_config_link);
+            sendDocument($from_id, $urlimage, "⚙️ کانفیگ شما");
+            unlink($urlimage);
+        }
+    } elseif ($marzban_list_get['config'] == "onconfig") {
+        if (count($dataoutput['configs']) == 1) {
+            if ($__vpnQrOff2) {
+                sendmessage($from_id, $textcreatuser, null, 'HTML');
+            } else {
+                $urlimage = "$from_id$randomString.png";
+                $qrCode = createqrcode($config);
+                file_put_contents($urlimage, $qrCode->getString());
+                if (!addBackgroundImage($urlimage, $qrCode, $Pathfiles . 'images.jpg')) {
+                    error_log("Unable to apply background image for QR code using path '{$Pathfiles}images.jpg'");
+                }
+                telegram('sendphoto', [
+                    'chat_id' => $from_id,
+                    'photo' => new CURLFile($urlimage),
+                    'caption' => $textcreatuser,
+                    'parse_mode' => "HTML",
+                ]);
+                unlink($urlimage);
+            }
         } else {
             sendmessage($from_id, $textcreatuser, $usertestinfo, 'HTML');
         }
@@ -1329,9 +1338,6 @@ if (mysqli_num_rows($locationproduct) == 1) {
  اطلاعات سرویس :
 {connection_links}
 ";
-    if ($marzban_list_get['type'] == "ibsng") {
-        $datatextbot['textafterpay'] = $datatextbot['textafterpayibsng'];
-    }
     if ($marzban_list_get['type'] == "Manualsale") {
         $textafterpay = $textmanual;
     }
@@ -1369,11 +1375,7 @@ if (mysqli_num_rows($locationproduct) == 1) {
     if (intval($datafactor['Volume_constraint']) == 0) {
         $textcreatuser = str_replace('گیگابایت', "", $textcreatuser);
     }
-    if ($marzban_list_get['type'] == "ibsng") {
-        $textcreatuser = str_replace('{password}', $dataoutput['subscription_url'], $textcreatuser);
-        update("invoice", "user_info", $dataoutput['subscription_url'], "id_invoice", $randomString);
-    }
-    if ($marzban_list_get['type'] == "Manualsale" | $marzban_list_get['type'] == "ibsng") {
+    if ($marzban_list_get['type'] == "Manualsale") {
         sendmessage($from_id, $textcreatuser, null, 'HTML');
     } else {
         if (count($dataoutput['configs']) != 1 and $marzban_list_get['config'] == "onconfig") {
@@ -1382,19 +1384,23 @@ if (mysqli_num_rows($locationproduct) == 1) {
             if ($marzban_list_get['sublink'] == "offsublink") {
                 $output_config_link = $configqr;
             }
-            $urlimage = "$from_id$randomString.png";
-            $qrCode = createqrcode($output_config_link);
-            file_put_contents($urlimage, $qrCode->getString());
-            if (!addBackgroundImage($urlimage, $qrCode, $Pathfiles . 'images.jpg')) {
-                error_log("Unable to apply background image for QR code using path '{$Pathfiles}images.jpg'");
+            if (function_exists('isQrDisabled') && isQrDisabled()) {
+                sendmessage($from_id, $textcreatuser, null, 'HTML');
+            } else {
+                $urlimage = "$from_id$randomString.png";
+                $qrCode = createqrcode($output_config_link);
+                file_put_contents($urlimage, $qrCode->getString());
+                if (!addBackgroundImage($urlimage, $qrCode, $Pathfiles . 'images.jpg')) {
+                    error_log("Unable to apply background image for QR code using path '{$Pathfiles}images.jpg'");
+                }
+                telegram('sendphoto', [
+                    'chat_id' => $from_id,
+                    'photo' => new CURLFile($urlimage),
+                    'caption' => $textcreatuser,
+                    'parse_mode' => "HTML",
+                ]);
+                unlink($urlimage);
             }
-            telegram('sendphoto', [
-                'chat_id' => $from_id,
-                'photo' => new CURLFile($urlimage),
-                'caption' => $textcreatuser,
-                'parse_mode' => "HTML",
-            ]);
-            unlink($urlimage);
             if ($marzban_list_get['type'] == "WGDashboard") {
                 $urlimage = "{$marzban_list_get['inboundid']}_{$dataoutput['username']}.conf";
                 file_put_contents($urlimage, $output_config_link);
@@ -1553,6 +1559,22 @@ $textonebuy
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     update("invoice", "user_info", json_encode($DataUserOut), "id_invoice", $nameloc['id_invoice']);
+    if (is_array($DataUserOut) && isset($DataUserOut['status']) && $DataUserOut['status'] !== 'Unsuccessful') {
+        $vSt = strtolower((string)$DataUserOut['status']);
+        if ($vSt === 'expired' && $nameloc['Status'] !== 'end_of_time') {
+            update("invoice", "Status", "end_of_time", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'end_of_time';
+        } elseif ($vSt === 'limited' && $nameloc['Status'] !== 'end_of_volume') {
+            update("invoice", "Status", "end_of_volume", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'end_of_volume';
+        } elseif ($vSt === 'on_hold' && $nameloc['Status'] !== 'send_on_hold') {
+            update("invoice", "Status", "send_on_hold", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'send_on_hold';
+        } elseif ($vSt === 'active' && !in_array($nameloc['Status'], ['active', 'sendedwarn'], true)) {
+            update("invoice", "Status", "active", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'active';
+        }
+    }
     if (isset($DataUserOut['msg']) && $DataUserOut['msg'] == "User not found") {
         update("invoice", "Status", "disabledn", "id_invoice", $nameloc['id_invoice']);
         sendmessage($from_id, $textbotlang['users']['stateus']['UserNotFound'], $keyboard, 'html');
@@ -1579,15 +1601,27 @@ $textonebuy
     }
 
     $status = $DataUserOut['status'];
-    $status_var = [
+    $bExp = is_numeric($DataUserOut['expire'] ?? null) ? (int)$DataUserOut['expire'] : 0;
+    $bDl = is_numeric($DataUserOut['data_limit'] ?? null) ? (float)$DataUserOut['data_limit'] : 0.0;
+    $bUt = is_numeric($DataUserOut['used_traffic'] ?? null) ? (float)$DataUserOut['used_traffic'] : 0.0;
+    if ($bExp > 0 && $bExp <= time()) {
+        $status = 'expired';
+    } elseif ($bDl > 0.0 && $bUt >= $bDl) {
+        $status = 'limited';
+    }
+    $status_map = [
         'active' => $textbotlang['users']['stateus']['active'],
         'limited' => $textbotlang['users']['stateus']['limited'],
+        'end_of_volume' => $textbotlang['users']['stateus']['limited'],
         'disabled' => $textbotlang['users']['stateus']['disabled'],
-        'expired' => $textbotlang['users']['stateus']['expired'],
-        'on_hold' => $textbotlang['users']['stateus']['on_hold'],
-        'Unknown' => $textbotlang['users']['stateus']['Unknown'],
         'deactivev' => $textbotlang['users']['stateus']['disabled'],
-    ][$status];
+        'expired' => $textbotlang['users']['stateus']['expired'],
+        'end_of_time' => $textbotlang['users']['stateus']['expired'],
+        'on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'send_on_hold' => $textbotlang['users']['stateus']['on_hold'],
+        'Unknown' => $textbotlang['users']['stateus']['Unknown']
+    ];
+    $status_var = $status_map[$status] ?? ($textbotlang['users']['stateus']['active'] ?? 'فعال');
 
     $expirationDate = $DataUserOut['expire'] ? jdate('Y/m/d', $DataUserOut['expire']) : $textbotlang['users']['stateus']['Unlimited'];
 
@@ -1672,6 +1706,21 @@ $textonebuy
     $keyboardsetting['inline_keyboard'][] = [['text' => $textbotlang['users']['stateus']['backlist'], 'callback_data' => 'backorder']];
     if ($marzban['type'] == "Manualsale") {
         $userinfo = select("manualsell", "*", "username", $nameloc['username'], "select");
+        if (is_array($userinfo)) {
+            $mExt = strtolower(ltrim(trim((string)($userinfo['file_ext'] ?? '')), '.'));
+            $mContent = (string)($userinfo['contentrecord'] ?? '');
+            $isMLink = ($mExt === 'sub' || preg_match('#^https?://#i', trim($mContent)));
+            $isMText = ($mExt === 'text');
+            if ($mContent !== '' && !$isMLink && !$isMText) {
+                $ext = ($mExt !== '') ? $mExt : 'bin';
+                $cleanUser = preg_replace('/[^a-zA-Z0-9_\-]/', '', (string)$nameloc['username']);
+                if ($cleanUser === '') $cleanUser = 'config';
+                $mFile = sys_get_temp_dir() . DIRECTORY_SEPARATOR . $cleanUser . '.' . $ext;
+                file_put_contents($mFile, $mContent);
+                sendDocument($from_id, $mFile, "⚙️ کانفیگ شما");
+                @unlink($mFile);
+            }
+        }
         $textinfo = "وضعیت سرویس : <b>$status_var</b>
     نام کاربری سرویس : {$DataUserOut['username']}
     📎 کد پیگیری سرویس : {$nameloc['id_invoice']}
@@ -1899,7 +1948,7 @@ $textonebuy
 } elseif ($user['step'] == "gettimecustomextend" || preg_match('/^selectproductextends_(.*)/', $datain, $dataget)) {
     if ($user['step'] == "gettimecustomextend") {
         if (!ctype_digit($text)) {
-            sendmessage($from_id, $textbotlang['Admin']['customvolume']['invalidtime'], $backuser, 'HTML');
+            sendmessage($from_id, $textbotlang['Admin']['customvolume']['invalidtime'] ?? '❌ زمان نامعتبر است', $backuser, 'HTML');
             return;
         }
     }

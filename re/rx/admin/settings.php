@@ -15,6 +15,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['Admin']['cronjob']['setdayremove'] . $setting['removedayc'] . "روز", $backadmin, 'HTML');
     step("getdaycron", $from_id);
 } elseif ($user['step'] == "getdaycron") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
@@ -22,66 +23,50 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['Admin']['cronjob']['changeddata'], $setting_panel, 'HTML');
     step("home", $from_id);
     update("setting", "removedayc", $text);
-} elseif ($text == "🌐 ثبت آدرس API ترنادو" && $adminrulecheck['rule'] == "administrator") {
-    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "urlpaymenttron", "select");
-    $currentUrl = is_array($PaySetting) && isset($PaySetting['ValuePay']) ? $PaySetting['ValuePay'] : 'تنظیم نشده';
-    $recommendedUrl = (defined('TRONADO_ORDER_TOKEN_ENDPOINTS') && isset(TRONADO_ORDER_TOKEN_ENDPOINTS[0]))
-        ? TRONADO_ORDER_TOKEN_ENDPOINTS[0]
-        : 'https://bot.tronado.cloud/api/v1/Order/GetOrderToken';
-    $texttronseller = "🌐 آدرس API مورد استفاده برای اتصال به ترنادو را ارسال کنید.\n\nآدرس فعلی: {$currentUrl}\n\nℹ️ پیشنهاد ویژه برای ترنادو:\n{$recommendedUrl}";
-    nm_adminInstantReply($from_id, $texttronseller, $backadmin, 'HTML');
-    step('urlpaymenttron', $from_id);
-} elseif ($user['step'] == "urlpaymenttron") {
-    $submittedUrl = trim($text);
-    $oldDomain = 'tronseller.storeddownloader.fun';
-    if (stripos($submittedUrl, $oldDomain) !== false) {
-        $warningMessage = "⚠️ دامنه قدیمی ترنادو هنوز استفاده می‌شود. لطفاً آدرس جدید را وارد کنید.";
-        nm_adminInstantReply($from_id, $warningMessage, $backadmin, 'HTML');
-        return;
-    }
-    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $trnado, 'HTML');
-    update("PaySetting", "ValuePay", $submittedUrl, "NamePay", "urlpaymenttron");
-    step('home', $from_id);
 } elseif ($text == "✏️ ویرایش آموزش" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, $textbotlang['Admin']['Help']['SelectName'], $json_list_helpkey, 'HTML');
     step("getnameforedite", $from_id);
 } elseif ($user['step'] == "getnameforedite") {
     nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $helpedit, 'HTML');
     update("user", "Processing_value", $text, "id", $from_id);
-    step("home", $from_id);
+    step("help_edit", $from_id);
 } elseif ($text == "ویرایش نام" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "نام جدید را ارسال کنید", $backadmin, 'HTML');
     step('changenamehelp', $from_id);
 } elseif ($user['step'] == "changenamehelp") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (strlen($text) >= 150) {
         nm_adminInstantReply($from_id, "❌ نام آموزش باید کمتر از 150 کاراکتر باشد", null, 'HTML');
         return;
     }
     update("help", "name_os", $text, "name_os", $user['Processing_value']);
     nm_adminInstantReply($from_id, "✅ نام آموزش بروزرسانی شد", $helpedit, 'HTML');
-    step('home', $from_id);
+    step('help_edit', $from_id);
 } elseif ($text == "ویرایش دسته بندی" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "دسته بندی جدید خود را ارسال کنید", $backadmin, 'HTML');
     step('changecategoryhelp', $from_id);
 } elseif ($user['step'] == "changecategoryhelp") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (strlen($text) >= 150) {
         nm_adminInstantReply($from_id, "❌ نام آموزش باید کمتر از 150 کاراکتر باشد", null, 'HTML');
         return;
     }
     update("help", "category", $text, "name_os", $user['Processing_value']);
     nm_adminInstantReply($from_id, "✅ نام دسته آموزش بروزرسانی شد", $helpedit, 'HTML');
-    step('home', $from_id);
+    step('help_edit', $from_id);
 } elseif ($text == "ویرایش توضیحات" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "توضیحات جدید را ارسال کنید", $backadmin, 'HTML');
     step('changedeshelp', $from_id);
 } elseif ($user['step'] == "changedeshelp") {
+    if (!isset($update['message']) && empty($text)) { return; }
     update("help", "Description_os", $text, "name_os", $user['Processing_value']);
     nm_adminInstantReply($from_id, "✅ توضیحات  آموزش بروزرسانی شد", $helpedit, 'HTML');
-    step('home', $from_id);
+    step('help_edit', $from_id);
 } elseif ($text == "ویرایش رسانه" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "تصویر یا فیلم جدید را ارسال کنید", $backadmin, 'HTML');
     step('changemedia', $from_id);
 } elseif ($user['step'] == "changemedia") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if ($photo) {
         if (isset($photoid))
             update("help", "Media_os", $photoid, "name_os", $user['Processing_value']);
@@ -92,8 +77,29 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         update("help", "type_Media_os", "video", "name_os", $user['Processing_value']);
     }
     nm_adminInstantReply($from_id, "✅ توضیحات  آموزش بروزرسانی شد", $helpedit, 'HTML');
-    step('home', $from_id);
-} elseif ($text == "💰  غیرفعالسازی  نمایش شماره کارت") {
+    step('help_edit', $from_id);
+} elseif ($text == "ویرایش لینک برنامه" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, "📌 متن دکمه لینک دانلود برنامه را ارسال کنید", $backadmin, 'HTML');
+    step('changeapptitlehelp', $from_id);
+} elseif ($user['step'] == "changeapptitlehelp") {
+    if (!isset($update['message']) && empty($text)) { return; }
+    if (strlen($text) > 200) {
+        nm_adminInstantReply($from_id, "📌 نام باید کمتر از ۲۰۰ کاراکتر باشد.", $backadmin, 'HTML');
+        return;
+    }
+    update("help", "app_title", $text, "name_os", $user['Processing_value']);
+    nm_adminInstantReply($from_id, "📌 لینک دانلود اپ را ارسال نمایید", $backadmin, 'HTML');
+    step('changeapplinkhelp', $from_id);
+} elseif ($user['step'] == "changeapplinkhelp") {
+    if (!isset($update['message']) && empty($text)) { return; }
+    if (!filter_var($text, FILTER_VALIDATE_URL)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['managepanel']['Invalid-domain'], $backadmin, 'HTML');
+        return;
+    }
+    update("help", "app_link", $text, "name_os", $user['Processing_value']);
+    nm_adminInstantReply($from_id, "✅ لینک برنامه با موفقیت بروزرسانی گردید.", $helpedit, 'HTML');
+    step('help_edit', $from_id);
+} elseif ($text == "💰 غیرفعال کارت" || $datain == "cart_hide_num") {
     nm_adminInstantReply($from_id, "برای تمامی کاربران غیرفعال گردید یا کاربران جدید؟
     کاربران جدید 0
     همه کاربران 1
@@ -114,7 +120,11 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     } else {
         update("setting", "showcard", "0");
     }
-} elseif ($text == "💰 فعالسازی نمایش شماره کارت") {
+    step('home', $from_id);
+    if (isset($CartManage)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['Back-menu'] ?? 'بازگشت', $CartManage, 'HTML');
+    }
+} elseif ($text == "💰 فعال شماره کارت" || $datain == "cart_show_num") {
     nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['activeshowcardstatus'], null, 'HTML');
     update("user", "cardpayment", "1");
     update("setting", "showcard", "1");
@@ -122,12 +132,14 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $Methodextend, 'HTML');
     step('updateextendmethod', $from_id);
 } elseif ($user['step'] == "updateextendmethod") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $aarayvalid = array(
         'ریست حجم و زمان',
         'اضافه شدن زمان و حجم به ماه بعد',
         'ریست زمان و اضافه کردن حجم قبلی',
         'ریست شدن حجم و اضافه شدن زمان',
-        'اضافه شدن زمان و تبدیل حجم کل به حجم باقی مانده'
+        'اضافه شدن زمان و تبدیل حجم کل به حجم باقی مانده',
+        'رزرو اشتراک'
     );
     if (!in_array($text, $aarayvalid)) {
         nm_adminInstantReply($from_id, "❌ روش تمدید نامعتبر می باشد از لیست زیر روش تمدید درست را انتخاب کنید", null, 'HTML');
@@ -143,28 +155,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     update("user", "Processing_value", $panelName, "id", $from_id);
     $typepanel = select("marzban_panel", "*", "name_panel", $panelName, "select");
     outtypepanel($typepanel['type'], $textbotlang['Admin']['Algortimeextend']['SaveData']);
-    step('home', $from_id);
-} elseif ($text == "♻️ تایید خودکار رسید" && $adminrulecheck['rule'] == "administrator") {
-    $paymentverify = select("PaySetting", "ValuePay", "NamePay", "autoconfirmcart", "select")['ValuePay'];
-    if ($paymentverify == "onauto") {
-        nm_adminInstantReply($from_id, "❌ ابتدا تایید خودکار بدون بررسی را خاموش کنید.", null, 'HTML');
-        return;
-    }
-    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "statuscardautoconfirm", "select")['ValuePay'];
-    $card_Status_auto = json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => $PaySetting, 'callback_data' => $PaySetting],
-            ],
-        ]
-    ]);
-    nm_adminInstantReply($from_id, $textbotlang['Admin']['Status']['autoconfirmcard'], $card_Status_auto, 'HTML');
-} elseif ($datain == "onautoconfirm" && $adminrulecheck['rule'] == "administrator") {
-    update("PaySetting", "ValuePay", "offautoconfirm", "NamePay", "statuscardautoconfirm");
-    Editmessagetext($from_id, $message_id, $textbotlang['Admin']['Status']['cardStatusOffautoconfirmcard'], null);
-} elseif ($datain == "offautoconfirm" && $adminrulecheck['rule'] == "administrator") {
-    update("PaySetting", "ValuePay", "onautoconfirm", "NamePay", "statuscardautoconfirm");
-    Editmessagetext($from_id, $message_id, $textbotlang['Admin']['Status']['cardStatusonautoconfirmcard'], null);
+    step('PanelMenu', $from_id);
 } elseif ($text == "/token") {
     $secret_key = select("admin", "*", "id_admin", $from_id, "select");
     $secret_key = base64_encode($secret_key['password']);
@@ -176,7 +167,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     sendDocument($from_id, 'api/documents.txt', "📌 داکیومنت api ربات
 نکات :
 ۱ - در صورتی که به endpoint خاصی نیاز داشتید به اکانت پشتیبانی پیام دهید تا بررسی شود.");
-} elseif ($text == "✅ فعالسازی پنل تحت وب" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "✅ پنل تحت وب" && $adminrulecheck['rule'] == "administrator") {
     $admin_select = select("admin", "*", "id_admin", $from_id, "select");
     $randomString = bin2hex(random_bytes(6));
     update("admin", "username", $from_id, "id_admin", $from_id);
@@ -204,11 +195,14 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('getusernameconfig', $from_id);
 } elseif ($user['step'] == "getusernameconfig") {
     $text = strtolower($text);
-    if (!preg_match('/^\w{3,32}$/', $text)) {
+    if (!preg_match('/^[\w-]{3,32}$/', $text)) {
         nm_adminInstantReply($from_id, $textbotlang['users']['stateus']['Invalidusername'], $backuser, 'html');
         return;
     }
-    if (in_array($text, $usernameinvoice)) {
+    $stmt = $pdo->prepare("SELECT 1 FROM invoice WHERE LOWER(username) = LOWER(:username) LIMIT 1");
+    $stmt->bindParam(':username', $text, PDO::PARAM_STR);
+    $stmt->execute();
+    if ($stmt->fetch(PDO::FETCH_ASSOC) !== false) {
         nm_adminInstantReply($from_id, "❌ این نام کاربری از قبل داخل ربات وجود دارد.", null, 'HTML');
         return;
     }
@@ -229,50 +223,19 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $user['Processing_value_tow'], "select");
     $DataUserOut = $ManagePanel->DataUser($user['Processing_value_tow'], $user['Processing_value_one']);
     if ($DataUserOut['status'] == "Unsuccessful") {
-        $datetimestep = strtotime("+" . $info_product['Service_time'] . "days");
-        if ($info_product['Service_time'] == 0) {
-            $datetimestep = 0;
-        } else {
-            $datetimestep = strtotime(date("Y-m-d H:i:s", $datetimestep));
-        }
-        $datac = array(
-            'expire' => $datetimestep,
-            'data_limit' => $info_product['Volume_constraint'] * pow(1024, 3),
-            'from_id' => $user['Processing_value'],
-            'username' => "",
-            'type' => 'buy'
-        );
-        $DataUserOut = $ManagePanel->createUser($user['Processing_value_tow'], $info_product['code_product'], $user['Processing_value_one'], $datac);
-        if ($DataUserOut['username'] == null) {
-            nm_adminInstantReply($from_id, "❌ خطایی در ساخت اشتراک رخ داده است برای رفع مشکل علت خطا را در گروه گزارش تان بررسی کنید", null, 'HTML');
-            $DataUserOut['msg'] = json_encode($DataUserOut['msg']);
-            $texterros = "
-خطا در ساخت کافنیگ از پنل ادمین
-✍️ دلیل خطا :
-{$DataUserOut['msg']}
-آیدی ادمین : $from_id
-نام پنل : {$marzban_list_get['name_panel']}";
-            if (strlen($setting['Channel_Report']) > 0) {
-                telegram('sendmessage', [
-                    'chat_id' => $setting['Channel_Report'],
-                    'message_thread_id' => $errorreport,
-                    'text' => $texterros,
-                    'parse_mode' => "HTML"
-                ]);
-                step("home", $from_id);
-            }
-            return;
-        }
-    } else {
-        $DataUserOut['configs'] = $DataUserOut['links'];
+        nm_adminInstantReply($from_id, "❌ این نام کاربری روی پنل انتخابی وجود ندارد. لطفا نام کاربری را بررسی و دوباره ارسال کنید یا ابتدا آن را روی پنل بسازید.", $keyboardadmin, 'HTML');
+        step("home", $from_id);
+        return;
     }
+    $DataUserOut['configs'] = $DataUserOut['links'];
     $date = time();
     $randomString = bin2hex(random_bytes(4));
     $notifctions = json_encode(array(
         'volume' => false,
         'time' => false,
     ));
-    $stmt = $pdo->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username, time_sell, Service_location, name_product, price_product, Volume, Service_time, Status,notifctions) VALUES (:id_user, :id_invoice, :username, :time_sell, :Service_location, :name_product, :price_product, :Volume, :Service_time, :Status,:notifctions)");
+    $invoiceIpLimit = (string)(isset($info_product['ip_limit']) ? intval($info_product['ip_limit']) : 0);
+    $stmt = $pdo->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username, time_sell, Service_location, name_product, price_product, Volume, Service_time, Status,notifctions,ip_limit) VALUES (:id_user, :id_invoice, :username, :time_sell, :Service_location, :name_product, :price_product, :Volume, :Service_time, :Status,:notifctions,:ip_limit)");
     $Status = "active";
     $stmt->bindParam(':id_user', $user['Processing_value'], PDO::PARAM_STR);
     $stmt->bindParam(':id_invoice', $randomString, PDO::PARAM_STR);
@@ -283,10 +246,28 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $stmt->bindParam(':price_product', $info_product['price_product'], PDO::PARAM_STR);
     $stmt->bindParam(':Volume', $info_product['Volume_constraint'], PDO::PARAM_STR);
     $stmt->bindParam(':Service_time', $info_product['Service_time'], PDO::PARAM_STR);
+    $stmt->bindParam(':ip_limit', $invoiceIpLimit, PDO::PARAM_STR);
     $stmt->bindParam(':Status', $Status, PDO::PARAM_STR);
     $stmt->bindParam(':notifctions', $notifctions, PDO::PARAM_STR);
     $stmt->execute();
-    $output_config_link = $marzban_list_get['sublink'] == "onsublink" ? $DataUserOut['subscription_url'] : "";
+    if ($stmt->rowCount() === 0) {
+        nm_adminInstantReply($from_id, "❌ اشتراک روی پنل ساخته شد اما ثبت سفارش داخلی ناموفق بود (احتمالا نام کاربری تکراری است). لطفا با پشتیبانی فنی تماس بگیرید.", null, 'HTML');
+        $texterros = "خطا در ثبت سفارش محلی پس از ساخت موفق اشتراک روی پنل (احتمالا تداخل نام کاربری)
+<blockquote>نام کاربری: {$user['Processing_value_one']}</blockquote>
+<blockquote>آیدی ادمین: $from_id</blockquote>
+<blockquote>نام پنل: {$marzban_list_get['name_panel']}</blockquote>";
+        if (strlen($setting['Channel_Report']) > 0) {
+            telegram('sendmessage', [
+                'chat_id' => $setting['Channel_Report'],
+                'message_thread_id' => $errorreport,
+                'text' => $texterros,
+                'parse_mode' => "HTML"
+            ]);
+        }
+        step("home", $from_id);
+        return;
+    }
+    $output_config_link = $marzban_list_get['sublink'] == "onsublink" ? rxResolveConnectionLink($marzban_list_get, $DataUserOut['subscription_url'], $DataUserOut['file_ext'] ?? null) : "";
     $config = "";
     if ($marzban_list_get['config'] == "onconfig" && is_array($DataUserOut['configs'])) {
         foreach ($DataUserOut['configs'] as $link) {
@@ -302,7 +283,6 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     ]);
     $datatextbot['textafterpay'] = $marzban_list_get['type'] == "Manualsale" ? $datatextbot['textmanual'] : $datatextbot['textafterpay'];
     $datatextbot['textafterpay'] = $marzban_list_get['type'] == "WGDashboard" ? $datatextbot['text_wgdashboard'] : $datatextbot['textafterpay'];
-    $datatextbot['textafterpay'] = $marzban_list_get['type'] == "ibsng" || $marzban_list_get['type'] == "mikrotik" ? $datatextbot['textafterpayibsng'] : $datatextbot['textafterpay'];
     if (intval($info_product['Service_time']) == 0)
         $info_product['Service_time'] = $textbotlang['users']['stateus']['Unlimited'];
     if (intval($info_product['Volume_constraint']) == 0)
@@ -316,14 +296,14 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     if (intval($info_product['Volume_constraint']) == 0) {
         $textcreatuser = str_replace('گیگابایت', "", $textcreatuser);
     }
-    if ($marzban_list_get['type'] == "Manualsale" || $marzban_list_get['type'] == "ibsng" || $marzban_list_get['type'] == "mikrotik") {
+    if ($marzban_list_get['type'] == "Manualsale") {
         $textcreatuser = str_replace('{password}', $DataUserOut['subscription_url'], $textcreatuser);
         update("invoice", "user_info", $DataUserOut['subscription_url'], "id_invoice", $randomString);
     }
     sendMessageService($marzban_list_get, $DataUserOut['configs'], $output_config_link, $DataUserOut['username'], $Shoppinginfo, $textcreatuser, $randomString, $user['Processing_value']);
     nm_adminInstantReply($from_id, $textbotlang['Admin']['addorder']['fivestep'], $keyboardadmin, 'HTML');
     step('home', $from_id);
-} elseif ($text == "⬇️ حداقل موجودی خرید عمده" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "⬇️ کف خرید عمده" && $adminrulecheck['rule'] == "administrator") {
     $PaySetting = select("shopSetting", "value", "Namevalue", "minbalancebuybulk", "select")['value'];
     $textmin = "📌 حداقل مبلغی که می خواهید کاربر  خرید انبوه کند را ارسال کنید.
 
@@ -334,15 +314,6 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $shopkeyboard, 'HTML');
     update("shopSetting", "value", $text, "Namevalue", "minbalancebuybulk");
     step('home', $from_id);
-} elseif (preg_match('/showcarduser-(.*)/', $datain, $dataget)) {
-    $id_user = $dataget[1];
-    sendmessage($id_user, "💳 کاربر عزیز شماره کارت برای شما فعال شد هم اکنون می توانید خرید خود را انجام دهید.", null, 'HTML');
-    nm_adminInstantReply($from_id, "✅  شماره کارت فعال گردید", null, 'HTML');
-    update("user", "cardpayment", "1", "id", $id_user);
-} elseif (preg_match('/carduserhide-(.*)/', $datain, $dataget)) {
-    $id_user = $dataget[1];
-    nm_adminInstantReply($from_id, "✅  شماره کارت غیرفعال گردید", null, 'HTML');
-    update("user", "cardpayment", "0", "id", $id_user);
 } elseif ($text == "❌ حذف شماره کارت" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌 شماره کارتی که می خواهید حذف کنید را ارسال نمایید.", $list_card_remove, 'HTML');
     step('getcardremove', $from_id);
@@ -370,7 +341,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             'callback_query_id' => $callback_query_id,
             'text' => "این درخواست توسط ادمین دیگری بررسی شده است",
             'show_alert' => true,
-            'cache_time' => 5,
+            'cache_time' => 0,
         ));
         return;
     }
@@ -389,7 +360,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'callback_query_id' => $callback_query_id,
         'text' => "برای تایید نهایی روی «بله، رد کن» بزنید.",
         'show_alert' => false,
-        'cache_time' => 1,
+        'cache_time' => 0,
     ));
 } elseif (preg_match('/^cfmreja_(\w+)/', $datain, $datagetr)) {
 
@@ -411,7 +382,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             'callback_query_id' => $callback_query_id,
             'text' => "این درخواست توسط ادمین دیگری بررسی شده است",
             'show_alert' => true,
-            'cache_time' => 5,
+            'cache_time' => 0,
         ));
         return;
     }
@@ -433,7 +404,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
                 'callback_query_id' => $callback_query_id,
                 'text' => "این درخواست توسط ادمین دیگری بررسی شده است",
                 'show_alert' => true,
-                'cache_time' => 5,
+                'cache_time' => 0,
             ));
             return;
         }
@@ -486,7 +457,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             'callback_query_id' => $callback_query_id,
             'text' => "این درخواست توسط ادمین دیگری بررسی شده است",
             'show_alert' => true,
-            'cache_time' => 5,
+            'cache_time' => 0,
         ));
         return;
     }
@@ -505,7 +476,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'callback_query_id' => $callback_query_id,
         'text' => "برای تایید نهایی روی «بله، تایید کن» بزنید.",
         'show_alert' => false,
-        'cache_time' => 1,
+        'cache_time' => 0,
     ));
 } elseif (preg_match('/^cnclagentreq_(\w+)/', $datain, $datagetr)) {
 
@@ -525,7 +496,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             'callback_query_id' => $callback_query_id,
             'text' => "این درخواست قبلاً بررسی شده است",
             'show_alert' => true,
-            'cache_time' => 5,
+            'cache_time' => 0,
         ));
         return;
     }
@@ -546,7 +517,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'callback_query_id' => $callback_query_id,
         'text' => "عملیات لغو شد.",
         'show_alert' => false,
-        'cache_time' => 1,
+        'cache_time' => 0,
     ));
 } elseif (preg_match('/^cfmacea_(\w+)/', $datain, $datagetr)) {
 
@@ -566,7 +537,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             'callback_query_id' => $callback_query_id,
             'text' => "این درخواست توسط ادمین دیگری بررسی شده است",
             'show_alert' => true,
-            'cache_time' => 5,
+            'cache_time' => 0,
         ));
         return;
     }
@@ -593,7 +564,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
                 'callback_query_id' => $callback_query_id,
                 'text' => "این درخواست توسط ادمین دیگری بررسی شده است",
                 'show_alert' => true,
-                'cache_time' => 5,
+                'cache_time' => 0,
             ));
             return;
         }
@@ -652,7 +623,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             'callback_query_id' => $callback_query_id,
             'text' => $textbotlang['Admin']['agent']['invalidtypeagent'],
             'show_alert' => true,
-            'cache_time' => 5,
+            'cache_time' => 0,
         ));
         return;
     }
@@ -685,12 +656,33 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'callback_query_id' => $callback_query_id,
         'text' => "نوع نماینده به {$agentTypeLabels[$selectedType]} تغییر کرد.",
         'show_alert' => false,
-        'cache_time' => 5,
+        'cache_time' => 0,
     ));
 } elseif ($datain == "iranpay2setting" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $trnado, 'HTML');
-} elseif ($datain == "iranpay3setting" && $adminrulecheck['rule'] == "administrator") {
-    nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $iranpaykeyboard, 'HTML');
+} elseif ($datain == "tonpaysetting" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $tonpay, 'HTML');
+} elseif ($datain == "cubepaysetting" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $cubepay, 'HTML');
+} elseif ($datain == "blupalsetting" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $blupal, 'HTML');
+} elseif ($datain == "atlaspaysetting" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $atlaspay, 'HTML');
+} elseif ($datain == "tetrapaysetting" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $tetrapay, 'HTML');
+} elseif ($text == "📊 موجودی و اطلاعات حساب" && $adminrulecheck['rule'] == "administrator") {
+    $balanceData = function_exists('atlaspayBalance') ? atlaspayBalance() : null;
+    $accountData = function_exists('atlaspayAccount') ? atlaspayAccount() : null;
+    $availableTrx = is_array($balanceData) ? ($balanceData['data']['availableTrx'] ?? null) : null;
+    $accountName = is_array($accountData) ? ($accountData['data']['name'] ?? null) : null;
+    $accountStatus = is_array($accountData) ? ($accountData['data']['status'] ?? null) : null;
+    $markupPct = is_array($accountData) ? ($accountData['data']['markupPct'] ?? null) : null;
+    $textAtlasAccount = "📊 اطلاعات حساب اطلس‌پی\n\n";
+    $textAtlasAccount .= "💰 موجودی قابل‌برداشت: " . ($availableTrx !== null ? number_format((float)$availableTrx, 4) . ' TRX' : 'دریافت نشد') . "\n";
+    $textAtlasAccount .= "🏪 نام فروشگاه: " . ($accountName !== null ? htmlspecialchars((string)$accountName, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : 'دریافت نشد') . "\n";
+    $textAtlasAccount .= "📌 وضعیت حساب: " . ($accountStatus !== null ? htmlspecialchars((string)$accountStatus, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') : 'دریافت نشد') . "\n";
+    $textAtlasAccount .= "📈 درصد مارک‌آپ: " . ($markupPct !== null ? (string)$markupPct : 'ندارد');
+    nm_adminInstantReply($from_id, $textAtlasAccount, $atlaspay, 'HTML');
 } elseif ($text == "وضعیت  درگاه ترونادو" && $adminrulecheck['rule'] == "administrator") {
     $statusternadoosql = select("PaySetting", "ValuePay", "NamePay", "statustarnado", "select");
     $statusternadoo = json_encode([
@@ -698,9 +690,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             [
                 ['text' => $statusternadoosql['ValuePay'], 'callback_data' => $statusternadoosql['ValuePay']],
             ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'trnado_back'],
+            ],
         ]
     ]);
-    $textternado = "در این بخش می توانید درگاه ترنادو را خاموش یا روشن کنید";
+    $textternado = "در این بخش می توانید درگاه ترونادو را خاموش یا روشن کنید";
     nm_adminInstantReply($from_id, $textternado, $statusternadoo, 'HTML');
 } elseif ($datain == "onternado") {
     update("PaySetting", "ValuePay", "offternado", "NamePay", "statustarnado");
@@ -709,6 +704,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'inline_keyboard' => [
             [
                 ['text' => $statusternadoosql['ValuePay'], 'callback_data' => $statusternadoosql['ValuePay']],
+            ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'trnado_back'],
             ],
         ]
     ]);
@@ -721,30 +719,138 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             [
                 ['text' => $statusternadoosql['ValuePay'], 'callback_data' => $statusternadoosql['ValuePay']],
             ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'trnado_back'],
+            ],
         ]
     ]);
     Editmessagetext($from_id, $message_id, "روشن گردید", $statusternadoo);
-} elseif ($text == "🔑 ثبت API Key ترنادو" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "🔑 ثبت API Key ترونادو" && $adminrulecheck['rule'] == "administrator") {
     $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apiternado", "select");
     $currentKey = $PaySetting['ValuePay'] ?? 'ثبت نشده';
-    $texttronseller = "🔑 کلید API ترنادو خود را اینجا وارد کنید.\n\nکلید فعلی شما: {$currentKey}";
+    $texttronseller = "🔑 کلید API ترونادو خود را اینجا وارد کنید.\n\nکلید فعلی شما: {$currentKey}";
     nm_adminInstantReply($from_id, $texttronseller, $backadmin, 'HTML');
     step('apiternado', $from_id);
 } elseif ($user['step'] == "apiternado") {
     nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $trnado, 'HTML');
     update("PaySetting", "ValuePay", $text, "NamePay", "apiternado");
     step('home', $from_id);
+} elseif ($text == "🔏 ثبت کلید امضای IPN ترونادو" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "ipnsigningkeytronado", "select");
+    $currentKey = $PaySetting['ValuePay'] ?? 'ثبت نشده';
+    $texttronseller = "🔏 کلید امضای IPN (IpnSigningKey) ترونادو را اینجا وارد کنید.\n\nکلید فعلی شما: {$currentKey}";
+    nm_adminInstantReply($from_id, $texttronseller, $backadmin, 'HTML');
+    step('ipnsigningkeytronado', $from_id);
+} elseif ($user['step'] == "ipnsigningkeytronado") {
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $trnado, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "ipnsigningkeytronado");
+    step('home', $from_id);
+} elseif ($text == "⚖️ درصد کارمزد کسب‌وکار" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "wageFromBusinessPercentageTronado", "select");
+    $currentValue = $PaySetting['ValuePay'] ?? '0';
+    $texttronseller = "⚖️ درصد کارمزد ترونادو که کسب‌وکار شما پرداخت می‌کند\n\n"
+        . "کارمزد پیش‌فرض ترونادو ۲۰٪ است. این عدد مشخص می‌کند این کارمزد بین شما و کاربر چطور تقسیم شود:\n\n"
+        . "🔹 ۰ (پیش‌فرض): کل کارمزد را کاربر پرداخت می‌کند. شما دقیقاً مبلغ فاکتور خودتان را دریافت می‌کنید، اما کاربر مبلغی بیشتر از قیمت واقعی پرداخت می‌کند.\n\n"
+        . "🔹 ۱۰۰: کل کارمزد را شما پرداخت می‌کنید. کاربر تقریباً همان مبلغ فاکتور را پرداخت می‌کند، اما مقدار ترونی که به کیف پول شما واریز می‌شود کمتر از درخواستی است.\n\n"
+        . "🔹 بین ۰ تا ۱۰۰: کارمزد بین شما و کاربر به‌نسبت تقسیم می‌شود.\n\n"
+        . "⚠️ توجه: تغییر این عدد فقط نحوه تقسیم کارمزد را مشخص می‌کند و باعث تغییر در فاکتور شما نمی‌شود؛ اگر مطمئن نیستید، آن را روی ۰ نگه دارید.\n\n"
+        . "لطفاً عددی بین ۰ تا ۱۰۰ ارسال کنید.\n\nمقدار فعلی: {$currentValue}";
+    nm_adminInstantReply($from_id, $texttronseller, $backadmin, 'HTML');
+    step('wageFromBusinessPercentageTronado', $from_id);
+} elseif ($user['step'] == "wageFromBusinessPercentageTronado") {
+    if (!ctype_digit($text) || (int) $text < 0 || (int) $text > 100) {
+        nm_adminInstantReply($from_id, "❌ مقدار نامعتبر است. عددی بین 0 تا 100 ارسال کنید.", $trnado, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $trnado, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "wageFromBusinessPercentageTronado");
+    step('home', $from_id);
+} elseif ($text == "🔑 ثبت API Key تون‌پی" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apitonpay", "select");
+    $currentKey = $PaySetting['ValuePay'] ?? 'ثبت نشده';
+    $texttonpay = "🔑 کلید API تون‌پی خود را اینجا وارد کنید.\n\nکلید فعلی شما: {$currentKey}";
+    nm_adminInstantReply($from_id, $texttonpay, $backadmin, 'HTML');
+    step('apitonpay', $from_id);
+} elseif ($user['step'] == "apitonpay") {
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $tonpay, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "apitonpay");
+    step('home', $from_id);
+} elseif ($text == "🔑 ثبت API Key اطلس‌پی" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apiatlaspay", "select");
+    $currentKey = $PaySetting['ValuePay'] ?? 'ثبت نشده';
+    $textatlaspay = "🔑 کلید API اطلس‌پی خود را اینجا وارد کنید.\n\nکلید فعلی شما: {$currentKey}";
+    nm_adminInstantReply($from_id, $textatlaspay, $backadmin, 'HTML');
+    step('apiatlaspay', $from_id);
+} elseif ($user['step'] == "apiatlaspay") {
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $atlaspay, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "apiatlaspay");
+    step('home', $from_id);
+} elseif ($text == "🔑 ثبت API Key تتراپی" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apitetrapay", "select");
+    $currentKey = $PaySetting['ValuePay'] ?? 'ثبت نشده';
+    $texttetrapay = "🔑 کلید API تتراپی خود را اینجا وارد کنید.\n\nکلید فعلی شما: {$currentKey}";
+    nm_adminInstantReply($from_id, $texttetrapay, $backadmin, 'HTML');
+    step('apitetrapay', $from_id);
+} elseif ($user['step'] == "apitetrapay") {
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $tetrapay, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "apitetrapay");
+    step('home', $from_id);
+} elseif ($text == "🌍 ثبت آدرس سرور API تتراپی" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apiurltetrapay", "select");
+    $currentUrl = $PaySetting['ValuePay'] ?? '';
+    $currentUrl = $currentUrl !== '' ? $currentUrl : 'ثبت نشده';
+    $texttetrapayUrl = "🌍 آدرس سرور API تتراپی خود را اینجا وارد کنید (مثال: https://xxx.xxx.xxx.xxx).\n\nآدرس فعلی شما: {$currentUrl}";
+    nm_adminInstantReply($from_id, $texttetrapayUrl, $backadmin, 'HTML');
+    step('apiurltetrapay', $from_id);
+} elseif ($user['step'] == "apiurltetrapay") {
+    $cleanUrl = rtrim(trim($text), '/');
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $tetrapay, 'HTML');
+    update("PaySetting", "ValuePay", $cleanUrl, "NamePay", "apiurltetrapay");
+    step('home', $from_id);
+} elseif ($text == "🔑 ثبت API Key بلوپال" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apiblupal", "select");
+    $currentKey = $PaySetting['ValuePay'] ?? 'ثبت نشده';
+    $blupalWebhookUrl = 'https://' . $domainhosts . '/payment/blupal.php';
+    $blupalCallbackUrl = 'https://' . $domainhosts . '/payment/blupal_return.php';
+    $textblupal = "🔑 کلید API بلوپال خود را اینجا وارد کنید.\n\nکلید فعلی شما: {$currentKey}\n\n";
+    $textblupal .= "⚠️ پیش از ادامه، آدرس‌های زیر را در داشبورد بلوپال (بخش مدیریت API Key) ثبت کنید تا تأیید خودکار پرداخت‌ها کار کند:\n\n";
+    $textblupal .= "🔗 درگاه Webhook:\n<code>{$blupalWebhookUrl}</code>\n\n";
+    $textblupal .= "🔙 Callback page:\n<code>{$blupalCallbackUrl}</code>";
+    nm_adminInstantReply($from_id, $textblupal, $backadmin, 'HTML');
+    step('apiblupal', $from_id);
+} elseif ($user['step'] == "apiblupal") {
+    $blupalWebhookUrl = 'https://' . $domainhosts . '/payment/blupal.php';
+    $blupalCallbackUrl = 'https://' . $domainhosts . '/payment/blupal_return.php';
+    update("PaySetting", "ValuePay", $text, "NamePay", "apiblupal");
+    $textblupalSaved = $textbotlang['Admin']['SettingnowPayment']['Savaapi'] . "\n\n";
+    $textblupalSaved .= "⚠️ فراموش نکنید آدرس‌های زیر را در داشبورد بلوپال (بخش مدیریت API Key) ثبت کنید:\n\n";
+    $textblupalSaved .= "🔗 درگاه Webhook:\n<code>{$blupalWebhookUrl}</code>\n\n";
+    $textblupalSaved .= "🔙 Callback page:\n<code>{$blupalCallbackUrl}</code>";
+    nm_adminInstantReply($from_id, $textblupalSaved, $blupal, 'HTML');
+    step('home', $from_id);
+} elseif ($text == "🔑 ثبت توکن API کیوب‌پی" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apicubepay", "select");
+    $currentKey = $PaySetting['ValuePay'] ?? 'ثبت نشده';
+    $textcubepay = "🔑 توکن API کیوب‌پی خود را اینجا وارد کنید.\n\nتوکن فعلی شما: {$currentKey}";
+    nm_adminInstantReply($from_id, $textcubepay, $backadmin, 'HTML');
+    step('apicubepay', $from_id);
+} elseif ($user['step'] == "apicubepay") {
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $cubepay, 'HTML');
+    update("PaySetting", "ValuePay", $text, "NamePay", "apicubepay");
+    step('home', $from_id);
 } elseif ($datain == "affilnecurrencysetting") {
     nm_adminInstantReply($from_id, "یک گزینه را انتخاب کنید", $tronnowpayments, 'HTML');
-} elseif ($text == "🗂 نام درگاه کارت به کارت") {
-    nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
+} elseif ($text == "🗂 نام درگاه کارت به کارت" || $text == "🏷️ نام نمایشی درگاه کارت به کارت") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه کارت به کارت را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
     step("getnamecarttocart", $from_id);
 } elseif ($user['step'] == "getnamecarttocart") {
     nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $CartManage, 'HTML');
     update("textbot", "text", $text, "id_text", "carttocart");
     step("home", $from_id);
-} elseif ($text == "🗂 نام درگاه nowpayment") {
-    nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
+} elseif ($text == "🗂 نام درگاه nowpayment" || $text == "🏷️ نام نمایشی درگاه nowpayment") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه nowpayment را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
     step("getnamenowpayment", $from_id);
 } elseif ($user['step'] == "getnamenowpayment") {
     nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $nowpayment_setting_keyboard, 'HTML');
@@ -757,58 +863,88 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $CartManage, 'HTML');
     update("textbot", "text", $text, "id_text", "textpaymentnotverify");
     step("home", $from_id);
-} elseif ($text == "🗂 نام درگاه   plisio") {
-    nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
+} elseif ($text == "🗂 نام درگاه   plisio" || $text == "🏷️ نام نمایشی درگاه plisio") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه plisio را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
     step("gettextnowpayment", $from_id);
 } elseif ($user['step'] == "gettextnowpayment") {
     nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $NowPaymentsManage, 'HTML');
     update("textbot", "text", $text, "id_text", "textnowpayment");
     step("home", $from_id);
-} elseif ($text == "🗂 نام درگاه رمز ارز آفلاین") {
-    nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
+} elseif ($text == "🗂 نام درگاه رمز ارز آفلاین" || $text == "🏷️ نام نمایشی درگاه رمز ارز آفلاین") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه رمز ارز آفلاین را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
     step("gettextnowpaymentTRON", $from_id);
 } elseif ($user['step'] == "gettextnowpaymentTRON") {
     nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $tronnowpayments, 'HTML');
     update("textbot", "text", $text, "id_text", "textnowpaymenttron");
     step("home", $from_id);
-} elseif ($text == "🗂 نام درگاه ارزی ریالی") {
-    nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
-    step("gettextiranpay2", $from_id);
-} elseif ($user['step'] == "gettextiranpay2") {
-    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $Swapinokey, 'HTML');
-    update("textbot", "text", $text, "id_text", "iranpay2");
-    step("home", $from_id);
-} elseif ($text == "🗂 نام درگاه استار") {
-    nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
+} elseif ($text == "🗂 نام درگاه استار" || $text == "🏷️ نام نمایشی درگاه استار") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه استار را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
     step("gettextstartelegram", $from_id);
 } elseif ($user['step'] == "gettextstartelegram") {
-    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $Swapinokey, 'HTML');
+    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $Startelegram, 'HTML');
     update("textbot", "text", $text, "id_text", "text_star_telegram");
     step("home", $from_id);
-} elseif ($text == "🏷️ نام نمایشی درگاه ترنادو") {
-    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه ترنادو را ارسال کنید.";
+} elseif ($text == "🏷️ نام نمایشی درگاه ترونادو") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه ترونادو را ارسال کنید.";
     nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
     step("gettextiranpay3", $from_id);
 } elseif ($user['step'] == "gettextiranpay3") {
     nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $trnado, 'HTML');
     update("textbot", "text", $text, "id_text", "iranpay3");
     step("home", $from_id);
-} elseif ($text == "🗂 نام درگاه ارزی ریالی سوم") {
+} elseif ($text == "🏷️ نام نمایشی درگاه تون‌پی") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه تون‌پی را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
+    step("gettexttonpay", $from_id);
+} elseif ($user['step'] == "gettexttonpay") {
+    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $tonpay, 'HTML');
+    update("textbot", "text", $text, "id_text", "tonpay");
+    step("home", $from_id);
+} elseif ($text == "🏷️ نام نمایشی درگاه کیوب‌پی") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه کیوب‌پی را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
+    step("gettextcubepay", $from_id);
+} elseif ($user['step'] == "gettextcubepay") {
+    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $cubepay, 'HTML');
+    update("textbot", "text", $text, "id_text", "cubepay");
+    step("home", $from_id);
+} elseif ($text == "🏷️ نام نمایشی درگاه بلوپال") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه بلوپال را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
+    step("gettextblupal", $from_id);
+} elseif ($user['step'] == "gettextblupal") {
+    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $blupal, 'HTML');
+    update("textbot", "text", $text, "id_text", "blupal");
+    step("home", $from_id);
+} elseif ($text == "🏷️ نام نمایشی درگاه اطلس‌پی") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه اطلس‌پی را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
+    step("gettextatlaspay", $from_id);
+} elseif ($user['step'] == "gettextatlaspay") {
+    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $atlaspay, 'HTML');
+    update("textbot", "text", $text, "id_text", "atlaspay");
+    step("home", $from_id);
+} elseif ($text == "🏷️ نام نمایشی درگاه تتراپی") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه تتراپی را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
+    step("gettexttetrapay", $from_id);
+} elseif ($user['step'] == "gettexttetrapay") {
+    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $tetrapay, 'HTML');
+    update("textbot", "text", $text, "id_text", "tetrapay");
+    step("home", $from_id);
+} elseif ($text == "🗂 نام درگاه ریالی سوم") {
     nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
     step("gettextiranpay1", $from_id);
 } elseif ($user['step'] == "gettextiranpay1") {
     nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $iranpaykeyboard, 'HTML');
     update("textbot", "text", $text, "id_text", "iranpay1");
     step("home", $from_id);
-} elseif ($text == "🗂 نام درگاه آقای پرداخت") {
-    nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
-    step("gettextaqayepardakht", $from_id);
-} elseif ($user['step'] == "gettextaqayepardakht") {
-    nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $aqayepardakht, 'HTML');
-    update("textbot", "text", $text, "id_text", "aqayepardakht");
-    step("home", $from_id);
-} elseif ($text == "🗂 نام درگاه زرین پال") {
-    nm_adminInstantReply($from_id, " 📌 نام درگاه را ارسال نمايید", $backadmin, 'HTML');
+} elseif ($text == "🗂 درگاه زرین پال" || $text == "🏷️ نام نمایشی درگاه زرین پال") {
+    $prompt = "🏷️ نام نمایشی دلخواه برای درگاه زرین پال را ارسال کنید.";
+    nm_adminInstantReply($from_id, $prompt, $backadmin, 'HTML');
     step("gettextzarinpal", $from_id);
 } elseif ($user['step'] == "gettextzarinpal") {
     nm_adminInstantReply($from_id, "✅  متن با موفقیت تنظیم گردید.", $keyboardzarinpal, 'HTML');
@@ -818,6 +954,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['Admin']['managepanel']['Inbound']['GetProtocol'], $keyboardprotocol, 'HTML');
     step('getprotocoldisable', $from_id);
 } elseif ($user['step'] == "getprotocoldisable") {
+    if (!isset($update['message']) && empty($text)) { return; }
     global $json_list_marzban_panel_inbounds;
     $protocol = ["vless", "vmess", "trojan", "shadowsocks"];
     if (!in_array($text, $protocol)) {
@@ -851,13 +988,23 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
 
 📌 با تایید گزینه زیر عملیات زیر انجام خواهد شد. و قابل بازگشت نیستند
 
-1 - سفارش های غیرفعال حذف خواهند شد
-2 - سفارش های پرداخت نشده حذف خواهند شد.
-3 - سفارش های حذف شده توسط ادمین
-4 - حذف سرویس های تست غیرفعال
-5 - سفارش های حذف شده توسط کاربر
-6 - سفارشاتی که زمان یا حجم شان تمام شده باشد
-7 - فاکتورهای قدیمی پرداخت نشده (بیش از ۳۰ روز)
+1 - سفارش های غیرفعال (بیش از ۳۰ روز) حذف خواهند شد
+2 - سفارش های پرداخت نشده (بیش از ۳۰ روز) حذف خواهند شد
+3 - سفارش های حذف شده توسط ادمین (بیش از ۳۰ روز)
+4 - حذف سرویس های تست غیرفعال (بیش از ۳۰ روز)
+5 - سفارش های حذف شده توسط کاربر (بیش از ۳۰ روز)
+6 - سفارشاتی که زمان یا حجم شان تمام شده باشد (بیش از ۳۰ روز)
+7 - فاکتورهای قدیمی پرداخت نشده و ناموفق (بیش از ۳۰ روز)
+8 - تراکنش‌های کیف پول قدیمی‌تر از ۳۰ روز
+9 - کدهای تخفیف منقضی‌شده (بیش از ۹۰ روز)
+10 - درخواست‌های کنسلی و نمایندگی بررسی‌شده (بیش از ۶۰ روز)
+11 - کدهای هدیه مصرف‌شده و لاگ‌های کریپتو (بیش از ۹۰ روز)
+12 - تیکت‌های قدیمی‌تر از ۳۰ روز
+13 - سرویس‌های متصل به پنل حذف‌شده شناسایی و علامت‌گذاری خواهند شد (حذف نهایی پس از ۳۰ روز)
+14 - تمام سرویس‌های فعال با پنل استعلام می‌شوند و سرویس‌های نامعتبر (کاربر یافت نشد) علامت‌گذاری خواهند شد (حذف نهایی پس از ۳۰ روز) — این مرحله ممکن است طول بکشد
+15 - سرویس‌هایی که بیش از ۳۰ روز از خریدشان گذشته و هیچ مصرفی نداشته‌اند (۰ مصرف) شناسایی و علامت‌گذاری خواهند شد (حذف نهایی پس از ۳۰ روز دیگر) — سرویس‌هایی که حتی مقدار کمی مصرف داشته‌اند دست‌نخورده می‌مانند
+16 - سرویس‌هایی که هنگام استعلام، پنل‌شان قابل‌دسترس نبود (خطای اتصال) علامت‌گذاری خواهند شد (حذف نهایی پس از ۳۰ روز دیگر، مگر اینکه پنل در همین بازه دوباره در دسترس قرار گیرد)
+17 - سرویس‌هایی که حجم یا زمانشان تمام شده و تمدید نشده‌اند علامت‌گذاری خواهند شد (حذف نهایی پس از ۳۰ روز دیگر از لحظه‌ی تمام‌شدن)
 
 🛡 اگر در عملکرد ربات با باگ یا مشکلی مواجه شدید، از طریق گیت هاب یا گروه فاکسیما اطلاع رسانی کنید
 <a href=\"https://github.com/Mmd-Amir/Faoxima\">لینک گیت هاب</a>";
@@ -1047,61 +1194,270 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $warningText, null, 'HTML');
     }
 } elseif ($datain == "optimizebot") {
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'unpaid' AND name_product != 'سرویس تست'");
+    if (function_exists('set_time_limit')) {
+        @set_time_limit(0);
+    }
+    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
+    $sixtyDaysAgo = time() - (60 * 24 * 60 * 60);
+    $ninetyDaysAgo = time() - (90 * 24 * 60 * 60);
+
+    $chk = $pdo->query("SHOW COLUMNS FROM invoice LIKE 'invalidated_at'");
+    if ($chk && $chk->rowCount() !== 1) {
+        $pdo->exec("ALTER TABLE invoice ADD invalidated_at INT UNSIGNED NULL DEFAULT NULL");
+    }
+
+    $nowStamp = time();
+    $stmt = $pdo->prepare(
+        "UPDATE invoice SET Status = 'Unsuccessful', invalidated_at = :now
+         WHERE Status IN ('active','end_of_time','end_of_volume','sendedwarn','send_on_hold')
+         AND Service_location IS NOT NULL AND Service_location <> ''
+         AND Service_location NOT IN (SELECT name_panel FROM marzban_panel WHERE name_panel IS NOT NULL)"
+    );
+    $stmt->execute([':now' => $nowStamp]);
+    $countorphanedpanel = $stmt->rowCount();
+
+    $countorphanedservice = 0;
+    $countunusedservice = 0;
+    $countunreachablepanel = 0;
+    $countexpiredservice = 0;
+    $stmt = $pdo->prepare(
+        "SELECT id_invoice, Service_location, username, time_sell, Status, invalidated_at FROM invoice
+         WHERE Status IN ('active','end_of_time','end_of_volume','sendedwarn','send_on_hold')
+         AND Service_location IS NOT NULL AND Service_location <> ''
+         AND username IS NOT NULL AND username <> ''"
+    );
     $stmt->execute();
+    $liveInvoices = $stmt->fetchAll(PDO::FETCH_ASSOC);
+    foreach ($liveInvoices as $liveInvoice) {
+        try {
+            $scanResult = $ManagePanel->DataUser($liveInvoice['Service_location'], $liveInvoice['username']);
+        } catch (Throwable $e) {
+            if (empty($liveInvoice['invalidated_at'])) {
+                update("invoice", "invalidated_at", $nowStamp, "id_invoice", $liveInvoice['id_invoice']);
+                $countunreachablepanel++;
+            }
+            continue;
+        }
+        if (isset($scanResult['msg']) && $scanResult['msg'] == "User not found") {
+            update("invoice", "invalidated_at", $nowStamp, "id_invoice", $liveInvoice['id_invoice']);
+            update("invoice", "Status", "disabledn", "id_invoice", $liveInvoice['id_invoice']);
+            $countorphanedservice++;
+        } elseif (isset($scanResult['status']) && $scanResult['status'] == "Unsuccessful" && isset($scanResult['msg']) && $scanResult['msg'] == "Panel Not Found") {
+            update("invoice", "invalidated_at", $nowStamp, "id_invoice", $liveInvoice['id_invoice']);
+            update("invoice", "Status", "Unsuccessful", "id_invoice", $liveInvoice['id_invoice']);
+            $countorphanedservice++;
+        } elseif ((int)($scanResult['used_traffic'] ?? 0) === 0) {
+            $purchasedAt = is_numeric($liveInvoice['time_sell']) ? (int)$liveInvoice['time_sell'] : null;
+            if ($purchasedAt !== null && $purchasedAt < $thirtyDaysAgo) {
+                update("invoice", "invalidated_at", $nowStamp, "id_invoice", $liveInvoice['id_invoice']);
+                update("invoice", "Status", "unusedservice", "id_invoice", $liveInvoice['id_invoice']);
+                $countunusedservice++;
+            }
+        } elseif (in_array($liveInvoice['Status'], ['end_of_time', 'end_of_volume'], true)) {
+            if (empty($liveInvoice['invalidated_at'])) {
+                update("invoice", "invalidated_at", $nowStamp, "id_invoice", $liveInvoice['id_invoice']);
+                $countexpiredservice++;
+            }
+        } elseif (!empty($liveInvoice['invalidated_at'])) {
+            update("invoice", "invalidated_at", null, "id_invoice", $liveInvoice['id_invoice']);
+        }
+    }
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'unpaid' AND name_product != 'سرویس تست' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
     $countunpiadorder = (int)$stmt->fetchColumn();
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'disabled' AND name_product != 'سرویس تست'");
-    $stmt->execute();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'disabled' AND name_product != 'سرویس تست' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
     $countdisableorder = (int)$stmt->fetchColumn();
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE (Status = 'removebyadmin' OR Status = 'removedbyadmin')");
-    $stmt->execute();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE (Status = 'removebyadmin' OR Status = 'removedbyadmin') AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
     $countremoveadminorder = (int)$stmt->fetchColumn();
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'disabled' AND name_product = 'سرویس تست'");
-    $stmt->execute();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'disabled' AND name_product = 'سرویس تست' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
     $countdisableordtester = (int)$stmt->fetchColumn();
 
-    $thirtyDaysAgo = time() - (30 * 24 * 60 * 60);
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'unpaid' AND name_product = 'سرویس تست'");
-    $stmt->execute();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'unpaid' AND name_product = 'سرویس تست' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
     $countoldunpaid = (int)$stmt->fetchColumn();
 
-    $stmt = $pdo->prepare("SELECT COUNT(*) FROM Payment_report WHERE payment_Status IN ('expire','reject')");
-    $stmt->execute();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE (Status = 'removeTime' OR Status = 'removevolume' OR Status = 'removebyuser') AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $countremovedservices = (int)$stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE (Status = 'disabledn' OR Status = 'Unsuccessful') AND COALESCE(invalidated_at, CAST(time_sell AS UNSIGNED)) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $countfailedorder = (int)$stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM invoice WHERE Status = 'unusedservice' AND invalidated_at IS NOT NULL AND invalidated_at < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $countunusedexpired = (int)$stmt->fetchColumn();
+
+    $stmt = $pdo->prepare(
+        "SELECT COUNT(*) FROM invoice
+         WHERE Status IN ('active','end_of_time','end_of_volume','sendedwarn','send_on_hold')
+         AND invalidated_at IS NOT NULL AND invalidated_at < :cutoff"
+    );
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $countstalelive = (int)$stmt->fetchColumn();
+
+    $paymentCutoff = date('Y/m/d H:i:s', $thirtyDaysAgo);
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM Payment_report WHERE payment_Status IN ('expire','reject') AND time < :cutoff");
+    $stmt->execute([':cutoff' => $paymentCutoff]);
     $countpayexpired = (int)$stmt->fetchColumn();
 
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'unpaid' AND name_product != 'سرویس تست'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'disabled' AND name_product != 'سرویس تست'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removebyadmin'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removedbyadmin'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'disabled' AND name_product = 'سرویس تست'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removeTime'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removevolume'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removebyuser'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'unpaid' AND name_product = 'سرویس تست'");
-    $stmt->execute();
-    $stmt = $pdo->prepare("DELETE FROM Payment_report WHERE payment_Status IN ('expire','reject')");
-    $stmt->execute();
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM wallet_ledger WHERE created_at < FROM_UNIXTIME(:cutoff)");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $countledgerexpired = (int)$stmt->fetchColumn();
+
+    $countdiscountexpired = 0;
+    $chk = $pdo->query("SHOW COLUMNS FROM DiscountSell LIKE 'status'");
+    if ($chk && $chk->rowCount() === 1) {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM DiscountSell WHERE status = 'expired' AND time IS NOT NULL AND time <> '' AND CAST(time AS UNSIGNED) < :cutoff");
+        $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+        $countdiscountexpired += (int)$stmt->fetchColumn();
+    }
+    $chk = $pdo->query("SHOW COLUMNS FROM Discount LIKE 'expire_at'");
+    if ($chk && $chk->rowCount() === 1) {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM Discount WHERE status = 'expired' AND expire_at IS NOT NULL AND expire_at <> '' AND CAST(expire_at AS UNSIGNED) < :cutoff");
+        $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+        $countdiscountexpired += (int)$stmt->fetchColumn();
+    }
+
+    $countcancelrequests = 0;
+    $chk = $pdo->query("SHOW COLUMNS FROM cancel_service LIKE 'resolved_at'");
+    if ($chk && $chk->rowCount() === 1) {
+        $stmt = $pdo->prepare("SELECT COUNT(*) FROM cancel_service WHERE status IN ('accept','reject') AND resolved_at IS NOT NULL AND resolved_at <> '' AND CAST(resolved_at AS UNSIGNED) < :cutoff");
+        $stmt->execute([':cutoff' => $sixtyDaysAgo]);
+        $countcancelrequests = (int)$stmt->fetchColumn();
+    }
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM Requestagent WHERE status IN ('accept','reject') AND time IS NOT NULL AND time <> '' AND CAST(time AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $sixtyDaysAgo]);
+    $countagentrequests = (int)$stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM Giftcodeconsumed WHERE consumed_at IS NOT NULL AND consumed_at <> '' AND CAST(consumed_at AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+    $countgiftcodes = (int)$stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM crypto_verified_hashes WHERE verified_at < FROM_UNIXTIME(:cutoff)");
+    $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+    $countcryptologs = (int)$stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("SELECT COUNT(*) FROM crypto_sender_locks WHERE COALESCE(last_used_at, first_seen_at) < FROM_UNIXTIME(:cutoff)");
+    $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+    $countcryptologs += (int)$stmt->fetchColumn();
+
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'unpaid' AND name_product != 'سرویس تست' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'disabled' AND name_product != 'سرویس تست' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removebyadmin' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removedbyadmin' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'disabled' AND name_product = 'سرویس تست' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removeTime' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removevolume' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'removebyuser' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'unpaid' AND name_product = 'سرویس تست' AND CAST(time_sell AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE (Status = 'disabledn' OR Status = 'Unsuccessful') AND COALESCE(invalidated_at, CAST(time_sell AS UNSIGNED)) < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM invoice WHERE Status = 'unusedservice' AND invalidated_at IS NOT NULL AND invalidated_at < :cutoff");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare(
+        "DELETE FROM invoice
+         WHERE Status IN ('active','end_of_time','end_of_volume','sendedwarn','send_on_hold')
+         AND invalidated_at IS NOT NULL AND invalidated_at < :cutoff"
+    );
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+    $stmt = $pdo->prepare("DELETE FROM Payment_report WHERE payment_Status IN ('expire','reject') AND time < :cutoff");
+    $stmt->execute([':cutoff' => $paymentCutoff]);
+
+    $stmt = $pdo->prepare("DELETE FROM wallet_ledger WHERE created_at < FROM_UNIXTIME(:cutoff)");
+    $stmt->execute([':cutoff' => $thirtyDaysAgo]);
+
+    $chk = $pdo->query("SHOW COLUMNS FROM DiscountSell LIKE 'status'");
+    if ($chk && $chk->rowCount() === 1) {
+        $stmt = $pdo->prepare("DELETE FROM DiscountSell WHERE status = 'expired' AND time IS NOT NULL AND time <> '' AND CAST(time AS UNSIGNED) < :cutoff");
+        $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+    }
+    $chk = $pdo->query("SHOW COLUMNS FROM Discount LIKE 'expire_at'");
+    if ($chk && $chk->rowCount() === 1) {
+        $stmt = $pdo->prepare("DELETE FROM Discount WHERE status = 'expired' AND expire_at IS NOT NULL AND expire_at <> '' AND CAST(expire_at AS UNSIGNED) < :cutoff");
+        $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+    }
+
+    $chk = $pdo->query("SHOW COLUMNS FROM cancel_service LIKE 'resolved_at'");
+    if ($chk && $chk->rowCount() === 1) {
+        $stmt = $pdo->prepare("DELETE FROM cancel_service WHERE status IN ('accept','reject') AND resolved_at IS NOT NULL AND resolved_at <> '' AND CAST(resolved_at AS UNSIGNED) < :cutoff");
+        $stmt->execute([':cutoff' => $sixtyDaysAgo]);
+    }
+
+    $stmt = $pdo->prepare("DELETE FROM Requestagent WHERE status IN ('accept','reject') AND time IS NOT NULL AND time <> '' AND CAST(time AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $sixtyDaysAgo]);
+
+    $stmt = $pdo->prepare("DELETE FROM Giftcodeconsumed WHERE consumed_at IS NOT NULL AND consumed_at <> '' AND CAST(consumed_at AS UNSIGNED) < :cutoff");
+    $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+
+    $stmt = $pdo->prepare("DELETE FROM crypto_verified_hashes WHERE verified_at < FROM_UNIXTIME(:cutoff)");
+    $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+
+    $stmt = $pdo->prepare("DELETE FROM crypto_sender_locks WHERE COALESCE(last_used_at, first_seen_at) < FROM_UNIXTIME(:cutoff)");
+    $stmt->execute([':cutoff' => $ninetyDaysAgo]);
+
+    $ticketCutoff = date('Y/m/d H:i:s', $thirtyDaysAgo);
+    $stmt = $pdo->prepare("SELECT Tracking FROM support_message GROUP BY Tracking HAVING MIN(time) < :cutoff");
+    $stmt->execute([':cutoff' => $ticketCutoff]);
+    $oldTrackings = $stmt->fetchAll(PDO::FETCH_COLUMN);
+
+    $countoldtickets = 0;
+    if (!empty($oldTrackings)) {
+        $delReact = $pdo->prepare(
+            "DELETE r FROM support_message_reaction r
+             INNER JOIN support_message m ON m.id = r.message_id
+             WHERE m.Tracking = :t"
+        );
+        $delMsg = $pdo->prepare("DELETE FROM support_message WHERE Tracking = :t");
+        foreach ($oldTrackings as $tracking) {
+            $delReact->execute([':t' => $tracking]);
+            $delMsg->execute([':t' => $tracking]);
+            $countoldtickets++;
+        }
+    }
 
     $optimizebot = "✅ بهینه سازی با موفقیت انجام شد
 
 📊 خلاصه عملیات:
-✅ {$countunpiadorder} سفارش پرداخت نشده حذف گردید
-✅ {$countdisableorder} سفارش غیرفعال حذف گردید
-✅ {$countremoveadminorder} سفارش حذف شده توسط ادمین پاک گردید
-✅ {$countdisableordtester} سرویس تست غیرفعال حذف گردید
-✅ {$countoldunpaid} فاکتور تست پرداخت نشده پاک گردید
-✅ {$countpayexpired} گزارش تراکنش منقضی/رد شده پاک گردید";
+✅ {$countunpiadorder} سفارش پرداخت نشده (بیش از ۳۰ روز) حذف گردید
+✅ {$countdisableorder} سفارش غیرفعال (بیش از ۳۰ روز) حذف گردید
+✅ {$countremoveadminorder} سفارش حذف شده توسط ادمین (بیش از ۳۰ روز) پاک گردید
+✅ {$countdisableordtester} سرویس تست غیرفعال (بیش از ۳۰ روز) حذف گردید
+✅ {$countoldunpaid} فاکتور تست پرداخت نشده (بیش از ۳۰ روز) پاک گردید
+✅ {$countremovedservices} سفارشی که زمان یا حجم یا توسط کاربر حذف شده (بیش از ۳۰ روز) پاک گردید
+✅ {$countfailedorder} سفارش ناموفق/نامعتبر (بیش از ۳۰ روز) پاک گردید
+✅ {$countpayexpired} گزارش تراکنش منقضی/رد شده (بیش از ۳۰ روز) پاک گردید
+✅ {$countledgerexpired} تراکنش کیف پول قدیمی‌تر از ۳۰ روز پاک گردید
+✅ {$countdiscountexpired} کد تخفیف منقضی‌شده (بیش از ۹۰ روز) پاک گردید
+✅ {$countcancelrequests} درخواست کنسلی بررسی‌شده (بیش از ۶۰ روز) پاک گردید
+✅ {$countagentrequests} درخواست نمایندگی بررسی‌شده (بیش از ۶۰ روز) پاک گردید
+✅ {$countgiftcodes} کد هدیه مصرف‌شده (بیش از ۹۰ روز) پاک گردید
+✅ {$countcryptologs} لاگ کریپتوی قدیمی‌تر از ۹۰ روز پاک گردید
+✅ {$countoldtickets} تیکت قدیمی‌تر از ۳۰ روز پاک گردید
+✅ {$countorphanedpanel} سرویس متصل به پنل حذف‌شده شناسایی و برای حذف (پس از ۳۰ روز) علامت‌گذاری شد
+✅ {$countorphanedservice} سرویس نامعتبر (کاربر یافت نشد روی پنل) شناسایی و برای حذف (پس از ۳۰ روز) علامت‌گذاری شد
+✅ {$countunusedservice} سرویس بدون مصرف (۰ مصرف، بیش از ۳۰ روز از خرید) شناسایی و برای حذف (پس از ۳۰ روز) علامت‌گذاری شد
+✅ {$countunusedexpired} سرویس بدون مصرف که مهلتش تمام شده حذف گردید
+✅ {$countunreachablepanel} سرویس با پنل غیرقابل‌دسترس شناسایی و برای حذف (پس از ۳۰ روز) علامت‌گذاری شد
+✅ {$countexpiredservice} سرویس با حجم/زمان تمام‌شده که تمدید نشده شناسایی و برای حذف (پس از ۳۰ روز) علامت‌گذاری شد
+✅ {$countstalelive} سرویس علامت‌خورده (پنل غیرقابل‌دسترس یا حجم/زمان تمام‌شده) که مهلتش تمام شده حذف گردید";
 
     if (!empty($message_id)) {
         Editmessagetext($from_id, $message_id, $optimizebot, null);
@@ -1109,12 +1465,13 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $optimizebot, $setting_panel, 'HTML');
 
     $time = time();
-    $logss = "optimize_{$countunpiadorder}_{$countdisableorder}_{$countremoveadminorder}_{$countdisableordtester}_$time";
+    $logss = "optimize_{$countunpiadorder}_{$countdisableorder}_{$countremoveadminorder}_{$countdisableordtester}_{$countdiscountexpired}_{$countcancelrequests}_{$countagentrequests}_{$countgiftcodes}_{$countcryptologs}_{$countorphanedpanel}_{$countorphanedservice}_{$countunusedservice}_{$countunusedexpired}_{$countunreachablepanel}_{$countexpiredservice}_{$countstalelive}_$time";
     file_put_contents('log.txt', "\n" . $logss, FILE_APPEND);
 } elseif ($datain == "settimecornvolume") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تنظیم کنید که اگر حجم کاربر به x رسید پیام اخطار ارسال شود. حجم را براساس گیگ ارسال نمایید.", $backadmin, 'HTML');
     step("getvolumewarn", $from_id);
 } elseif ($user['step'] == "getvolumewarn") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, "❌ مقدار نامعتبر", null, 'html');
         return;
@@ -1122,7 +1479,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     update("setting", "volumewarn", $text);
     nm_adminInstantReply($from_id, "✅ تغییرات با موفقیت ذخیره شد", $setting_panel, 'HTML');
     step("home", $from_id);
-} elseif ($text == "🔧 ساخت کانفیگ دستی") {
+} elseif ($text == "🔧 کانفیگ دستی") {
     savedata("clear", "idpanel", $user['Processing_value']);
     nm_adminInstantReply($from_id, "📌در این بخش میتوانید یک سفارش را بطور دستی ایجاد و دریافت کنید
 ⚠️ در صورتی که می خواهید  کانفیگ به حساب کاربر اضافه شود و کاربر مدیریت کند باید از گزینه افزودن سفارش  استفاده نمایید.
@@ -1184,11 +1541,10 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             nm_adminInstantReply($from_id, $textbotlang['users']['sell']['ErrorConfig'], null, 'HTML');
             $texterros = "
 ⭕️ یک کاربر قصد دریافت اکانت داشت که ساخت کانفیگ با خطا مواجه شده و به کاربر کانفیگ داده نشد
-✍️ دلیل خطا :
-{$dataoutput['msg']}
-آیدی کابر : $from_id
-نام کاربری کاربر : @$username
-نام پنل : {$panel['name_panel']}";
+<blockquote>✍️ دلیل خطا : {$dataoutput['msg']}</blockquote>
+<blockquote>آیدی کابر : $from_id</blockquote>
+<blockquote>نام کاربری کاربر : @$username</blockquote>
+<blockquote>نام پنل : {$panel['name_panel']}</blockquote>";
             if (strlen($setting['Channel_Report']) > 0) {
                 telegram('sendmessage', [
                     'chat_id' => $setting['Channel_Report'],
@@ -1201,7 +1557,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             return;
         }
         $randomString = bin2hex(random_bytes(5));
-        $output_config_link = $panel['sublink'] == "onsublink" ? $dataoutput['subscription_url'] : "";
+        $output_config_link = $panel['sublink'] == "onsublink" ? rxResolveConnectionLink($panel, $dataoutput['subscription_url'], $dataoutput['file_ext'] ?? null) : "";
         $config = "";
         if ($panel['config'] == "onconfig" && is_array($dataoutput['configs'])) {
             foreach ($dataoutput['configs'] as $link) {
@@ -1210,7 +1566,6 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         }
         $datatextbot['textafterpay'] = $panel['type'] == "Manualsale" ? $datatextbot['textmanual'] : $datatextbot['textafterpay'];
         $datatextbot['textafterpay'] = $panel['type'] == "WGDashboard" ? $datatextbot['text_wgdashboard'] : $datatextbot['textafterpay'];
-        $datatextbot['textafterpay'] = $panel['type'] == "ibsng" || $panel['type'] == "mikrotik" ? $datatextbot['textafterpayibsng'] : $datatextbot['textafterpay'];
         if (intval($text) == 0)
             $text = $textbotlang['users']['stateus']['Unlimited'];
         $textcreatuser = str_replace('{username}', "<code>{$dataoutput['username']}</code>", $datatextbot['textafterpay']);
@@ -1219,7 +1574,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         $textcreatuser = str_replace('{day}', $text, $textcreatuser);
         $textcreatuser = str_replace('{volume}', $user['Processing_value_tow'], $textcreatuser);
         $textcreatuser = applyConnectionPlaceholders($textcreatuser, $output_config_link, $config);
-        if ($panel['type'] == "Manualsale" || $panel['type'] == "ibsng" || $panel['type'] == "mikrotik") {
+        if ($panel['type'] == "Manualsale") {
             $textcreatuser = str_replace('{password}', $dataoutput['subscription_url'], $textcreatuser);
             update("invoice", "user_info", $dataoutput['subscription_url'], "id_invoice", $randomString);
         }
@@ -1230,12 +1585,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     if (strlen($setting['Channel_Report']) > 0) {
         $text_report = " 🛍 ساخت کانفیگ توسط ادمین
 
-نام کاربری کانفیگ : {$user['Processing_value_one']}
-حجم کانفیگ  : {$user['Processing_value_tow']} گیگ
-زمان کانفیگ : $text روز
-آیدی عددی ادمین : $from_id
-نام کاربری ادمین : $username
-تعداد ساخت : {$userdata['count']}";
+<blockquote>نام کاربری کانفیگ : {$user['Processing_value_one']}</blockquote>
+<blockquote>حجم کانفیگ  : {$user['Processing_value_tow']} گیگ</blockquote>
+<blockquote>زمان کانفیگ : $text روز</blockquote>
+<blockquote>آیدی عددی ادمین : $from_id</blockquote>
+<blockquote>نام کاربری ادمین : $username</blockquote>
+<blockquote>تعداد ساخت : {$userdata['count']}</blockquote>";
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],
             'message_thread_id' => $buyreport,
@@ -1255,16 +1610,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathmarzban, 'HTML');
     } elseif ($typepanel == "x-ui_single") {
         nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
-    } elseif ($typepanel == "hiddify") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
-    } elseif ($typepanel == "alireza") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
-    } elseif ($typepanel == "alireza_single") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
-    } elseif ($typepanel == "marzneshin") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
     } elseif ($typepanel == "WGDashboard") {
         nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
+    } elseif ($typepanel == "remnawave") {
+        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $option_remnawave, 'HTML');
+    } elseif ($typepanel == "rebecca") {
+        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionRebecca, 'HTML');
     }
     step("home", $from_id);
 } elseif ($text == "🖥 مدیریت نود ها" || $datain == "bakcnode") {
@@ -1348,12 +1699,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $backinfoss = json_encode([
         'inline_keyboard' => [
             [
-                ['text' => "🗂 تغییر نام نود", 'callback_data' => "changenamenode"],
-                ['text' => "🔄 تغییر ضریب مصرف نود", 'callback_data' => "changecoefficient"],
+                ['text' => "🗂 نام نود", 'callback_data' => "changenamenode"],
+                ['text' => "🔄 ضریب مصرف نود", 'callback_data' => "changecoefficient"],
             ],
             [
-                ['text' => "🌍 تغییر آدرس ایپی نود", 'callback_data' => "changeipnode"],
-                ['text' => "♻️ اتصال مجدد نود", 'callback_data' => "reconnectnode"],
+                ['text' => "🌍 آدرس IP نود", 'callback_data' => "changeipnode"],
+                ['text' => "♻️ اتصال مجدد", 'callback_data' => "reconnectnode"],
             ],
             [
                 ['text' => "❌ حذف نود", 'callback_data' => "removenode"],
@@ -1376,6 +1727,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     Editmessagetext($from_id, $message_id, $textnode, $backinfoss);
     step("getusage_coefficient", $from_id);
 } elseif ($user['step'] == "getusage_coefficient") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $config = array(
         'usage_coefficient' => $text
     );
@@ -1401,6 +1753,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     Editmessagetext($from_id, $message_id, $textnode, $backinfoss);
     step("getnamenode", $from_id);
 } elseif ($user['step'] == "getnamenode") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $config = array(
         'name' => $text
     );
@@ -1426,6 +1779,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     Editmessagetext($from_id, $message_id, $textnode, $backinfoss);
     step("getipnodeset", $from_id);
 } elseif ($user['step'] == "getipnodeset") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $config = array(
         'address' => $text
     );
@@ -1461,142 +1815,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     ]);
     $textnode = "✅ نود با موفقیت حذف گردید";
     Editmessagetext($from_id, $message_id, $textnode, $backinfoss);
-} elseif ($text == "💎 مالی" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "💎 مالی و گزارشات" && $adminrulecheck['rule'] == "administrator") {
     step('admin_nav_finance', $from_id);
-    $cartotcart = getPaySettingValue('Cartstatus', 'offcard');
-    $plisio = getPaySettingValue('nowpaymentstatus', 'offnowpayment');
-    $arzireyali1 = getPaySettingValue('statusSwapWallet', 'offSwapinoBot');
-    if ($arzireyali1 != "onSwapinoBot" && $arzireyali1 != "offSwapinoBot") {
-        update("PaySetting", "ValuePay", "onSwapinoBot", "NamePay", "statusSwapWallet");
-        $arzireyali1 = getPaySettingValue('statusSwapWallet', 'offSwapinoBot');
-    }
-    $arzireyali2 = getPaySettingValue('statustarnado', 'offternado');
-    $arzireyali3 = getPaySettingValue('statusiranpay3', 'offiranpay3');
-    $aqayepardakht = getPaySettingValue('statusaqayepardakht', 'offaqayepardakht');
-    $zarinpal = getPaySettingValue('zarinpalstatus', 'offzarinpal');
-    $zarinpey = getPaySettingValue('zarinpeystatus', 'offzarinpey');
-    $affilnecurrency = getPaySettingValue('digistatus', 'offdigi');
-    $paymentstatussnotverify = getPaySettingValue('paymentstatussnotverify', 'offpaymentstatus');
-    $paymentsstartelegram = getPaySettingValue('statusstar', '0');
-    $payment_status_nowpayment = getPaySettingValue('statusnowpayment', '0');
-    $cartotcartstatus = [
-        'oncard' => $textbotlang['Admin']['Status']['statuson'],
-        'offcard' => $textbotlang['Admin']['Status']['statusoff']
-    ][$cartotcart];
-    $plisiostatus = [
-        'onnowpayment' => $textbotlang['Admin']['Status']['statuson'],
-        'offnowpayment' => $textbotlang['Admin']['Status']['statusoff']
-    ][$plisio];
-    $arzireyali1status = [
-        'onSwapinoBot' => $textbotlang['Admin']['Status']['statuson'],
-        'offSwapinoBot' => $textbotlang['Admin']['Status']['statusoff']
-    ][$arzireyali1];
-    $arzireyali2status = [
-        'onternado' => $textbotlang['Admin']['Status']['statuson'],
-        'offternado' => $textbotlang['Admin']['Status']['statusoff']
-    ][$arzireyali2];
-    $aqayepardakhtstatus = [
-        'onaqayepardakht' => $textbotlang['Admin']['Status']['statuson'],
-        'offaqayepardakht' => $textbotlang['Admin']['Status']['statusoff']
-    ][$aqayepardakht];
-    $zarinpalstatus = [
-        'onzarinpal' => $textbotlang['Admin']['Status']['statuson'],
-        'offzarinpal' => $textbotlang['Admin']['Status']['statusoff']
-    ][$zarinpal];
-    $zarinpeystatus = [
-        'onzarinpey' => $textbotlang['Admin']['Status']['statuson'],
-        'offzarinpey' => $textbotlang['Admin']['Status']['statusoff']
-    ][$zarinpey];
-    $affilnecurrencystatus = [
-        'ondigi' => $textbotlang['Admin']['Status']['statuson'],
-        'offdigi' => $textbotlang['Admin']['Status']['statusoff']
-    ][$affilnecurrency];
-    $arzireyali3text = [
-        'oniranpay3' => $textbotlang['Admin']['Status']['statuson'],
-        'offiranpay3' => $textbotlang['Admin']['Status']['statusoff']
-    ][$arzireyali3];
-    $paymentstar = [
-        '1' => $textbotlang['Admin']['Status']['statuson'],
-        '0' => $textbotlang['Admin']['Status']['statusoff']
-    ][$paymentsstartelegram];
-    $now_payment_status = [
-        '1' => $textbotlang['Admin']['Status']['statuson'],
-        '0' => $textbotlang['Admin']['Status']['statusoff']
-    ][$payment_status_nowpayment];
-    $Bot_Status = json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => "عملیات", 'callback_data' => "actions"],
-                ['text' => $textbotlang['Admin']['Status']['statussubject'], 'callback_data' => "subjectde"],
-                ['text' => $textbotlang['Admin']['Status']['subject'], 'callback_data' => "subject"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "cartsetting"],
-                ['text' => $cartotcartstatus, 'callback_data' => "editpayment-Cartstatus-$cartotcart"],
-                ['text' => "🔌 کارت به کارت", 'callback_data' => "carttocart"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "plisiosetting"],
-                ['text' => $plisiostatus, 'callback_data' => "editpayment-plisio-$plisio"],
-                ['text' => "📌 plisio", 'callback_data' => "plisio"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "nowpaymentsetting"],
-                ['text' => $now_payment_status, 'callback_data' => "editpayment-nowpayment-$payment_status_nowpayment"],
-                ['text' => "📌 nowpayment", 'callback_data' => "nowpayment"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "iranpay1setting"],
-                ['text' => $arzireyali1status, 'callback_data' => "editpayment-arzireyali1-$arzireyali1"],
-                ['text' => rx_iranpay_label($datatextbot, 'iranpay2', "📌 ارزی ریالی اول"), 'callback_data' => "arzireyali1"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "iranpay2setting"],
-                ['text' => $arzireyali2status, 'callback_data' => "editpayment-arzireyali2-$arzireyali2"],
-                ['text' => rx_iranpay_label($datatextbot, 'iranpay3', "📌 ارزی ریالی دوم"), 'callback_data' => "arzireyali2"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "iranpay3setting"],
-                ['text' => $arzireyali3text, 'callback_data' => "editpayment-oniranpay3-$arzireyali3"],
-                ['text' => rx_iranpay_label($datatextbot, 'iranpay1', "📌ارزی ریالی سوم"), 'callback_data' => "oniranpay3"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "zarinpeysetting"],
-                ['text' => $zarinpeystatus, 'callback_data' => "editpayment-zarinpey-$zarinpey"],
-                ['text' => "🟠 زرین پی", 'callback_data' => "zarinpey"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "aqayepardakhtsetting"],
-                ['text' => $aqayepardakhtstatus, 'callback_data' => "editpayment-aqayepardakht-$aqayepardakht"],
-                ['text' => "🔵 آقای پرداخت", 'callback_data' => "aqayepardakht"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "zarinpalsetting"],
-                ['text' => $zarinpalstatus, 'callback_data' => "editpayment-zarinpal-$zarinpal"],
-                ['text' => "🟡 زرین پال", 'callback_data' => "zarinpal"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "affilnecurrencysetting"],
-                ['text' => $affilnecurrencystatus, 'callback_data' => "editpayment-affilnecurrency-$affilnecurrency"],
-                ['text' => "💵ارزی آفلاین", 'callback_data' => "affilnecurrency"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "startelegram"],
-                ['text' => $paymentstar, 'callback_data' => "editpayment-startelegram-$paymentsstartelegram"],
-                ['text' => "💫Star Telegram", 'callback_data' => "none"],
-            ],
-            [
-                ['text' => "⬆️ حداکثر شارژ موجودی", 'callback_data' => "maxbalanceaccount"],
-                ['text' => "⬇️ حداقل شارژ موجودی", 'callback_data' => "mainbalanceaccount"],
-            ],
-            [
-                ['text' => "💼 آدرس ولت", 'callback_data' => "walletaddress"],
-            ],
-            [
-                ['text' => "❌ بستن", 'callback_data' => 'close_stat']
-            ],
-        ]
-    ]);
+    $Bot_Status = buildPaymentGatewayKeyboard($textbotlang);
     nm_adminInstantReply($from_id, "📌 از لیست زیر میتوانید درگاه ها را مدیریت کنید.
 
 ⚠️ تیم فاکسیما هیچ تضمینی برای درگاه ها نخواهد داشت و استفاده  و تمامی مسئولیت ها به عهده شما می باشد", $Bot_Status, 'HTML');
@@ -1606,27 +1827,61 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('getpricecashback', $from_id);
 } elseif ($user['step'] == "getpricecashback") {
     if (!ctype_digit($text)) {
-        nm_adminInstantReply($from_id, $textbotlang['Admin']['Product']['InvalidTime'], $backadmin, 'HTML');
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['Product']['Invalidtime'] ?? '❌ زمان نامعتبر است', $backadmin, 'HTML');
         return;
     }
     savedata("clear", "price_cashback", $text);
     nm_adminInstantReply($from_id, "📌 نوع کاربری را انتخاب نمایید", rx_agentGroupKeyboard(false), 'HTML');
     step('getagent', $from_id);
 } elseif ($user['step'] == "getagent") {
-    $text = rx_resolveAgentGroup($text, ['f', 'n', 'n2']);
+    $text = rx_resolveAgentGroupFromReplyButton($text, ['f', 'n', 'n2']);
     if ($text === null) {
         nm_adminInstantReply($from_id, "❌ گروه کاربری نامعتبر است", rx_agentGroupKeyboard(false), 'HTML');
         return;
     }
+    savedata("save", "cashback_agent_group", $text);
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step('getrenewcashtarget', $from_id);
+} elseif ($user['step'] == "getrenewcashtarget") {
+    $resolvedTarget = rx_resolveCashbackTargetFromReplyButton($text);
+    if ($resolvedTarget === null) {
+        nm_adminInstantReply($from_id, "❌ گزینه نامعتبر است، لطفا از دکمه های زیر انتخاب کنید", rx_cashbackTargetKeyboard(), 'HTML');
+        return;
+    }
+    if ($resolvedTarget === 'custom') {
+        savedata("save", "cashback_target", $resolvedTarget);
+        nm_adminInstantReply($from_id, "📌 تعداد روز مورد نظر را به صورت عدد وارد کنید (بین 1 تا 365)", $backadmin, 'HTML');
+        step("getrenewcashtargetdays", $from_id);
+        return;
+    }
     $userdata = json_decode($user['Processing_value'], true);
-    if ($text == "f") {
+    $agentGroup = $userdata['cashback_agent_group'] ?? 'f';
+    if ($agentGroup == "f") {
         update("shopSetting", "value", $userdata['price_cashback'], "Namevalue", "chashbackextend");
     } else {
         $shop_cashbackagent = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent")['value'], true);
-        $shop_cashbackagent[$text] = $userdata['price_cashback'];
+        $shop_cashbackagent[$agentGroup] = $userdata['price_cashback'];
         update("shopSetting", "value", json_encode($shop_cashbackagent), "Namevalue", "chashbackextend_agent");
     }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت تنظیم شد", $shopkeyboard, 'HTML');
+    update("shopSetting", "value", $resolvedTarget, "Namevalue", "chashbackextend_target");
+    nm_adminInstantReply($from_id, "✅ مبلغ و جامعه هدف با موفقیت تنظیم شد", $shopkeyboard, 'HTML');
+    step('home', $from_id);
+} elseif ($user['step'] == "getrenewcashtargetdays") {
+    if (!ctype_digit($text) || (int)$text < 1 || (int)$text > 365) {
+        nm_adminInstantReply($from_id, "❌ لطفا یک عدد صحیح بین 1 تا 365 ارسال کنید", $backadmin, 'HTML');
+        return;
+    }
+    $userdata = json_decode($user['Processing_value'], true);
+    $agentGroup = $userdata['cashback_agent_group'] ?? 'f';
+    if ($agentGroup == "f") {
+        update("shopSetting", "value", $userdata['price_cashback'], "Namevalue", "chashbackextend");
+    } else {
+        $shop_cashbackagent = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent")['value'], true);
+        $shop_cashbackagent[$agentGroup] = $userdata['price_cashback'];
+        update("shopSetting", "value", json_encode($shop_cashbackagent), "Namevalue", "chashbackextend_agent");
+    }
+    update("shopSetting", "value", "custom:" . (int)$text, "Namevalue", "chashbackextend_target");
+    nm_adminInstantReply($from_id, "✅ مبلغ و جامعه هدف با موفقیت تنظیم شد", $shopkeyboard, 'HTML');
     step('home', $from_id);
 } elseif (preg_match('/^editpayment-(.*)-(.*)/', $datain, $dataget)) {
     $type = $dataget[1];
@@ -1645,13 +1900,6 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             $valuenew = "onnowpayment";
         }
         update("PaySetting", "ValuePay", $valuenew, "NamePay", "nowpaymentstatus");
-    } elseif ($type == "arzireyali1") {
-        if ($value == "onSwapinoBot") {
-            $valuenew = "offSwapinoBot";
-        } else {
-            $valuenew = "onSwapinoBot";
-        }
-        update("PaySetting", "ValuePay", $valuenew, "NamePay", "statusSwapWallet");
     } elseif ($type == "arzireyali2") {
         if ($value == "onternado") {
             $valuenew = "offternado";
@@ -1659,20 +1907,6 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             $valuenew = "onternado";
         }
         update("PaySetting", "ValuePay", $valuenew, "NamePay", "statustarnado");
-    } elseif ($type == "aqayepardakht") {
-        if ($value == "onaqayepardakht") {
-            $valuenew = "offaqayepardakht";
-        } else {
-            $valuenew = "onaqayepardakht";
-        }
-        update("PaySetting", "ValuePay", $valuenew, "NamePay", "statusaqayepardakht");
-    } elseif ($type == "zarinpey") {
-        if ($value == "onzarinpey") {
-            $valuenew = "offzarinpey";
-        } else {
-            $valuenew = "onzarinpey";
-        }
-        update("PaySetting", "ValuePay", $valuenew, "NamePay", "zarinpeystatus");
     } elseif ($type == "zarinpal") {
         if ($value == "onzarinpal") {
             $valuenew = "offzarinpal";
@@ -1687,13 +1921,6 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             $valuenew = "ondigi";
         }
         update("PaySetting", "ValuePay", $valuenew, "NamePay", "digistatus");
-    } elseif ($type == "oniranpay3") {
-        if ($value == "oniranpay3") {
-            $valuenew = "offiranpay3";
-        } else {
-            $valuenew = "oniranpay3";
-        }
-        update("PaySetting", "ValuePay", $valuenew, "NamePay", "statusiranpay3");
     } elseif ($type == "startelegram") {
         if ($value == "1") {
             $valuenew = "0";
@@ -1708,141 +1935,47 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             $valuenew = "1";
         }
         update("PaySetting", "ValuePay", $valuenew, "NamePay", "statusnowpayment");
+    } elseif ($type == "tonpay") {
+        if ($value == "ontonpay") {
+            $valuenew = "offtonpay";
+        } else {
+            $valuenew = "ontonpay";
+        }
+        update("PaySetting", "ValuePay", $valuenew, "NamePay", "statustonpay");
+    } elseif ($type == "cubepay") {
+        if ($value == "oncubepay") {
+            $valuenew = "offcubepay";
+        } else {
+            $valuenew = "oncubepay";
+        }
+        update("PaySetting", "ValuePay", $valuenew, "NamePay", "statuscubepay");
+    } elseif ($type == "blupal") {
+        if ($value == "onblupal") {
+            $valuenew = "offblupal";
+        } else {
+            $valuenew = "onblupal";
+        }
+        update("PaySetting", "ValuePay", $valuenew, "NamePay", "statusblupal");
+    } elseif ($type == "atlaspay") {
+        if ($value == "onatlaspay") {
+            $valuenew = "offatlaspay";
+        } else {
+            $valuenew = "onatlaspay";
+        }
+        update("PaySetting", "ValuePay", $valuenew, "NamePay", "statusatlaspay");
+    } elseif ($type == "tetrapay") {
+        if ($value == "ontetrapay") {
+            $valuenew = "offtetrapay";
+        } else {
+            $valuenew = "ontetrapay";
+        }
+        update("PaySetting", "ValuePay", $valuenew, "NamePay", "statustetrapay");
     }
-    $zarinpal = getPaySettingValue('zarinpalstatus', 'offzarinpal');
-    $cartotcart = getPaySettingValue('Cartstatus', 'offcard');
-    $plisio = getPaySettingValue('nowpaymentstatus', 'offnowpayment');
-    $arzireyali1 = getPaySettingValue('statusSwapWallet', 'offSwapinoBot');
-    $arzireyali2 = getPaySettingValue('statustarnado', 'offternado');
-    $aqayepardakht = getPaySettingValue('statusaqayepardakht', 'offaqayepardakht');
-    $zarinpey = getPaySettingValue('zarinpeystatus', 'offzarinpey');
-    $affilnecurrency = getPaySettingValue('digistatus', 'offdigi');
-    $arzireyali3 = getPaySettingValue('statusiranpay3', 'offiranpay3');
-    $paymentstatussnotverify = getPaySettingValue('paymentstatussnotverify', 'offpaymentstatus');
-    $paymentsstartelegram = getPaySettingValue('statusstar', '0');
-    $payment_status_nowpayment = getPaySettingValue('statusnowpayment', '0');
-    $cartotcartstatus = [
-        'oncard' => $textbotlang['Admin']['Status']['statuson'],
-        'offcard' => $textbotlang['Admin']['Status']['statusoff']
-    ][$cartotcart];
-    $plisiostatus = [
-        'onnowpayment' => $textbotlang['Admin']['Status']['statuson'],
-        'offnowpayment' => $textbotlang['Admin']['Status']['statusoff']
-    ][$plisio];
-    $arzireyali1status = [
-        'onSwapinoBot' => $textbotlang['Admin']['Status']['statuson'],
-        'offSwapinoBot' => $textbotlang['Admin']['Status']['statusoff']
-    ][$arzireyali1];
-    $arzireyali2status = [
-        'onternado' => $textbotlang['Admin']['Status']['statuson'],
-        'offternado' => $textbotlang['Admin']['Status']['statusoff']
-    ][$arzireyali2];
-    $aqayepardakhtstatus = [
-        'onaqayepardakht' => $textbotlang['Admin']['Status']['statuson'],
-        'offaqayepardakht' => $textbotlang['Admin']['Status']['statusoff']
-    ][$aqayepardakht];
-    $zarinpeystatus = [
-        'onzarinpey' => $textbotlang['Admin']['Status']['statuson'],
-        'offzarinpey' => $textbotlang['Admin']['Status']['statusoff']
-    ][$zarinpey];
-    $zarinpalstatus = [
-        'onzarinpal' => $textbotlang['Admin']['Status']['statuson'],
-        'offzarinpal' => $textbotlang['Admin']['Status']['statusoff']
-    ][$zarinpal];
-    $affilnecurrencystatus = [
-        'ondigi' => $textbotlang['Admin']['Status']['statuson'],
-        'offdigi' => $textbotlang['Admin']['Status']['statusoff']
-    ][$affilnecurrency];
-    $arzireyali3text = [
-        'oniranpay3' => $textbotlang['Admin']['Status']['statuson'],
-        'offiranpay3' => $textbotlang['Admin']['Status']['statusoff']
-    ][$arzireyali3];
-    $paymentstar = [
-        '1' => $textbotlang['Admin']['Status']['statuson'],
-        '0' => $textbotlang['Admin']['Status']['statusoff']
-    ][$paymentsstartelegram];
-    $now_payment_status = [
-        '1' => $textbotlang['Admin']['Status']['statuson'],
-        '0' => $textbotlang['Admin']['Status']['statusoff']
-    ][$payment_status_nowpayment];
-    $Bot_Status = json_encode([
-        'inline_keyboard' => [
-            [
-                ['text' => "عملیات", 'callback_data' => "actions"],
-                ['text' => $textbotlang['Admin']['Status']['statussubject'], 'callback_data' => "subjectde"],
-                ['text' => $textbotlang['Admin']['Status']['subject'], 'callback_data' => "subject"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "cartsetting"],
-                ['text' => $cartotcartstatus, 'callback_data' => "editpayment-Cartstatus-$cartotcart"],
-                ['text' => "🔌 کارت به کارت", 'callback_data' => "carttocart"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "plisiosetting"],
-                ['text' => $plisiostatus, 'callback_data' => "editpayment-plisio-$plisio"],
-                ['text' => "📌 plisio", 'callback_data' => "plisio"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "nowpaymentsetting"],
-                ['text' => $now_payment_status, 'callback_data' => "editpayment-nowpayment-$payment_status_nowpayment"],
-                ['text' => "📌 nowpayment", 'callback_data' => "nowpayment"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "iranpay1setting"],
-                ['text' => $arzireyali1status, 'callback_data' => "editpayment-arzireyali1-$arzireyali1"],
-                ['text' => rx_iranpay_label($datatextbot, 'iranpay2', "📌 ارزی ریالی اول"), 'callback_data' => "arzireyali1"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "iranpay2setting"],
-                ['text' => $arzireyali2status, 'callback_data' => "editpayment-arzireyali2-$arzireyali2"],
-                ['text' => rx_iranpay_label($datatextbot, 'iranpay3', "📌 ارزی ریالی دوم"), 'callback_data' => "arzireyali2"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "iranpay3setting"],
-                ['text' => $arzireyali3text, 'callback_data' => "editpayment-oniranpay3-$arzireyali3"],
-                ['text' => rx_iranpay_label($datatextbot, 'iranpay1', "📌ارزی ریالی سوم"), 'callback_data' => "oniranpay3"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "zarinpeysetting"],
-                ['text' => $zarinpeystatus, 'callback_data' => "editpayment-zarinpey-$zarinpey"],
-                ['text' => "🟠 زرین پی", 'callback_data' => "zarinpey"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "aqayepardakhtsetting"],
-                ['text' => $aqayepardakhtstatus, 'callback_data' => "editpayment-aqayepardakht-$aqayepardakht"],
-                ['text' => "🔵 آقای پرداخت", 'callback_data' => "aqayepardakht"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "zarinpalsetting"],
-                ['text' => $zarinpalstatus, 'callback_data' => "editpayment-zarinpal-$zarinpal"],
-                ['text' => "🟡 زرین پال", 'callback_data' => "zarinpal"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "affilnecurrencysetting"],
-                ['text' => $affilnecurrencystatus, 'callback_data' => "editpayment-affilnecurrency-$affilnecurrency"],
-                ['text' => "💵ارزی آفلاین", 'callback_data' => "affilnecurrency"],
-            ],
-            [
-                ['text' => "⚙️ تنظیمات", 'callback_data' => "startelegram"],
-                ['text' => $paymentstar, 'callback_data' => "editpayment-startelegram-$paymentsstartelegram"],
-                ['text' => "💫Star Telegram", 'callback_data' => "none"],
-            ],
-            [
-                ['text' => "⬆️ حداکثر شارژ موجودی", 'callback_data' => "maxbalanceaccount"],
-                ['text' => "⬇️ حداقل شارژ موجودی", 'callback_data' => "mainbalanceaccount"],
-            ],
-            [
-                ['text' => "💼 آدرس ولت", 'callback_data' => "walletaddress"],
-            ],
-            [
-                ['text' => "❌ بستن", 'callback_data' => 'close_stat']
-            ],
-        ]
-    ]);
+    $Bot_Status = buildPaymentGatewayKeyboard($textbotlang);
     Editmessagetext($from_id, $message_id, "📌 از لیست زیر میتوانید درگاه ها را مدیریت کنید.
 
 ⚠️ تیم فاکسیما هیچ تضمینی برای درگاه ها نخواهد داشت و استفاده  و تمامی مسئولیت ها به عهده شما می باشد", $Bot_Status);
-} elseif ($text == "💰 کش بک کارت به کارت") {
+} elseif ($text == "💰 کش‌بک کارت") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
     step("getcashcart", $from_id);
 } elseif ($user['step'] == "getcashcart") {
@@ -1850,21 +1983,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "chashbackcart");
-} elseif ($text == "💰 کش بک آقای پرداخت") {
-    nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
-    step("getcashahaypar", $from_id);
-} elseif ($user['step'] == "getcashahaypar") {
-    if (!ctype_digit($text)) {
-        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
-        return;
-    }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "chashbackaqaypardokht");
-} elseif ($text == "💰 کش بک ارزی ریالی دوم") {
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbackcart");
+    savedata("save", "cashback_menu", "CartManage");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
+} elseif ($text == "💰 کش بک ترونادو") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
     step("getcashiranpay2", $from_id);
 } elseif ($user['step'] == "getcashiranpay2") {
@@ -1872,31 +1996,76 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت ذخیره گردید.", $trnado, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "chashbackiranpay2");
-} elseif ($text == "💰 کش بک ارزی ریالی سوم") {
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbackiranpay2");
+    savedata("save", "cashback_menu", "trnado");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
+} elseif ($text == "💰 کش بک تون‌پی") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
-    step("getcashiranpay4", $from_id);
-} elseif ($user['step'] == "getcashiranpay4") {
+    step("getcashtonpay", $from_id);
+} elseif ($user['step'] == "getcashtonpay") {
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "chashbackiranpay3");
-} elseif ($text == "💰 کش بک ارزی ریالی") {
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbacktonpay");
+    savedata("save", "cashback_menu", "tonpay");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
+} elseif ($text == "💰 کش بک بلوپال") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
-    step("getcashiranpay1", $from_id);
-} elseif ($user['step'] == "getcashiranpay1") {
+    step("getcashblupal", $from_id);
+} elseif ($user['step'] == "getcashblupal") {
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت ذخیره گردید.", $Swapinokey, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "chashbackiranpay1");
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbackblupal");
+    savedata("save", "cashback_menu", "blupal");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
+} elseif ($text == "💰 کش بک اطلس‌پی") {
+    nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
+    step("getcashatlaspay", $from_id);
+} elseif ($user['step'] == "getcashatlaspay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbackatlaspay");
+    savedata("save", "cashback_menu", "atlaspay");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
+} elseif ($text == "💰 کش بک تتراپی") {
+    nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
+    step("getcashtetrapay", $from_id);
+} elseif ($user['step'] == "getcashtetrapay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbacktetrapay");
+    savedata("save", "cashback_menu", "tetrapay");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
+} elseif ($text == "💰 کش بک کیوب‌پی") {
+    nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
+    step("getcashcubepay", $from_id);
+} elseif ($user['step'] == "getcashcubepay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbackcubepay");
+    savedata("save", "cashback_menu", "cubepay");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
 } elseif ($text == "💰 کش بک plisio") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
     step("getcashplisio", $from_id);
@@ -1905,9 +2074,11 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "chashbackplisio");
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbackplisio");
+    savedata("save", "cashback_menu", "NowPaymentsManage");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
 } elseif ($text == "💰 کش بک nowpayment") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
     step("getcashnowpayment", $from_id);
@@ -1916,9 +2087,11 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت ذخیره گردید.", $nowpayment_setting_keyboard, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "cashbacknowpayment");
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "cashbacknowpayment");
+    savedata("save", "cashback_menu", "nowpayment_setting_keyboard");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
 } elseif ($text == "💰 کش بک زرین پال") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
     step("getcashzarinpal", $from_id);
@@ -1927,789 +2100,126 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت ذخیره گردید.", $keyboardzarinpal, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "chashbackzarinpal");
-} elseif ($text == "📦 انبار شبکه ملی" && $adminrulecheck['rule'] == "administrator") {
-
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    if (!$panel) {
-
-        nm_replyOrEdit($from_id, "❌ پنل انتخاب نشده است. لطفاً ابتدا از منوی «مدیریت پنل ها» یک پنل را انتخاب کنید و سپس به این بخش بیایید.", $keyboardadmin, 'HTML');
-        step('home', $from_id);
+    savedata("clear", "cashback_percent", $text);
+    savedata("save", "cashback_key", "chashbackzarinpal");
+    savedata("save", "cashback_menu", "keyboardzarinpal");
+    nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
+    step("getcashtarget", $from_id);
+} elseif ($user['step'] == "getcashtarget") {
+    $resolvedTarget = rx_resolveCashbackTargetFromReplyButton($text);
+    if ($resolvedTarget === null) {
+        nm_adminInstantReply($from_id, "❌ گزینه نامعتبر است، لطفا از دکمه های زیر انتخاب کنید", rx_cashbackTargetKeyboard(), 'HTML');
         return;
     }
-
-    savedata("clear", "namepanel", $panel['name_panel']);
-    savedata("save", "code_panel", $panel['code_panel']);
-    $panelCode = $panel['code_panel'];
-    $stockKeyboard = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : json_encode(['keyboard'=>[[['text'=>'🏠 بازگشت به منوی مدیریت']]],'resize_keyboard'=>true]);
-    nm_replyOrEdit($from_id, nmStockShelfStatusText($panelCode) . "\n\n📌 پنل فعال: <b>" . htmlspecialchars($panel['name_panel'], ENT_QUOTES, 'UTF-8') . "</b>\n\nابتدا برای هر محصول یک انبار بسازید؛ مثلا «انبار 10 گیگ». بعد کانفیگ‌ها را داخل همان انبار وارد کنید تا ربات دقیقاً بداند کدام کانفیگ برای کدام محصول/حجم/مدت است.", $stockKeyboard, 'HTML');
-    step('home', $from_id);
-
-} elseif (($text == "🚨 پنل اضطراری" || $text == "🌐 وضعیت نت ملی") && $adminrulecheck['rule'] == "administrator") {
+    if ($resolvedTarget === 'custom') {
+        savedata("save", "cashback_target", $resolvedTarget);
+        nm_adminInstantReply($from_id, "📌 تعداد روز مورد نظر را به صورت عدد وارد کنید (بین 1 تا 365)", $backadmin, 'HTML');
+        step("getcashtargetdays", $from_id);
+        return;
+    }
+    savedata("save", "cashback_target", $resolvedTarget);
+    savedata("save", "cashback_scope", rx_cashbackScopeDefault());
+    nm_adminInstantReply($from_id, "📌 این کش‌بک روی کدام بخش‌ها اعمال شود؟", json_encode(['inline_keyboard' => rx_cashbackScopeKeyboardRows('cbscope_', rx_cashbackScopeDefault())], JSON_UNESCAPED_UNICODE), 'HTML');
+    step("getcashscope", $from_id);
+} elseif ($user['step'] == "getcashtargetdays") {
+    if (!ctype_digit($text) || (int)$text < 1 || (int)$text > 365) {
+        nm_adminInstantReply($from_id, "❌ لطفا یک عدد صحیح بین 1 تا 365 ارسال کنید", $backadmin, 'HTML');
+        return;
+    }
+    savedata("save", "cashback_target", "custom:" . (int)$text);
+    savedata("save", "cashback_scope", rx_cashbackScopeDefault());
+    nm_adminInstantReply($from_id, "📌 این کش‌بک روی کدام بخش‌ها اعمال شود؟", json_encode(['inline_keyboard' => rx_cashbackScopeKeyboardRows('cbscope_', rx_cashbackScopeDefault())], JSON_UNESCAPED_UNICODE), 'HTML');
+    step("getcashscope", $from_id);
+} elseif (preg_match('/^cbscope_toggle#(\w+)/', $datain, $dataget) && $user['step'] == "getcashscope") {
+    $scopeKey = $dataget[1];
+    $userdata = json_decode($user['Processing_value'], true);
+    $selected = is_array($userdata['cashback_scope'] ?? null) ? $userdata['cashback_scope'] : rx_cashbackScopeDefault();
+    if (in_array($scopeKey, $selected, true)) {
+        $selected = array_values(array_diff($selected, [$scopeKey]));
+    } else {
+        $selected[] = $scopeKey;
+        $selected = array_values($selected);
+    }
+    savedata("save", "cashback_scope", $selected);
+    Editmessagetext($from_id, $message_id, "📌 این کش‌بک روی کدام بخش‌ها اعمال شود؟", json_encode(['inline_keyboard' => rx_cashbackScopeKeyboardRows('cbscope_', $selected)], JSON_UNESCAPED_UNICODE), 'HTML');
+    telegram('answerCallbackQuery', ['callback_query_id' => $callback_query_id, 'cache_time' => 0]);
+} elseif ($datain == "cbscope_all" && $user['step'] == "getcashscope") {
+    $userdata = json_decode($user['Processing_value'], true);
+    $selected = is_array($userdata['cashback_scope'] ?? null) ? $userdata['cashback_scope'] : [];
+    $allDefault = rx_cashbackScopeDefault();
+    $isAllSelected = count(array_diff($allDefault, $selected)) === 0 && count($selected) === count($allDefault);
+    $selected = $isAllSelected ? [] : $allDefault;
+    savedata("save", "cashback_scope", $selected);
+    Editmessagetext($from_id, $message_id, "📌 این کش‌بک روی کدام بخش‌ها اعمال شود؟", json_encode(['inline_keyboard' => rx_cashbackScopeKeyboardRows('cbscope_', $selected)], JSON_UNESCAPED_UNICODE), 'HTML');
+    telegram('answerCallbackQuery', ['callback_query_id' => $callback_query_id, 'cache_time' => 0]);
+} elseif ($datain == "cbscope_confirm" && $user['step'] == "getcashscope") {
+    $cashbackMenus = [
+        'CartManage' => $CartManage,
+        'trnado' => $trnado,
+        'tonpay' => $tonpay,
+        'blupal' => $blupal,
+        'cubepay' => $cubepay,
+        'NowPaymentsManage' => $NowPaymentsManage,
+        'nowpayment_setting_keyboard' => $nowpayment_setting_keyboard,
+        'keyboardzarinpal' => $keyboardzarinpal,
+    ];
+    $userdata = json_decode($user['Processing_value'], true);
+    $cashbackKey = $userdata['cashback_key'] ?? '';
+    $cashbackPercent = $userdata['cashback_percent'] ?? '0';
+    $cashbackMenuKey = $userdata['cashback_menu'] ?? '';
+    $cashbackTarget = $userdata['cashback_target'] ?? 'all';
+    $selectedScope = is_array($userdata['cashback_scope'] ?? null) ? $userdata['cashback_scope'] : rx_cashbackScopeDefault();
+    if ($cashbackKey === '') {
+        telegram('answerCallbackQuery', ['callback_query_id' => $callback_query_id, 'text' => $textbotlang['Admin']['agent']['invalidvlue'], 'show_alert' => true]);
+        step("home", $from_id);
+        return;
+    }
+    if (empty($selectedScope)) {
+        telegram('answerCallbackQuery', ['callback_query_id' => $callback_query_id, 'text' => '❌ حداقل یک بخش را انتخاب کنید یا گزینه «همه موارد» را بزنید.', 'show_alert' => true]);
+        return;
+    }
+    $allDefault = rx_cashbackScopeDefault();
+    $isAllSelected = count(array_diff($allDefault, $selectedScope)) === 0 && count($selectedScope) === count($allDefault);
+    $scopeToSave = $isAllSelected ? 'all' : implode(',', $selectedScope);
+    update("PaySetting", "ValuePay", $cashbackPercent, "NamePay", $cashbackKey);
+    update("PaySetting", "ValuePay", $cashbackTarget, "NamePay", $cashbackKey . "_target");
+    update("PaySetting", "ValuePay", $scopeToSave, "NamePay", $cashbackKey . "_scope");
+    $backKeyboard = $cashbackMenus[$cashbackMenuKey] ?? $backadmin;
+    if (!empty($message_id)) {
+        deletemessage($from_id, $message_id);
+    }
+    nm_adminInstantReply($from_id, "✅ مبلغ، جامعه هدف و بخش‌های اعمال با موفقیت ذخیره گردید.", $backKeyboard, 'HTML');
+    telegram('answerCallbackQuery', ['callback_query_id' => $callback_query_id, 'cache_time' => 0]);
+    step("home", $from_id);
+} elseif ($text == "🌐 وضعیت نت ملی" && $adminrulecheck['rule'] == "administrator") {
     $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
     if (!$panel) { nm_replyOrEdit($from_id, "❌ پنل انتخاب نشده است. ابتدا از منوی «مدیریت پنل ها» یک پنل را انتخاب کنید.", $keyboardadmin, 'HTML'); step('home', $from_id); return; }
-
     savedata("save", "namepanel", $panel['name_panel']);
     savedata("save", "code_panel", $panel['code_panel']);
-    $slimNationalKb = function_exists('nmNationalEmergencyMenuKeyboard') ? nmNationalEmergencyMenuKeyboard() : $optionManualsale;
-    if ($text == "🚨 پنل اضطراری") {
-        $newStatus = nmPanelEmergencyEnabled($panel) ? 'off_emergency_panel' : 'on_emergency_panel';
-        update("marzban_panel", "emergency_panel_status", $newStatus, "code_panel", $panel['code_panel']);
-        if ($newStatus === 'on_emergency_panel' && empty($panel['emergency_source_panel'])) {
-            nm_replyOrEdit($from_id, "✅ پنل اضطراری روشن شد.\n\n📌 حالا روی «📌 ثبت پنل اضطراری» بزنید و یک پنل جداگانه از پنل‌های ثبت‌شده انتخاب کنید. تا وقتی پنل اضطراری انتخاب نشود، فقط وضعیت روشن است و جایگزینی انجام نمی‌شود.", $slimNationalKb, 'HTML');
-        }
+    $newStatus = (function_exists('nmPanelNationalEnabled') && nmPanelNationalEnabled($panel)) ? 'off_national_net' : 'on_national_net';
+    update("marzban_panel", "national_net_status", $newStatus, "code_panel", $panel['code_panel']);
+    if ($newStatus === 'on_national_net' && empty($panel['stock_source_panel'])) {
+        update("marzban_panel", "stock_source_panel", $panel['code_panel'], "code_panel", $panel['code_panel']);
+    }
+    if ($newStatus === 'on_national_net') {
+        nm_replyOrEdit($from_id, "✅ وضعیت نت ملی برای این پنل روشن شد.\n\n📦 حالا کانفیگ‌های انبار و بقیه تنظیمات (افزودن پلن و ...) را از «پنل وب» انجام دهید.\n\nℹ️ از این پس خرید کاربر از این پنل، از انبار تحویل داده می‌شود.", $keyboardadmin, 'HTML');
     } else {
-        $newStatus = nmPanelNationalEnabled($panel) ? 'off_national_net' : 'on_national_net';
-        update("marzban_panel", "national_net_status", $newStatus, "code_panel", $panel['code_panel']);
-        if (empty($panel['stock_source_panel'])) update("marzban_panel", "stock_source_panel", $panel['code_panel'], "code_panel", $panel['code_panel']);
+        nm_replyOrEdit($from_id, "❌ وضعیت نت ملی برای این پنل خاموش شد. خرید دوباره مستقیم روی پنل انجام می‌شود.", $keyboardadmin, 'HTML');
     }
-    $panel = select("marzban_panel", "*", "code_panel", $panel['code_panel'], "select");
-    nm_replyOrEdit($from_id, nmStockAdminPanelStatusText($panel), $slimNationalKb, 'HTML');
-
-} elseif ($text == "📌 ثبت پنل اضطراری" && $adminrulecheck['rule'] == "administrator") {
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    if (!$panel) { nm_replyOrEdit($from_id, "❌ پنل اصلی انتخاب نشده است. ابتدا از منوی «مدیریت پنل ها» یک پنل را انتخاب کنید.", $keyboardadmin, 'HTML'); step('home', $from_id); return; }
-    if (!nmPanelEmergencyEnabled($panel)) { nm_replyOrEdit($from_id, "❌ اول گزینه «🚨 پنل اضطراری» را روشن کنید، سپس پنل اضطراری را ثبت کنید.", $optionManualsale, 'HTML'); return; }
-
-    savedata("save", "namepanel", $panel['name_panel']);
-    savedata("save", "code_panel", $panel['code_panel']);
-    $rows = [];
-    $stmt = $pdo->prepare("SELECT name_panel FROM marzban_panel WHERE code_panel <> :code ORDER BY name_panel ASC");
-    $stmt->execute([':code' => $panel['code_panel']]);
-    while ($r = $stmt->fetch(PDO::FETCH_ASSOC)) $rows[] = [['text' => $r['name_panel']]];
-    $rows[] = [['text' => "🏠 بازگشت به منوی مدیریت"]];
-    $rowsKeyboardArray = ['keyboard'=>$rows,'resize_keyboard'=>true];
-    $rowsKeyboard = (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline'))
-        ? rx_keyboardToInline($rowsKeyboardArray)
-        : json_encode($rowsKeyboardArray, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    nm_replyOrEdit($from_id, "📌 پنل جداگانه‌ای که باید در حالت اضطراری جایگزین پنل فعلی شود را انتخاب کنید.\n\n⚠️ این پنل باید قبلاً از بخش افزودن پنل ثبت شده باشد؛ مثل مرزبان، مرزنشین، سنایی، تک‌پورت و ...", $rowsKeyboard, 'HTML');
-    step('nm_select_emergency_panel', $from_id);
-
-} elseif ($user['step'] == "nm_select_emergency_panel" && $adminrulecheck['rule'] == "administrator") {
-    $mainPanel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    $emPanel = select("marzban_panel", "*", "name_panel", $text, "select");
-    if (!$mainPanel || !$emPanel || $mainPanel['code_panel'] == $emPanel['code_panel']) {
-        nm_replyOrEdit($from_id, "❌ پنل انتخابی معتبر نیست.", $optionManualsale, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    update("marzban_panel", "emergency_source_panel", $emPanel['code_panel'], "code_panel", $mainPanel['code_panel']);
-    $cnt = nmStockSyncProductMap($emPanel['code_panel'], $emPanel['code_panel'], $user['agent'] ?? 'all');
-    $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-    nm_replyOrEdit($from_id, "✅ پنل اضطراری ثبت شد: <b>{$emPanel['name_panel']}</b>\n\nاز این به بعد اگر پنل اصلی قطع باشد، ساخت/تمدید/حجم اضافه ابتدا با این پنل انجام می‌شود. محصولات پنل اضطراری همگام شدند: {$cnt}", $stockKb, 'HTML');
     step('home', $from_id);
-
-} elseif ($text == "🔄 همگام‌سازی محصولات انبار" && $adminrulecheck['rule'] == "administrator") {
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    if (!$panel) { nm_replyOrEdit($from_id, "❌ پنل انتخاب نشده است. ابتدا از منوی «مدیریت پنل ها» یک پنل را انتخاب کنید و سپس به «📦 انبار شبکه ملی» بیایید.", $keyboardadmin, 'HTML'); step('home', $from_id); return; }
-    savedata("save", "namepanel", $panel['name_panel']);
-    savedata("save", "code_panel", $panel['code_panel']);
-    $count = nmStockSyncProductMap($panel['code_panel'], nmPanelResolveStockCode($panel), $user['agent'] ?? 'all');
-    $emPanel = nmPanelEmergencyPanel($panel);
-    if ($emPanel) $count += nmStockSyncProductMap($emPanel['code_panel'], $emPanel['code_panel'], $user['agent'] ?? 'all');
-    $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-    nm_replyOrEdit($from_id, "✅ همگام‌سازی محصولات انجام شد.\n\nتعداد محصولات: {$count}\n\n" . nmStockShelfStatusText($panel['code_panel']), $stockKb, 'HTML');
-
-} elseif ($text == "📊 گزارش موجودی انبار" && $adminrulecheck['rule'] == "administrator") {
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    $panelCode = is_array($panel) ? $panel['code_panel'] : 'auto';
-    nm_replyOrEdit($from_id, nmStockShelfStatusText($panelCode) . "\n\n" . nmStockStatusText($panelCode), null, 'HTML');
-
-} elseif ($text == "➕ افزودن انبار مدنظر" && $adminrulecheck['rule'] == "administrator") {
-    nm_replyOrEdit($from_id, "📌 نام انبار را ارسال کنید.\n\nمثال: <code>انبار 10 گیگ 30 روزه</code>\nبعد از ثبت، دسته‌بندی و محصول فروشگاه را انتخاب می‌کنید و دفعات بعد کانفیگ‌ها مستقیم داخل همین انبار ثبت می‌شوند.", $backadmin, 'HTML');
-    step('nm_shelf_name', $from_id);
-
-} elseif ($user['step'] == "nm_shelf_name" && $adminrulecheck['rule'] == "administrator") {
-    $shelfNameRaw = trim((string)$text);
-    if ($shelfNameRaw === '' || $shelfNameRaw[0] === '{' || $shelfNameRaw[0] === '[' || mb_strlen($shelfNameRaw, 'UTF-8') > 120) {
-        nm_replyOrEdit($from_id, "❌ نام انبار نامعتبر است. یک نام ساده (حداکثر ۱۲۰ کاراکتر) بدون کاراکترهای {، [ یا کد JSON ارسال کنید.\n\nمثال: <code>انبار 10 گیگ 30 روزه</code>", $backadmin, 'HTML');
-        return;
-    }
-    $currentPanel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    savedata("clear", "nm_shelf_name", $shelfNameRaw);
-    if ($currentPanel) {
-        savedata("save", "namepanel", $currentPanel['name_panel']);
-        savedata("save", "code_panel", $currentPanel['code_panel']);
-    }
-    if (function_exists('nmAnyNationalNetEnabled') && nmAnyNationalNetEnabled()) {
-        $panelKeyboard = function_exists('nmNationalAdminPanelKeyboard') ? nmNationalAdminPanelKeyboard() : $json_list_marzban_panel;
-        nm_replyOrEdit($from_id, "📌 وضعیت نت ملی / پنل اضطراری روشن است؛ ابتدا پنلی که این انبار برای آن ساخته می‌شود را انتخاب کنید.", $panelKeyboard, 'HTML');
-        step('nm_shelf_panel', $from_id);
-        return;
-    }
-    $catCountOff = function_exists('nmAdminCategoryCount') ? nmAdminCategoryCount(null) : -1;
-    $catCountOffPanel = function_exists('nmAdminCategoryCount') ? nmAdminCategoryCount($currentPanel ?: null) : -1;
-    error_log(sprintf('[STOCK_SHELF_CAT] step=nm_shelf_name user=%s national=0 panel=%s category_count_global=%d category_count_panel=%d', (string)$from_id, (string)(is_array($currentPanel) ? ($currentPanel['name_panel'] ?? '∅') : '∅'), $catCountOff, $catCountOffPanel));
-    $rowsKeyboard = function_exists('nmNationalAdminCategoryKeyboard') ? nmNationalAdminCategoryKeyboard() : json_encode(['keyboard'=>[[['text'=>'بدون دسته‌بندی']],[['text'=>'🏠 بازگشت به منوی مدیریت']]],'resize_keyboard'=>true], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    nm_replyOrEdit($from_id, "📌 دسته‌بندی محصول این انبار را انتخاب کنید.", $rowsKeyboard, 'HTML');
-    step('nm_shelf_category', $from_id);
-
-} elseif ($user['step'] == "nm_shelf_panel" && $adminrulecheck['rule'] == "administrator") {
-    if ($text == "❌ پنلی پیدا نشد") {
-        nm_replyOrEdit($from_id, "❌ پنل فعالی پیدا نشد. ابتدا از منوی مدیریت یک پنل فعال ثبت کنید.", $optionManualsale, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-
-    $panel = function_exists('nmResolveActivePanelByName') ? nmResolveActivePanelByName($text) : select("marzban_panel", "*", "name_panel", $text, "select");
-    if (!$panel) $panel = select("marzban_panel", "*", "name_panel", $text, "select");
-    if (!$panel && function_exists('nmResolvePanelFromUserState')) $panel = nmResolvePanelFromUserState(null, $text);
+} elseif ($text == "🔄 تغییر نوع پنل" && $adminrulecheck['rule'] == "administrator") {
+    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : null;
     if (!$panel) {
-        error_log(sprintf('[STOCK_SHELF_CAT] step=nm_shelf_panel user=%s panel_pick_unresolved text=%s', (string)$from_id, (string)$text));
-        nm_replyOrEdit($from_id, "❌ پنل انتخاب‌شده پیدا نشد. لطفاً یکی از دکمه‌های لیست پنل‌ها را انتخاب کنید.", function_exists('nmNationalAdminPanelKeyboard') ? nmNationalAdminPanelKeyboard() : $json_list_marzban_panel, 'HTML');
-        return;
-    }
-    savedata("save", "namepanel", $panel['name_panel']);
-    savedata("save", "code_panel", $panel['code_panel']);
-    $catCount = function_exists('nmAdminCategoryCount') ? nmAdminCategoryCount(null) : -1;
-    $catCountPanel = function_exists('nmAdminCategoryCount') ? nmAdminCategoryCount($panel) : -1;
-    error_log(sprintf('[STOCK_SHELF_CAT] step=nm_shelf_panel user=%s national=1 panel=%s category_count_global=%d category_count_panel=%d', (string)$from_id, (string)($panel['name_panel'] ?? '∅'), $catCount, $catCountPanel));
-    $rowsKeyboard = function_exists('nmNationalAdminCategoryKeyboard') ? nmNationalAdminCategoryKeyboard() : json_encode(['keyboard'=>[[['text'=>'بدون دسته‌بندی']],[['text'=>'🏠 بازگشت به منوی مدیریت']]],'resize_keyboard'=>true], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    nm_replyOrEdit($from_id, "📌 حالا دسته‌بندی محصول این انبار را انتخاب کنید.", $rowsKeyboard, 'HTML');
-    step('nm_shelf_category', $from_id);
-
-} elseif ($user['step'] == "nm_shelf_category" && $adminrulecheck['rule'] == "administrator") {
-    $cat = $text === "بدون دسته‌بندی" ? null : $text;
-    savedata("save", "nm_shelf_category", $cat ?: "");
-    $freshUser = select("user", "*", "id", $from_id, "select");
-    $data = json_decode($freshUser['Processing_value'] ?? $user['Processing_value'], true) ?: [];
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($freshUser ?: $user, $data['namepanel'] ?? null) : select("marzban_panel", "*", "name_panel", $data['namepanel'] ?? '', "select");
-    if (!$panel) { nm_replyOrEdit($from_id, "❌ پنل انتخاب‌شده پیدا نشد. لطفاً دوباره انبار را ثبت کنید و ابتدا پنل را انتخاب کنید.", $optionManualsale, 'HTML'); step('home', $from_id); return; }
-    $rows = [];
-    $products = function_exists('nmProductsForPanelCategory') ? nmProductsForPanelCategory($panel, $user['agent'] ?? 'all', $cat) : [];
-    if (!$products) {
-        $stmt = $pdo->prepare("SELECT * FROM product WHERE (Location=:loc OR Location='/all') ORDER BY CAST(price_product AS UNSIGNED) ASC");
-        $stmt->execute([':loc' => $panel['name_panel']]);
-        $products = $stmt->fetchAll(PDO::FETCH_ASSOC) ?: [];
-    }
-    foreach ($products as $r) $rows[] = [['text' => $r['name_product']]];
-    if (!$rows) $rows[] = [['text' => "❌ محصولی پیدا نشد"]];
-    $rows[] = [['text' => "🏠 بازگشت به منوی مدیریت"]];
-    $rowsKeyboardArray = ['keyboard'=>$rows,'resize_keyboard'=>true];
-    $rowsKeyboard = (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline'))
-        ? rx_keyboardToInline($rowsKeyboardArray)
-        : json_encode($rowsKeyboardArray, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    nm_replyOrEdit($from_id, "📌 محصولی که این انبار باید به آن وصل شود را انتخاب کنید.\n\nربات از حجم و مدت همین محصول تشخیص می‌دهد کانفیگ واردشده برای چند گیگ و چند روز است.", $rowsKeyboard, 'HTML');
-    step('nm_shelf_product', $from_id);
-
-} elseif ($user['step'] == "nm_shelf_product" && $adminrulecheck['rule'] == "administrator") {
-    $freshUser = select("user", "*", "id", $from_id, "select");
-    $data = json_decode($freshUser['Processing_value'] ?? $user['Processing_value'], true) ?: [];
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($freshUser ?: $user, $data['namepanel'] ?? null) : select("marzban_panel", "*", "name_panel", $data['namepanel'] ?? $user['Processing_value'], "select");
-    if (!$panel) $panel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    $categoryName = $data['nm_shelf_category'] ?? null;
-    if (function_exists('nmProductByNameForShelf')) {
-        $product = nmProductByNameForShelf($text, $panel ?: [], $user['agent'] ?? 'all', $categoryName);
-    } elseif (function_exists('nmProductByNameForPanel')) {
-        $product = nmProductByNameForPanel($text, $panel['name_panel'] ?? '', $user['agent'] ?? null, $categoryName);
-    } else {
-        $product = select("product", "*", "name_product", $text, "select");
-    }
-    if (!$product || !$panel) { nm_replyOrEdit($from_id, "❌ محصول یا پنل پیدا نشد.", $optionManualsale, 'HTML'); step('home', $from_id); return; }
-    nmStockShelfCreate($data['nm_shelf_name'] ?? ('انبار '.$product['name_product']), $panel, $product, null, $categoryName);
-    update("marzban_panel", "stock_source_panel", $panel['code_panel'], "code_panel", $panel['code_panel']);
-    $stockKbAfterCreate = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-    nm_replyOrEdit($from_id, "✅ انبار ثبت شد.\n\nنام: <b>".htmlspecialchars($data['nm_shelf_name'] ?? '', ENT_QUOTES, 'UTF-8')."</b>\nمحصول: <b>{$product['name_product']}</b>\nحجم: {$product['Volume_constraint']} گیگ\nمدت: {$product['Service_time']} روز\n\nحالا از «➕ وارد کردن دسته‌ای انبار» یا «➕ افزودن کانفیگ تکی انبار» کانفیگ وارد کنید.", $stockKbAfterCreate, 'HTML');
-    step('home', $from_id);
-
-} elseif (($text == "➕ وارد کردن دسته‌ای انبار" || $text == "➕ افزودن کانفیگ تکی انبار") && $adminrulecheck['rule'] == "administrator") {
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    if (!$panel) { nm_replyOrEdit($from_id, "❌ پنل انتخاب نشده است. لطفاً ابتدا از منوی مدیریت پنل ها یک پنل را انتخاب کنید و سپس وارد بخش انبار شبکه ملی شوید.", $keyboardadmin, 'HTML'); step('home', $from_id); return; }
-
-    savedata("save", "namepanel", $panel['name_panel']);
-    savedata("save", "code_panel", $panel['code_panel']);
-    savedata("save", "nm_stock_import_mode", $text == "➕ افزودن کانفیگ تکی انبار" ? "single" : "bulk");
-
-    if (function_exists('nmStockSessionClear')) nmStockSessionClear($from_id);
-    if (function_exists('nmStockSessionPatch')) {
-        nmStockSessionPatch($from_id, ['mode' => ($text == "➕ افزودن کانفیگ تکی انبار" ? "single" : "bulk")]);
-    }
-    $shelfKeyboard = nmStockShelfKeyboard($panel['code_panel']);
-    if (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline')) {
-        $decodedShelfKeyboard = json_decode($shelfKeyboard, true);
-        if (isset($decodedShelfKeyboard['keyboard'])) $shelfKeyboard = rx_keyboardToInline($decodedShelfKeyboard);
-    }
-    nm_replyOrEdit($from_id, "📌 انباری که کانفیگ‌ها باید داخل آن ثبت شوند را انتخاب کنید.", $shelfKeyboard, 'HTML');
-    step('nm_stock_select_shelf_import', $from_id);
-
-} elseif ($user['step'] == "nm_stock_select_shelf_import" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user, $data['namepanel'] ?? null) : select("marzban_panel", "*", "name_panel", $data['namepanel'] ?? $user['Processing_value'], "select");
-    $chosen = null;
-    $needle = trim((string)$text);
-
-    $candidateLists = [nmStockShelves($panel['code_panel'] ?? null, false)];
-    if (!empty($panel['code_panel'])) $candidateLists[] = nmStockShelves(null, false);
-    foreach ($candidateLists as $list) {
-        foreach ($list as $shelf) {
-            $shelfName = trim((string)($shelf['name'] ?? ''));
-            if ($shelfName === '') continue;
-            if ($needle === $shelfName || strpos($needle, $shelfName) !== false) { $chosen = $shelf; break 2; }
-        }
-    }
-    if (!$chosen) {
-        $availableNames = [];
-        foreach ($candidateLists as $list) {
-            foreach ($list as $sh) { $availableNames[] = (string)($sh['name'] ?? ''); }
-        }
-        $availableNames = array_values(array_unique(array_filter($availableNames)));
-        error_log(sprintf(
-            '[STOCK_SHELF_MISS] step=nm_stock_select_shelf_import user=%s panel_code=%s panel_name=%s needle=%s data=%s available_count=%d names=%s',
-            (string)$from_id,
-            (string)($panel['code_panel'] ?? '∅'),
-            (string)($panel['name_panel'] ?? '∅'),
-            $needle,
-            json_encode($data, JSON_UNESCAPED_UNICODE),
-            count($availableNames),
-            json_encode($availableNames, JSON_UNESCAPED_UNICODE)
-        ));
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_replyOrEdit($from_id, "❌ انبار انتخابی پیدا نشد. لطفاً از همان لیست روی یک انبار بزنید.", $stockKb, 'HTML');
+        nm_replyOrEdit($from_id, "❌ پنل انتخاب نشده است. ابتدا از منوی «مدیریت پنل ها» یک پنل را انتخاب کنید.", $keyboardadmin, 'HTML');
         step('home', $from_id);
         return;
     }
-    error_log(sprintf(
-        '[STOCK_SHELF_PICK] step=nm_stock_select_shelf_import user=%s chosen_id=%s chosen_name=%s pre_pv=%s',
-        (string)$from_id,
-        var_export($chosen['id'] ?? null, true),
-        (string)($chosen['name'] ?? '∅'),
-        (string)($user['Processing_value'] ?? '∅')
-    ));
-
-    nmStockSetActiveShelf($from_id, $chosen['id']);
-
-    $postWrite = select("user", "Processing_value", "id", $from_id, "select", ['cache' => false]);
-    error_log(sprintf(
-        '[STOCK_SHELF_PICK] post_save_pv=%s',
-        is_array($postWrite) ? (string)($postWrite['Processing_value'] ?? '∅') : '∅'
-    ));
-
-    $askSubKbArr = [
-        'keyboard' => [
-            [['text' => "✅ بله، لینک اشتراک هم دارم"], ['text' => "🚫 خیر، فقط کانفیگ"]],
-            [['text' => "🔗 فقط لینک اشتراک (بدون کانفیگ)"]],
-            [['text' => "🏠 بازگشت به منوی مدیریت"]],
-        ],
-        'resize_keyboard' => true,
-    ];
-    $askSubKb = (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline'))
-        ? rx_keyboardToInline($askSubKbArr)
-        : json_encode($askSubKbArr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    nm_replyOrEdit($from_id, "📌 چه چیزی برای این انبار وارد می‌کنید؟\n\n✅ <b>کانفیگ + لینک اشتراک</b>: هر کانفیگ به‌همراه لینک اشتراکش.\n🚫 <b>فقط کانفیگ</b>: بدون لینک اشتراک.\n🔗 <b>فقط لینک اشتراک</b>: بدون کانفیگ تکی، فقط لینک(های) اشتراک.\n\nانبار: <b>{$chosen['name']}</b>\nمحصول: <b>{$chosen['product_name']}</b>", $askSubKb, 'HTML');
-    step('nm_stock_ask_has_sub', $from_id);
-
-} elseif ($user['step'] == "nm_stock_ask_has_sub" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $shelf = nmStockActiveShelf($user, $data);
-    if (!$shelf) {
-        error_log(sprintf(
-            '[STOCK_SHELF_INVALID] step=nm_stock_ask_has_sub user=%s nm_shelf_id=%s nm_shelf_active=%s data=%s text=%s',
-            (string)$from_id,
-            var_export($data['nm_shelf_id'] ?? null, true),
-            var_export($user['nm_shelf_active'] ?? null, true),
-            json_encode($data, JSON_UNESCAPED_UNICODE),
-            (string)$text
-        ));
-        nmStockRepromptShelf($from_id, $user);
-        return;
-    }
-
-    nmStockSetActiveShelf($from_id, $shelf['id']);
-    $session = nmStockSessionGet($user);
-    $mode = $session['mode'] ?? ($data['nm_stock_import_mode'] ?? 'bulk');
-    if ($text == "✅ بله، لینک اشتراک هم دارم") {
-        nmStockSessionPatch($from_id, ['has_sub' => '1', 'pending_cfg' => '', 'imported' => 0]);
-        $endKbArr = [
-            'keyboard' => [
-                [['text' => "🏁 پایان ورود کانفیگ‌ها"]],
-                [['text' => "🏠 بازگشت به منوی مدیریت"]],
-            ],
-            'resize_keyboard' => true,
-        ];
-        $endKb = (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline'))
-            ? rx_keyboardToInline($endKbArr)
-            : json_encode($endKbArr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-        $headMsg = $mode === 'single'
-            ? "📌 لطفاً کانفیگ تکی را ارسال کنید.\n\nبعد از آن، لینک اشتراک متناظرش را خواهم خواست."
-            : "📌 لطفاً اولین کانفیگ را ارسال کنید.\n\nبعد از هر کانفیگ، لینک اشتراک آن را می‌خواهم؛ سپس کانفیگ بعدی و لینک بعدی به‌صورت پشت‌به‌پشت.\n\nهر زمان خواستید پایان دهید روی «🏁 پایان ورود کانفیگ‌ها» بزنید.";
-        nm_replyOrEdit($from_id, $headMsg, $endKb, 'HTML');
-        step('nm_stock_paired_cfg', $from_id);
-    } elseif ($text == "🚫 خیر، فقط کانفیگ") {
-        nmStockSessionPatch($from_id, ['has_sub' => '0', 'imported' => 0]);
-        $msg = $mode === 'single'
-            ? "📌 کانفیگ تکی را ارسال کنید."
-            : "📌 کانفیگ‌ها را هر خط یک مورد ارسال کنید.\n\nاین کانفیگ‌ها داخل انبار <b>{$shelf['name']}</b> و محصول <b>{$shelf['product_name']}</b> ثبت می‌شوند.";
-        nm_replyOrEdit($from_id, $msg, $backadmin, 'HTML');
-        step('nm_stock_bulk_import', $from_id);
-    } elseif ($text == "🔗 فقط لینک اشتراک (بدون کانفیگ)") {
-        nmStockSessionPatch($from_id, ['has_sub' => 'link_only', 'imported' => 0]);
-        $msg = $mode === 'single'
-            ? "📌 لینک اشتراک را ارسال کنید (بدون کانفیگ تکی).\n\nباید یک آدرس کامل با <code>http(s)://</code> باشد."
-            : "📌 لینک(های) اشتراک را هر خط یک مورد ارسال کنید (بدون کانفیگ تکی).\n\nهر خط باید یک آدرس کامل با <code>http(s)://</code> باشد.\nاین لینک‌ها داخل انبار <b>{$shelf['name']}</b> و محصول <b>{$shelf['product_name']}</b> ثبت می‌شوند.";
-        nm_replyOrEdit($from_id, $msg, $backadmin, 'HTML');
-        step('nm_stock_linkonly_import', $from_id);
-    } else {
-        $stockKbErr2 = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_replyOrEdit($from_id, "❌ یکی از گزینه‌های زیر را انتخاب کنید.", $stockKbErr2, 'HTML');
-        step('home', $from_id);
-    }
-
-} elseif ($user['step'] == "nm_stock_paired_cfg" && $adminrulecheck['rule'] == "administrator") {
-
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $shelf = nmStockActiveShelf($user, $data);
-    if (!$shelf) {
-        error_log(sprintf(
-            '[STOCK_SHELF_INVALID] step=nm_stock_paired_cfg user=%s nm_shelf_id=%s nm_shelf_active=%s data=%s',
-            (string)$from_id,
-            var_export($data['nm_shelf_id'] ?? null, true),
-            var_export($user['nm_shelf_active'] ?? null, true),
-            json_encode($data, JSON_UNESCAPED_UNICODE)
-        ));
-        nmStockRepromptShelf($from_id, $user);
-        return;
-    }
-    $session = nmStockSessionGet($user);
-    $mode = $session['mode'] ?? ($data['nm_stock_import_mode'] ?? 'bulk');
-    $imported = (int)($session['imported'] ?? ($data['nm_stock_imported'] ?? 0));
-    if ($text == "🏁 پایان ورود کانفیگ‌ها") {
-        $stockKbDone1 = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_replyOrEdit($from_id, "✅ ورود جفتی کانفیگ‌ها پایان یافت.\n\nانبار: <b>{$shelf['name']}</b>\nمحصول: <b>{$shelf['product_name']}</b>\n➕ تعداد ثبت‌شده در این جلسه: {$imported}\n\n" . nmStockShelfStatusText($shelf['source_codepanel']), $stockKbDone1, 'HTML');
-        if (function_exists('nmStockClearActiveShelf')) nmStockClearActiveShelf($from_id);
-        step('home', $from_id);
-        return;
-    }
-    $cfg = trim((string)$text);
-    if ($cfg === '' || mb_strlen($cfg, 'UTF-8') < 8) {
-        nm_replyOrEdit($from_id, "❌ کانفیگ معتبر نیست. لطفاً مجدداً ارسال کنید.", $backadmin, 'HTML');
-        return;
-    }
-
-    nmStockSessionPatch($from_id, ['pending_cfg' => $cfg]);
-    $endKbArr = [
-        'keyboard' => [
-            [['text' => "↩️ بدون لینک اشتراک ثبت کن"]],
-            [['text' => "🏁 پایان ورود کانفیگ‌ها"]],
-            [['text' => "🏠 بازگشت به منوی مدیریت"]],
-        ],
-        'resize_keyboard' => true,
-    ];
-    $endKb = (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline'))
-        ? rx_keyboardToInline($endKbArr)
-        : json_encode($endKbArr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    nm_replyOrEdit($from_id, "📌 حالا لینک اشتراک (Subscription URL) متناظر با همین کانفیگ را ارسال کنید.\n\nاگر برای این کانفیگ خاص لینک ندارید، روی «↩️ بدون لینک اشتراک ثبت کن» بزنید تا فقط خود کانفیگ ذخیره شود.", $endKb, 'HTML');
-    step('nm_stock_paired_sub', $from_id);
-
-} elseif ($user['step'] == "nm_stock_paired_sub" && $adminrulecheck['rule'] == "administrator") {
-
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $shelf = nmStockActiveShelf($user, $data);
-    if (!$shelf) {
-        error_log(sprintf(
-            '[STOCK_SHELF_INVALID] step=nm_stock_paired_sub user=%s nm_shelf_id=%s nm_shelf_active=%s data=%s',
-            (string)$from_id,
-            var_export($data['nm_shelf_id'] ?? null, true),
-            var_export($user['nm_shelf_active'] ?? null, true),
-            json_encode($data, JSON_UNESCAPED_UNICODE)
-        ));
-        nmStockRepromptShelf($from_id, $user);
-        return;
-    }
-    $session = nmStockSessionGet($user);
-    $cfg = (string)($session['pending_cfg'] ?? ($data['nm_stock_pending_cfg'] ?? ''));
-    if ($cfg === '') {
-        nm_replyOrEdit($from_id, "❌ کانفیگ pending پیدا نشد. دوباره ارسال کنید.", $backadmin, 'HTML');
-        step('nm_stock_paired_cfg', $from_id);
-        return;
-    }
-    $mode = $session['mode'] ?? ($data['nm_stock_import_mode'] ?? 'bulk');
-    $imported = (int)($session['imported'] ?? ($data['nm_stock_imported'] ?? 0));
-    if ($text == "🏁 پایان ورود کانفیگ‌ها") {
-
-        nmStockSessionPatch($from_id, ['pending_cfg' => '']);
-        $stockKbDone2 = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_replyOrEdit($from_id, "✅ ورود جفتی کانفیگ‌ها پایان یافت.\n\n⚠️ آخرین کانفیگ ارسالی به‌دلیل نداشتن لینک اشتراک ذخیره نشد.\n\nانبار: <b>{$shelf['name']}</b>\nمحصول: <b>{$shelf['product_name']}</b>\n➕ تعداد ثبت‌شده در این جلسه: {$imported}\n\n" . nmStockShelfStatusText($shelf['source_codepanel']), $stockKbDone2, 'HTML');
-        if (function_exists('nmStockClearActiveShelf')) nmStockClearActiveShelf($from_id);
-        step('home', $from_id);
-        return;
-    }
-    $sub = null;
-    if ($text == "↩️ بدون لینک اشتراک ثبت کن") {
-        $sub = null;
-    } else {
-        $candidate = trim((string)$text);
-        if ($candidate === '' || !preg_match('#^https?://\S+$#i', $candidate)) {
-            nm_replyOrEdit($from_id, "❌ لینک اشتراک معتبر نیست. لطفاً یک URL کامل با http(s):// ارسال کنید یا روی «↩️ بدون لینک اشتراک ثبت کن» بزنید.", $backadmin, 'HTML');
-            return;
-        }
-        $sub = $candidate;
-    }
-
-    $result = nmStockImportBatch($shelf['stock_codepanel'], $shelf['codeproduct'], $cfg, $shelf['volume_gb'], $shelf['id'], $sub);
-    $imported += (int)($result['ok'] ?? 0);
-    nmStockSessionPatch($from_id, ['imported' => $imported, 'pending_cfg' => '']);
-    if ($mode === 'single') {
-        $stockKbDone3 = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_replyOrEdit($from_id, "✅ کانفیگ تکی همراه با لینک اشتراک ذخیره شد.\n\nانبار: <b>{$shelf['name']}</b>\nمحصول: <b>{$shelf['product_name']}</b>\n➕ ثبت‌شده: {$result['ok']}\n♻️ تکراری: {$result['duplicate']}\n⚠️ نامعتبر: {$result['bad']}\n\n" . nmStockShelfStatusText($shelf['source_codepanel']), $stockKbDone3, 'HTML');
-        if (function_exists('nmStockClearActiveShelf')) nmStockClearActiveShelf($from_id);
-        step('home', $from_id);
-        return;
-    }
-
-    $endKbArr = [
-        'keyboard' => [
-            [['text' => "🏁 پایان ورود کانفیگ‌ها"]],
-            [['text' => "🏠 بازگشت به منوی مدیریت"]],
-        ],
-        'resize_keyboard' => true,
-    ];
-    $endKb = (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline'))
-        ? rx_keyboardToInline($endKbArr)
-        : json_encode($endKbArr, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    nm_replyOrEdit($from_id, "✅ جفت کانفیگ + لینک ثبت شد. (تعداد ثبت‌شده تا اینجا: {$imported})\n\n📌 کانفیگ بعدی را ارسال کنید یا روی «🏁 پایان ورود کانفیگ‌ها» بزنید.", $endKb, 'HTML');
-    step('nm_stock_paired_cfg', $from_id);
-
-} elseif ($user['step'] == "nm_stock_bulk_import" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $shelf = nmStockActiveShelf($user, $data);
-    if (!$shelf) {
-        error_log(sprintf(
-            '[STOCK_SHELF_INVALID] step=nm_stock_bulk_import user=%s nm_shelf_id=%s nm_shelf_active=%s data=%s',
-            (string)$from_id,
-            var_export($data['nm_shelf_id'] ?? null, true),
-            var_export($user['nm_shelf_active'] ?? null, true),
-            json_encode($data, JSON_UNESCAPED_UNICODE)
-        ));
-        nmStockRepromptShelf($from_id, $user);
-        return;
-    }
-    $raw = $text;
-    $sub = null;
-    if (preg_match('/^(.+?)\nSUB=(https?:\/\/\S+)/is', $raw, $m)) { $raw = trim($m[1]); $sub = trim($m[2]); }
-    $result = nmStockImportBatch($shelf['stock_codepanel'], $shelf['codeproduct'], $raw, $shelf['volume_gb'], $shelf['id'], $sub);
-    $stockKbBulk = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-    nm_replyOrEdit($from_id, "✅ واردسازی انبار انجام شد.\n\nانبار: <b>{$shelf['name']}</b>\nمحصول: <b>{$shelf['product_name']}</b>\n➕ ثبت‌شده: {$result['ok']}\n♻️ تکراری: {$result['duplicate']}\n⚠️ نامعتبر: {$result['bad']}\n\n" . nmStockShelfStatusText($shelf['source_codepanel']), $stockKbBulk, 'HTML');
-    if (function_exists('nmStockClearActiveShelf')) nmStockClearActiveShelf($from_id);
-    step('home', $from_id);
-
-} elseif ($user['step'] == "nm_stock_linkonly_import" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $shelf = nmStockActiveShelf($user, $data);
-    if (!$shelf) {
-        error_log(sprintf(
-            '[STOCK_SHELF_INVALID] step=nm_stock_linkonly_import user=%s nm_shelf_id=%s nm_shelf_active=%s data=%s',
-            (string)$from_id,
-            var_export($data['nm_shelf_id'] ?? null, true),
-            var_export($user['nm_shelf_active'] ?? null, true),
-            json_encode($data, JSON_UNESCAPED_UNICODE)
-        ));
-        nmStockRepromptShelf($from_id, $user);
-        return;
-    }
-    $raw = trim((string)$text);
-    if ($raw === '') {
-        nm_replyOrEdit($from_id, "❌ چیزی دریافت نشد. لطفاً لینک(های) اشتراک را ارسال کنید.", $backadmin, 'HTML');
-        return;
-    }
-    $result = nmStockImportLinkOnly($shelf['stock_codepanel'], $shelf['codeproduct'], $raw, $shelf['volume_gb'], $shelf['id']);
-    $stockKbLink = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-    nm_replyOrEdit($from_id, "✅ واردسازی لینک‌های اشتراک انجام شد.\n\nانبار: <b>{$shelf['name']}</b>\nمحصول: <b>{$shelf['product_name']}</b>\n🔗 ثبت‌شده: {$result['ok']}\n♻️ تکراری: {$result['duplicate']}\n⚠️ نامعتبر (آدرس غیرمعتبر): {$result['bad']}\n\n" . nmStockShelfStatusText($shelf['source_codepanel']), $stockKbLink, 'HTML');
-    if (function_exists('nmStockClearActiveShelf')) nmStockClearActiveShelf($from_id);
-    step('home', $from_id);
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    $shelfKeyboard = nmStockShelfKeyboard($panel['code_panel'] ?? null);
-    if (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline')) {
-        $decodedShelfKeyboard = json_decode($shelfKeyboard, true);
-        if (isset($decodedShelfKeyboard['keyboard'])) $shelfKeyboard = rx_keyboardToInline($decodedShelfKeyboard);
-    }
-    nm_replyOrEdit($from_id, "📌 برای ویرایش اتصال انبار، همان انبار را انتخاب کنید؛ سپس نام/دسته/محصول را دوباره ثبت کنید.", $shelfKeyboard, 'HTML');
-    step('nm_edit_shelf_select', $from_id);
-
-} elseif ($user['step'] == "nm_edit_shelf_select" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user, $data['namepanel'] ?? null) : select("marzban_panel", "*", "name_panel", $data['namepanel'] ?? $user['Processing_value'], "select");
-    $chosen = null;
-    foreach (nmStockShelves($panel['code_panel'] ?? null, false) as $shelf) if (strpos($text, $shelf['name']) !== false) { $chosen = $shelf; break; }
-    if (!$chosen) { nm_replyOrEdit($from_id, "❌ انبار پیدا نشد.", $optionManualsale, 'HTML'); step('home', $from_id); return; }
-    savedata("clear", "nm_shelf_name", $user['Processing_value']);
-    savedata("save", "nm_shelf_name", $chosen['name']);
-    nm_replyOrEdit($from_id, "📌 نام جدید انبار را ارسال کنید یا همین نام را مجدد ارسال کنید:\n<code>{$chosen['name']}</code>", $backadmin, 'HTML');
-    step('nm_shelf_name', $from_id);
-
-} elseif ($text == "🗑 حذف کامل انبار" && $adminrulecheck['rule'] == "administrator") {
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    $shelfKeyboard = nmStockShelfKeyboard($panel['code_panel'] ?? null);
-    if (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline')) {
-        $decodedShelfKeyboard = json_decode($shelfKeyboard, true);
-        if (isset($decodedShelfKeyboard['keyboard'])) $shelfKeyboard = rx_keyboardToInline($decodedShelfKeyboard);
-    }
-    nm_replyOrEdit($from_id, "📌 انباری که می‌خواهید کاملاً حذف شود را انتخاب کنید.\n\n⚠️ همه کانفیگ‌های این انبار هم با آن حذف می‌شوند.", $shelfKeyboard, 'HTML');
-    step('nm_delete_shelf_select', $from_id);
-
-} elseif ($user['step'] == "nm_delete_shelf_select" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user, $data['namepanel'] ?? null) : select("marzban_panel", "*", "name_panel", $data['namepanel'] ?? $user['Processing_value'], "select");
-    $needle = trim((string)$text);
-    $chosen = null;
-    foreach (nmStockShelves($panel['code_panel'] ?? null, false) as $shelf) {
-        $shelfName = trim((string)($shelf['name'] ?? ''));
-        if ($shelfName !== '' && ($needle === $shelfName || strpos($needle, $shelfName) !== false)) { $chosen = $shelf; break; }
-    }
-    if (!$chosen) {
-        foreach (nmStockShelves(null, false) as $shelf) {
-            $shelfName = trim((string)($shelf['name'] ?? ''));
-            if ($shelfName !== '' && ($needle === $shelfName || strpos($needle, $shelfName) !== false)) { $chosen = $shelf; break; }
-        }
-    }
-    if (!$chosen) {
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_replyOrEdit($from_id, "❌ انبار پیدا نشد.", $stockKb, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    savedata("save", "nm_shelf_delete_id", (string)$chosen['id']);
-    $kb = json_encode([
-        'inline_keyboard' => [
-            [['text' => '✅ تایید حذف کامل', 'callback_data' => 'nm_shelf_del:confirm:' . (int)$chosen['id']]],
-            [['text' => '❌ لغو',           'callback_data' => 'nm_shelf_del:cancel']],
-        ],
-    ], JSON_UNESCAPED_UNICODE);
-    nm_replyOrEdit($from_id, "⚠️ آیا انبار <b>" . htmlspecialchars($chosen['name']) . "</b> به همراه همه کانفیگ‌های آن حذف شود؟", $kb, 'HTML');
-    step('nm_delete_shelf_confirm', $from_id);
-
-} elseif (isset($datain) && is_string($datain) && strpos($datain, 'nm_shelf_del:') === 0 && in_array($from_id, $admin_ids)) {
-    $parts = explode(':', $datain);
-    $act = $parts[1] ?? '';
-    if ($act === 'cancel') {
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_adminInstantReply($from_id, "❎ حذف انبار لغو شد.", $stockKb, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    if ($act === 'confirm') {
-        $sid = (int)($parts[2] ?? 0);
-        if ($sid > 0) {
-            try {
-                $pdo->prepare("UPDATE nm_config_stock SET status='disabled' WHERE shelf_id=:sid")->execute([':sid'=>$sid]);
-                $pdo->prepare("DELETE FROM nm_stock_shelves WHERE id=:id")->execute([':id'=>$sid]);
-            } catch (Throwable $e) { error_log('shelf delete failed: '.$e->getMessage()); }
-        }
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        if (!empty($message_id) && function_exists('Editmessagetext')) {
-            Editmessagetext($from_id, $message_id, "✅ انبار و کانفیگ‌های آن حذف شدند.", null, 'HTML');
-        }
-        nm_adminInstantReply($from_id, "🗑 انبار حذف شد.", $stockKb, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-
-} elseif ($text == "❌ حذف کانفیگ انبار" && $adminrulecheck['rule'] == "administrator") {
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user) : select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
-    $shelfKeyboard = nmStockShelfKeyboard($panel['code_panel'] ?? null);
-    if (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline')) {
-        $decodedShelfKeyboard = json_decode($shelfKeyboard, true);
-        if (isset($decodedShelfKeyboard['keyboard'])) $shelfKeyboard = rx_keyboardToInline($decodedShelfKeyboard);
-    }
-    nm_replyOrEdit($from_id, "📌 انبار موردنظر برای حذف کانفیگ را انتخاب کنید.", $shelfKeyboard, 'HTML');
-    step('nm_delete_stock_select_shelf', $from_id);
-
-} elseif ($user['step'] == "nm_delete_stock_select_shelf" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $panel = function_exists('nmResolvePanelFromUserState') ? nmResolvePanelFromUserState($user, $data['namepanel'] ?? null) : select("marzban_panel", "*", "name_panel", $data['namepanel'] ?? $user['Processing_value'], "select");
-    $chosen = null;
-    $needle = trim((string)$text);
-    foreach (nmStockShelves($panel['code_panel'] ?? null, false) as $shelf) {
-        $shelfName = trim((string)($shelf['name'] ?? ''));
-        if ($shelfName !== '' && ($needle === $shelfName || strpos($needle, $shelfName) !== false)) { $chosen = $shelf; break; }
-    }
-    if (!$chosen) {
-
-        foreach (nmStockShelves(null, false) as $shelf) {
-            $shelfName = trim((string)($shelf['name'] ?? ''));
-            if ($shelfName !== '' && ($needle === $shelfName || strpos($needle, $shelfName) !== false)) { $chosen = $shelf; break; }
-        }
-    }
-    if (!$chosen) {
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_replyOrEdit($from_id, "❌ انبار پیدا نشد. لطفاً مجدد از لیست انتخاب کنید.", $stockKb, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    savedata("save", "nm_shelf_id", $chosen['id']);
-    $rows = [
-        [['text' => "🗑 حذف همه کانفیگ‌های فعال این انبار"]],
-        [['text' => "🔢 حذف کانفیگ با آیدی"]],
-        [['text' => "📋 نمایش لیست کانفیگ‌ها"]],
-        [['text' => "🔙 بازگشت به انبار"]],
-    ];
-    $rowsKeyboardArray = ['keyboard'=>$rows,'resize_keyboard'=>true];
-    $rowsKeyboard = (isset($setting['inlinebtnmain']) && $setting['inlinebtnmain'] == "oninline" && function_exists('rx_keyboardToInline'))
-        ? rx_keyboardToInline($rowsKeyboardArray)
-        : json_encode($rowsKeyboardArray, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
-    nm_replyOrEdit($from_id, "📌 نوع حذف را انتخاب کنید.\n\nانبار: <b>{$chosen['name']}</b>", $rowsKeyboard, 'HTML');
-    step('nm_delete_stock_action', $from_id);
-
-} elseif ($user['step'] == "nm_delete_stock_action" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $sid = (int)($data['nm_shelf_id'] ?? 0);
-
-    if ($text == "🗑 حذف همه کانفیگ‌های فعال این انبار" || $text == "حذف همه کانفیگ‌های فعال این انبار" || $datain == "nm_del_all_stock") {
-        $stmt = $pdo->prepare("UPDATE nm_config_stock SET status='disabled' WHERE shelf_id=:sid AND status='active'");
-        $stmt->execute([':sid' => $sid]);
-        $count = $stmt->rowCount();
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_adminInstantReply($from_id, "✅ عملیات حذف انجام شد.\nتعداد حذف‌شده: {$count}", $stockKb, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-
-    if ($text == "🔢 حذف کانفیگ با آیدی") {
-        nm_adminInstantReply($from_id, "🔢 آیدی عددی کانفیگ موردنظر را ارسال کنید.\n\nبرای مشاهده آیدی‌ها می‌توانید از «📋 نمایش لیست کانفیگ‌ها» استفاده کنید.", json_encode(['keyboard'=>[[['text'=>'🔙 بازگشت به انبار']]],'resize_keyboard'=>true], JSON_UNESCAPED_UNICODE), 'HTML');
-        step('nm_stock_delete_by_id', $from_id);
-        return;
-    }
-
-    if ($text == "📋 نمایش لیست کانفیگ‌ها") {
-        if (!function_exists('nmStockConfigInlineList')) {
-            nm_adminInstantReply($from_id, "❌ تابع لیست در دسترس نیست.", $optionManualsale, 'HTML');
-            step('home', $from_id);
-            return;
-        }
-        $list = nmStockConfigInlineList($sid, 0, 10, 'nm_cfg');
-        if ((int)$list['count'] === 0) {
-            $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-            nm_adminInstantReply($from_id, "ℹ️ هیچ کانفیگ فعالی در این انبار وجود ندارد.", $stockKb, 'HTML');
-            step('home', $from_id);
-            return;
-        }
-        nm_adminInstantReply($from_id, "📋 لیست کانفیگ‌های فعال — صفحه ۱:\n<i>روی هر آیتم بزنید تا جزئیات و دکمه حذف باز شود.</i>", $list['keyboard'], 'HTML');
-        step('home', $from_id);
-        return;
-    }
-
-    nm_adminInstantReply($from_id, "❌ گزینه نامعتبر.", $optionManualsale, 'HTML');
-    step('home', $from_id);
-
-} elseif ($user['step'] == "nm_stock_delete_by_id" && $adminrulecheck['rule'] == "administrator") {
-    $data = json_decode($user['Processing_value'], true) ?: [];
-    $sid = (int)($data['nm_shelf_id'] ?? 0);
-    $cfgId = (int)trim((string)$text);
-    if ($cfgId <= 0) {
-        nm_adminInstantReply($from_id, "❌ آیدی نامعتبر است. لطفاً یک عدد صحیح ارسال کنید.", null, 'HTML');
-        return;
-    }
-    $stmt = $pdo->prepare("SELECT id, content, status, shelf_id FROM nm_config_stock WHERE id = :id LIMIT 1");
-    $stmt->execute([':id' => $cfgId]);
-    $row = $stmt->fetch(PDO::FETCH_ASSOC);
-    if (!$row) {
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_adminInstantReply($from_id, "❌ کانفیگی با این آیدی پیدا نشد.", $stockKb, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    if ($sid > 0 && (int)$row['shelf_id'] !== $sid) {
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_adminInstantReply($from_id, "❌ این کانفیگ متعلق به انبار انتخاب‌شده نیست.", $stockKb, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    savedata("save", "nm_pending_cfg_delete", (string)$cfgId);
-    $info = function_exists('nmStockExtractConfigInfo') ? nmStockExtractConfigInfo($row['content']) : ['username'=>'—','port'=>'—','host'=>'—'];
-    $preview = mb_substr((string)$row['content'], 0, 80, 'UTF-8') . (mb_strlen((string)$row['content'], 'UTF-8') > 80 ? '…' : '');
-    $msg = "🧾 جزئیات کانفیگ #<b>{$cfgId}</b>\n"
-         . "👤 نام کاربری: <code>" . htmlspecialchars($info['username'] !== '' ? $info['username'] : '—') . "</code>\n"
-         . "🔌 پورت: <code>" . htmlspecialchars($info['port'] !== '' ? $info['port'] : '—') . "</code>\n"
-         . "🌐 هاست: <code>" . htmlspecialchars($info['host'] !== '' ? $info['host'] : '—') . "</code>\n"
-         . "📋 پیش‌نمایش: <code>" . htmlspecialchars($preview) . "</code>\n\nآیا حذف شود؟";
-    $kb = json_encode([
-        'inline_keyboard' => [
-            [['text' => '✅ تایید حذف', 'callback_data' => 'nm_cfg:del:' . $cfgId]],
-            [['text' => '❌ لغو',       'callback_data' => 'nm_cfg:cancel']],
-        ],
-    ], JSON_UNESCAPED_UNICODE);
-    nm_adminInstantReply($from_id, $msg, $kb, 'HTML');
-    step('nm_stock_delete_confirm', $from_id);
-
-} elseif (isset($datain) && is_string($datain) && strpos($datain, 'nm_cfg:') === 0 && in_array($from_id, $admin_ids)) {
-    $parts = explode(':', $datain);
-    $action = $parts[1] ?? '';
-    $arg    = $parts[2] ?? '';
-    if ($action === 'close' || $action === 'cancel') {
-        $stockKb = function_exists('nmStockManageKeyboard') ? nmStockManageKeyboard() : $optionManualsale;
-        nm_adminInstantReply($from_id, "❎ لغو شد.", $stockKb, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    if ($action === 'page') {
-        $data = json_decode($user['Processing_value'], true) ?: [];
-        $sid = (int)($data['nm_shelf_id'] ?? 0);
-        $page = max(0, (int)$arg);
-        $list = nmStockConfigInlineList($sid, $page, 10, 'nm_cfg');
-        if (!empty($message_id) && function_exists('Editmessagetext')) {
-            Editmessagetext($from_id, $message_id, "📋 لیست کانفیگ‌های فعال — صفحه " . ($page + 1) . ":\n<i>روی هر آیتم بزنید تا جزئیات و دکمه حذف باز شود.</i>", $list['keyboard'], 'HTML');
-        } else {
-            nm_adminInstantReply($from_id, "📋 لیست کانفیگ‌های فعال — صفحه " . ($page + 1), $list['keyboard'], 'HTML');
-        }
-        return;
-    }
-    if ($action === 'view') {
-        $cfgId = (int)$arg;
-        $stmt = $pdo->prepare("SELECT id, content, status FROM nm_config_stock WHERE id = :id LIMIT 1");
-        $stmt->execute([':id' => $cfgId]);
-        $row = $stmt->fetch(PDO::FETCH_ASSOC);
-        if (!$row) { nm_adminInstantReply($from_id, "❌ کانفیگ یافت نشد.", null, 'HTML'); return; }
-        $info = function_exists('nmStockExtractConfigInfo') ? nmStockExtractConfigInfo($row['content']) : ['username'=>'—','port'=>'—','host'=>'—'];
-        $preview = mb_substr((string)$row['content'], 0, 100, 'UTF-8') . (mb_strlen((string)$row['content'], 'UTF-8') > 100 ? '…' : '');
-        $msg = "🧾 جزئیات کانفیگ #<b>{$cfgId}</b>\n"
-             . "👤 نام کاربری: <code>" . htmlspecialchars($info['username'] !== '' ? $info['username'] : '—') . "</code>\n"
-             . "🔌 پورت: <code>" . htmlspecialchars($info['port'] !== '' ? $info['port'] : '—') . "</code>\n"
-             . "🌐 هاست: <code>" . htmlspecialchars($info['host'] !== '' ? $info['host'] : '—') . "</code>\n"
-             . "📋 پیش‌نمایش: <code>" . htmlspecialchars($preview) . "</code>";
-        $kb = json_encode([
-            'inline_keyboard' => [
-                [['text' => '🗑 حذف این کانفیگ', 'callback_data' => 'nm_cfg:askdel:' . $cfgId]],
-                [['text' => '⬅️ بازگشت به لیست', 'callback_data' => 'nm_cfg:page:0']],
-                [['text' => '❌ بستن',           'callback_data' => 'nm_cfg:close']],
-            ],
-        ], JSON_UNESCAPED_UNICODE);
-        if (!empty($message_id) && function_exists('Editmessagetext')) {
-            Editmessagetext($from_id, $message_id, $msg, $kb, 'HTML');
-        } else {
-            nm_adminInstantReply($from_id, $msg, $kb, 'HTML');
-        }
-        return;
-    }
-    if ($action === 'askdel') {
-        $cfgId = (int)$arg;
-        $kb = json_encode([
-            'inline_keyboard' => [
-                [['text' => '✅ تایید حذف', 'callback_data' => 'nm_cfg:del:' . $cfgId]],
-                [['text' => '❌ لغو',       'callback_data' => 'nm_cfg:view:' . $cfgId]],
-            ],
-        ], JSON_UNESCAPED_UNICODE);
-        if (!empty($message_id) && function_exists('Editmessagetext')) {
-            Editmessagetext($from_id, $message_id, "⚠️ حذف کانفیگ #<b>{$cfgId}</b> تایید می‌کنید؟", $kb, 'HTML');
-        } else {
-            nm_adminInstantReply($from_id, "⚠️ حذف کانفیگ #<b>{$cfgId}</b> تایید می‌کنید؟", $kb, 'HTML');
-        }
-        return;
-    }
-    if ($action === 'del') {
-        $cfgId = (int)$arg;
-        $stmt = $pdo->prepare("UPDATE nm_config_stock SET status='disabled' WHERE id=:id AND status='active'");
-        $stmt->execute([':id' => $cfgId]);
-        $ok = $stmt->rowCount() > 0;
-        if (!empty($message_id) && function_exists('Editmessagetext')) {
-            Editmessagetext($from_id, $message_id, $ok ? "✅ کانفیگ #<b>{$cfgId}</b> حذف شد." : "ℹ️ کانفیگ #<b>{$cfgId}</b> از قبل حذف بود یا یافت نشد.", null, 'HTML');
-        } else {
-            nm_adminInstantReply($from_id, $ok ? "✅ کانفیگ #{$cfgId} حذف شد." : "ℹ️ یافت نشد.", null, 'HTML');
-        }
-        return;
-    }
-
-} elseif ($text == "➕ اضافه کردن کانفیگ") {
+    savedata("clear", "code_panel", $panel['code_panel']);
+    savedata("save", "old_type", $panel['type']);
+    savedata("save", "name_panel", $panel['name_panel']);
+    nm_replyOrEdit($from_id, $textbotlang['Admin']['managepanel']['Inbound']['gettypepanel'], $keyboardswitchtype, 'HTML');
+    step("switchtype_pick", $from_id);
+} elseif ($text == "➕ افزودن کانفیگ") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
         nm_adminInstantReply($from_id, "❌ پنل انتخاب نشده است. لطفاً دوباره پنل را انتخاب کنید.", $keyboardadmin, 'HTML');
@@ -2720,6 +2230,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('getnameconfigm', $from_id);
     savedata("clear", "namepanel", $panelName);
 } elseif ($user['step'] == "getnameconfigm") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $exitsname = select("manualsell", "*", "namerecord", $text, "count");
     if (intval($exitsname) != 0) {
         nm_adminInstantReply($from_id, "این نام وجود دارد", null, 'HTML');
@@ -2751,6 +2262,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('getnameproduct', $from_id);
     savedata("save", "namerecord", $text);
 } elseif ($user['step'] == "getnameproduct") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if ($text != "تست") {
         $product = select("product", "*", "name_product", $text, "select");
         if ($product == false) {
@@ -2764,6 +2276,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "📌 کانفیگ یا متن دیگر خود را ارسال نمایید", $backadmin, 'HTML');
     step('getconfigtext', $from_id);
 } elseif ($user['step'] == "getconfigtext") {
+    if (!isset($update['message']) && empty($text)) { return; }
     nm_adminInstantReply($from_id, "✅ کانفیگ با موفقیت ذخیره گردید.", $optionManualsale, 'HTML');
     step('home', $from_id);
     $userdata = json_decode($user['Processing_value'], true);
@@ -2801,6 +2314,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "📌 نام کانفیگی که میخواهید حذف نمایید را ارسال کنید ", $json_list_manualconfig_list, 'HTML');
     step("getnameremove", $from_id);
 } elseif ($user['step'] == "getnameremove") {
+    if (!isset($update['message']) && empty($text)) { return; }
     nm_adminInstantReply($from_id, "✅ کانفیگ با موفقیت حذف گردید.", $optionManualsale, 'HTML');
     $userdata = json_decode($user['Processing_value'], true);
     $panelName = is_array($userdata) && isset($userdata['namepanel']) ? $userdata['namepanel'] : $user['Processing_value'];
@@ -2812,10 +2326,11 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         $stmt->execute();
     }
     step("home", $from_id);
-} elseif ($text == "🌍 قیمت تغییر لوکیشن" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "🌍 قیمت تغییر مکان" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌 قیمت تغییر لوکیشن از سایر پنل‌ها به این پنل را ارسال کنید", $backadmin, 'HTML');
     step('setpricechangelocation', $from_id);
 } elseif ($user['step'] == "setpricechangelocation") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $typepanel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
     if (!is_array($typepanel)) {
         nm_adminInstantReply($from_id, "❌ پنل انتخاب‌شده پیدا نشد. لطفاً دوباره پنل را انتخاب کنید.", $backadmin, 'HTML');
@@ -2824,7 +2339,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     outtypepanel($typepanel['type'], "📌قیمت تغییر لوکیشن با موفقیت تغییر کرد");
     update("marzban_panel", "priceChangeloc", $text, "name_panel", $user['Processing_value']);
-    step('home', $from_id);
+    step('PanelMenu', $from_id);
 } elseif ($text == "➕ قیمت حجم اضافه" && $adminrulecheck['rule'] == "administrator") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
@@ -2835,6 +2350,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "📌 قیمت حجم اضافه برای این پنل را ارسال نمایید.", $backadmin, 'HTML');
     step('GetPriceExtra', $from_id);
 } elseif ($user['step'] == "GetPriceExtra") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['Balance']['Invalidprice'], $backadmin, 'HTML');
         return;
@@ -2850,8 +2366,11 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['users']['Extra_volume']['gettypeextra'], rx_agentGroupKeyboard(true), 'HTML');
     step('gettypeextra', $from_id);
 } elseif ($user['step'] == "gettypeextra") {
+    if (!isset($update['message']) && empty($text)) {
+        return;
+    }
     $agentst = ["n", "n2", "f", "all"];
-    $text = rx_resolveAgentGroup($text, $agentst);
+    $text = rx_resolveAgentGroupFromReplyButton($text, $agentst);
     if ($text === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(true), 'HTML');
         return;
@@ -2881,8 +2400,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $eextraprice = json_encode($eextraprice);
     update("marzban_panel", "priceextravolume", $eextraprice, "name_panel", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
-    step('home', $from_id);
-} elseif ($text == "⚙️ قیمت حجم سرویس دلخواه" && $adminrulecheck['rule'] == "administrator") {
+    step('PanelMenu', $from_id);
+} elseif ($text == "⚙️ قیمت حجم دلخواه" && $adminrulecheck['rule'] == "administrator") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
         nm_adminInstantReply($from_id, "❌ پنل انتخاب نشده است. ابتدا از «مدیریت پنل» پنل موردنظر را باز کنید، سپس دوباره این دکمه را بزنید.", $keyboardadmin, 'HTML');
@@ -2892,6 +2411,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "📌 قیمت حجم اضافه دلخواه این پنل را ارسال نمایید.", $backadmin, 'HTML');
     step('GetPricecustomvo', $from_id);
 } elseif ($user['step'] == "GetPricecustomvo") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['Balance']['Invalidprice'], $backadmin, 'HTML');
         return;
@@ -2907,8 +2427,11 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['users']['Extra_volume']['gettypeextra'], rx_agentGroupKeyboard(true), 'HTML');
     step('gettypeextracustom', $from_id);
 } elseif ($user['step'] == "gettypeextracustom") {
+    if (!isset($update['message']) && empty($text)) {
+        return;
+    }
     $agentst = ["n", "n2", "f", "all"];
-    $text = rx_resolveAgentGroup($text, $agentst);
+    $text = rx_resolveAgentGroupFromReplyButton($text, $agentst);
     if ($text === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(true), 'HTML');
         return;
@@ -2938,7 +2461,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $eextraprice = json_encode($eextraprice);
     update("marzban_panel", "pricecustomvolume", $eextraprice, "name_panel", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
-    step('home', $from_id);
+    step('PanelMenu', $from_id);
 } elseif ($text == "⏳ قیمت زمان اضافه" && $adminrulecheck['rule'] == "administrator") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
@@ -2949,6 +2472,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "📌 قیمت زمان اضافه برای این پنل را ارسال نمایید.", $backadmin, 'HTML');
     step('GetPricetimeextra', $from_id);
 } elseif ($user['step'] == "GetPricetimeextra") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['Balance']['Invalidprice'], $backadmin, 'HTML');
         return;
@@ -2964,27 +2488,43 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['users']['Extra_volume']['gettypeextra'], rx_agentGroupKeyboard(true), 'HTML');
     step('gettypeextratime', $from_id);
 } elseif ($user['step'] == "gettypeextratime") {
+
+    if (!isset($update['message']) && empty($text)) {
+        return;
+    }
+
     $agentst = ["n", "n2", "f", "all"];
-    $text = rx_resolveAgentGroup($text, $agentst);
+    $text = rx_resolveAgentGroupFromReplyButton($text, $agentst);
+
+
     if ($text === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(true), 'HTML');
         return;
     }
+
     $userdata = json_decode($user['Processing_value'], true);
+
+
     if (!is_array($userdata) || empty($userdata['namepanel']) || !array_key_exists('price', $userdata)) {
         nm_adminInstantReply($from_id, "❌ اطلاعات مرحله قبلی ناقص است. لطفاً دوباره تلاش کنید.", $backadmin, 'HTML');
         step('home', $from_id);
         return;
     }
+
     $typepanel = select("marzban_panel", "*", "name_panel", $userdata['namepanel'], "select");
+
+
     if (!is_array($typepanel)) {
         nm_adminInstantReply($from_id, "❌ پنل انتخاب‌شده پیدا نشد. لطفاً دوباره پنل را انتخاب کنید.", $backadmin, 'HTML');
         step('home', $from_id);
         return;
     }
+
     outtypepanel($typepanel['type'], $textbotlang['users']['Extra_volume']['ChangedPrice']);
     $eextraprice = json_decode($typepanel['priceextratime'] ?? '{}', true);
     if (!is_array($eextraprice)) $eextraprice = [];
+
+
     if ($text == 'all') {
         $eextraprice["f"] = $userdata['price'];
         $eextraprice["n"] = $userdata['price'];
@@ -2995,7 +2535,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $eextraprice = json_encode($eextraprice);
     update("marzban_panel", "priceextratime", $eextraprice, "name_panel", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
-    step('home', $from_id);
+    step('PanelMenu', $from_id);
+
 } elseif ($text == "⏳ قیمت زمان دلخواه" && $adminrulecheck['rule'] == "administrator") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
@@ -3006,6 +2547,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "📌 قیمت زمان دلخواه برای این پنل را ارسال نمایید.", $backadmin, 'HTML');
     step('GetPriceExtratime', $from_id);
 } elseif ($user['step'] == "GetPriceExtratime") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['Balance']['Invalidprice'], $backadmin, 'HTML');
         return;
@@ -3021,8 +2563,11 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['users']['Extra_volume']['gettypeextra'], rx_agentGroupKeyboard(true), 'HTML');
     step('gettypeextratimecustom', $from_id);
 } elseif ($user['step'] == "gettypeextratimecustom") {
+    if (!isset($update['message']) && empty($text)) {
+        return;
+    }
     $agentst = ["n", "n2", "f", "all"];
-    $text = rx_resolveAgentGroup($text, $agentst);
+    $text = rx_resolveAgentGroupFromReplyButton($text, $agentst);
     if ($text === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(true), 'HTML');
         return;
@@ -3052,13 +2597,16 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $eextraprice = json_encode($eextraprice);
     update("marzban_panel", "pricecustomtime", $eextraprice, "name_panel", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
-    step('home', $from_id);
-} elseif ($text == "🔒 نمایش کارت به کارت پس از اولین پرداخت" && $adminrulecheck['rule'] == "administrator") {
+    step('PanelMenu', $from_id);
+} elseif ($text == "🔒 کارت پس از اولین پرداخت" && $adminrulecheck['rule'] == "administrator") {
     $paymentverify = select("PaySetting", "ValuePay", "NamePay", "checkpaycartfirst", "select")['ValuePay'];
     $keyboardverify = json_encode([
         'inline_keyboard' => [
             [
                 ['text' => $paymentverify, 'callback_data' => $paymentverify],
+            ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'cart_back'],
             ],
         ]
     ]);
@@ -3071,6 +2619,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             [
                 ['text' => $paymentverify, 'callback_data' => $paymentverify],
             ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'cart_back'],
+            ],
         ]
     ]);
     Editmessagetext($from_id, $message_id, "خاموش شد", $keyboardverify);
@@ -3081,6 +2632,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'inline_keyboard' => [
             [
                 ['text' => $paymentverify, 'callback_data' => $paymentverify],
+            ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'cart_back'],
             ],
         ]
     ]);
@@ -3109,6 +2663,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "📌 نام کانفیگی که میخواهید ویرایش نمایید را ارسال کنید ", $json_list_manualconfig_list, 'HTML');
     step("getnameedit", $from_id);
 } elseif ($user['step'] == "getnameedit") {
+    if (!isset($update['message']) && empty($text)) { return; }
     nm_adminInstantReply($from_id, "یکی از گزینه های زیر را انتخاب کنید ", $configedit, 'HTML');
     step("home", $from_id);
     update("user", "Processing_value_one", $text, "id", $from_id);
@@ -3116,9 +2671,10 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "محتوا جدید کانفیگ را ارسال کنید", $backadmin, 'HTML');
     step("getcontentedit", $from_id);
 } elseif ($user['step'] == "getcontentedit") {
+    if (!isset($update['message']) && empty($text)) { return; }
     nm_adminInstantReply($from_id, "✅ ذخیره گردید.", $optionManualsale, 'HTML');
     update("manualsell", "contentrecord", $text, "namerecord", $user['Processing_value_one']);
-} elseif ($text == "⬆️ افزایش گروهی قیمت") {
+} elseif ($text == "⬆️ افزایش قیمت") {
     nm_adminInstantReply($from_id, "📌 محصولات کدام پنل میخواهید افزایش قیمت دهید؟
 در صورتی که  موقع تعریف محصول /all زدید  اگر میخواید این دسته تغییر قیمت داشته باشد حتما باید /all ارسال شود", $json_list_marzban_panel, 'HTML');
     step("getaddpricepeoductloc", $from_id);
@@ -3131,7 +2687,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     savedata("clear", "namepanel", $text);
     step("getagentaddpriceproduct", $from_id);
 } elseif ($user['step'] == "getagentaddpriceproduct") {
-    $grp = function_exists('rx_resolveAgentGroup') ? rx_resolveAgentGroup($text, ['f', 'n', 'n2']) : (in_array($text, ['f', 'n', 'n2'], true) ? $text : null);
+    $grp = function_exists('rx_resolveAgentGroupFromReplyButton') ? rx_resolveAgentGroupFromReplyButton($text, ['f', 'n', 'n2']) : (in_array($text, ['f', 'n', 'n2'], true) ? $text : null);
     if ($grp === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(false), 'HTML');
         return;
@@ -3182,7 +2738,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $stmt->execute();
     nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت برای تمامی محصولات اعمال شد", $shopkeyboard, 'HTML');
     step("home", $from_id);
-} elseif ($text == "⬇️ کاهش  گروهی قیمت") {
+} elseif ($text == "⬇️ کاهش گروهی قیمت") {
     nm_adminInstantReply($from_id, "📌 محصولات کدام پنل میخواهید کاهش قیمت دهید؟
 در صورتی که  موقع تعریف محصول /all زدید  اگر میخواید این دسته تغییر قیمت داشته باشد حتما باید /all ارسال شود", $json_list_marzban_panel, 'HTML');
     step("getlowpricepeoductloc", $from_id);
@@ -3195,7 +2751,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     savedata("clear", "namepanel", $text);
     step("getkampricepeoductloc", $from_id);
 } elseif ($user['step'] == "getkampricepeoductloc") {
-    $grp = function_exists('rx_resolveAgentGroup') ? rx_resolveAgentGroup($text, ['f', 'n', 'n2']) : (in_array($text, ['f', 'n', 'n2'], true) ? $text : null);
+    $grp = function_exists('rx_resolveAgentGroupFromReplyButton') ? rx_resolveAgentGroupFromReplyButton($text, ['f', 'n', 'n2']) : (in_array($text, ['f', 'n', 'n2'], true) ? $text : null);
     if ($grp === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(false), 'HTML');
         return;
@@ -3222,16 +2778,28 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     nm_adminInstantReply($from_id, "✅ مبلغ با موفقیت برای تمامی محصولات اعمال شد", $shopkeyboard, 'HTML');
     step("home", $from_id);
-} elseif ($text == "⬇️ حداقل مبلغ کارت به کارت") {
+} elseif ($text == "⬇️ کف کارت به کارت") {
     nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmaincart", $from_id);
 } elseif ($user['step'] == "getmaincart") {
     nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $CartManage, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "minbalancecart");
-} elseif ($text == "⬆️ حداکثر مبلغ کارت به کارت") {
+} elseif ($text == "⬆️ سقف کارت به کارت") {
     nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmaxcart", $from_id);
+} elseif ($text == "🔑 حداقل مبلغ احراز کارت") {
+    $currentMin = (string)($setting['card_verify_min_amount'] ?? '0');
+    nm_adminInstantReply($from_id, "📌 حداقل مبلغ فاکتور برای فعال‌شدن احراز کارت را وارد کنید (تومان).\n\nمقدار فعلی: <b>{$currentMin}</b> تومان\n\nعدد صفر = برای همه مبالغ اعمال می‌شود.", $backadmin, 'HTML');
+    step("get_cvmin_cart", $from_id);
+} elseif ($user['step'] == "get_cvmin_cart") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداقل مبلغ احراز کارت تنظیم شد: <b>{$text}</b> تومان", $CartManage, 'HTML');
+    step("home", $from_id);
+    update("setting", "card_verify_min_amount", $text);
 } elseif ($user['step'] == "getmaxcart") {
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
@@ -3240,7 +2808,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $CartManage, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "maxbalancecart");
-} elseif ($text == "⬇️ حداقل مبلغ plisio") {
+} elseif ($text == "⬇️ کف plisio") {
     nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmainplisio", $from_id);
 } elseif ($user['step'] == "getmainplisio") {
@@ -3251,7 +2819,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $NowPaymentsManage, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "minbalanceplisio");
-} elseif ($text == "⬆️ حداکثر مبلغ plisio") {
+} elseif ($text == "⬆️ سقف plisio") {
     nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmaxplisio", $from_id);
 } elseif ($user['step'] == "getmaxplisio") {
@@ -3262,7 +2830,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $NowPaymentsManage, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "maxbalanceplisio");
-} elseif ($text == "⬇️ حداقل مبلغ رمزارز آفلاین") {
+} elseif ($text == "⬇️ کف رمزارز آفلاین") {
     nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmaindigitaltron", $from_id);
 } elseif ($user['step'] == "getmaindigitaltron") {
@@ -3273,7 +2841,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $tronnowpayments, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "minbalancedigitaltron");
-} elseif ($text == "⬆️ حداکثر مبلغ رمزارز آفلاین") {
+} elseif ($text == "⬆️ سقف رمزارز آفلاین") {
     nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmaxdigitaltron", $from_id);
 } elseif ($user['step'] == "getmaxdigitaltron") {
@@ -3284,29 +2852,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $tronnowpayments, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "maxbalancedigitaltron");
-} elseif ($text == "⬇️ حداقل مبلغ ارزی ریالی") {
-    nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
-    step("getmainiranpay1", $from_id);
-} elseif ($user['step'] == "getmainiranpay1") {
-    if (!ctype_digit($text)) {
-        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
-        return;
-    }
-    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $Swapinokey, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "minbalanceiranpay1");
-} elseif ($text == "⬆️ حداکثر مبلغ ارزی ریالی") {
-    nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
-    step("getmaaxiranpay1", $from_id);
-} elseif ($user['step'] == "getmaaxiranpay1") {
-    if (!ctype_digit($text)) {
-        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
-        return;
-    }
-    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $Swapinokey, 'HTML');
-    step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "maxbalanceiranpay1");
-} elseif ($text == "⬇️ حداقل مبلغ ارزی ریالی دوم") {
+} elseif ($text == "⬇️ کف ترونادو") {
     nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmainiranpay2", $from_id);
 } elseif ($user['step'] == "getmainiranpay2") {
@@ -3317,7 +2863,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $trnado, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "minbalanceiranpay2");
-} elseif ($text == "⬆️ حداکثر مبلغ ارزی ریالی دوم") {
+} elseif ($text == "⬆️ سقف ترونادو") {
     nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmaaxiranpay2", $from_id);
 } elseif ($user['step'] == "getmaaxiranpay2") {
@@ -3325,32 +2871,120 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $Swapinokey, 'HTML');
+    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $trnado, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "maxbalanceiranpay2");
-} elseif ($text == "⬇️ حداقل مبلغ آقای پرداخت") {
+} elseif ($text == "⬇️ کف تون‌پی") {
     nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
-    step("getmainaqayepardakht", $from_id);
-} elseif ($user['step'] == "getmainaqayepardakht") {
+    step("getmaintonpay", $from_id);
+} elseif ($user['step'] == "getmaintonpay") {
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $aqayepardakht, 'HTML');
+    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $tonpay, 'HTML');
     step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "minbalanceaqayepardakht");
-} elseif ($text == "⬆️ حداکثر مبلغ آقای پرداخت") {
+    update("PaySetting", "ValuePay", $text, "NamePay", "minbalancetonpay");
+} elseif ($text == "⬆️ سقف تون‌پی") {
     nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
-    step("getmaaxaqayepardakht", $from_id);
-} elseif ($user['step'] == "getmaaxaqayepardakht") {
+    step("getmaxtonpay", $from_id);
+} elseif ($user['step'] == "getmaxtonpay") {
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $aqayepardakht, 'HTML');
+    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $tonpay, 'HTML');
     step("home", $from_id);
-    update("PaySetting", "ValuePay", $text, "NamePay", "maxbalanceaqayepardakht");
-} elseif ($text == "⬇️ حداقل مبلغ زرین پال") {
+    update("PaySetting", "ValuePay", $text, "NamePay", "maxbalancetonpay");
+} elseif ($text == "⬇️ کف بلوپال") {
+    nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
+    step("getmainblupal", $from_id);
+} elseif ($user['step'] == "getmainblupal") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $blupal, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $text, "NamePay", "minbalanceblupal");
+} elseif ($text == "⬆️ سقف بلوپال") {
+    nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
+    step("getmaxblupal", $from_id);
+} elseif ($user['step'] == "getmaxblupal") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $blupal, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $text, "NamePay", "maxbalanceblupal");
+} elseif ($text == "⬇️ کف اطلس‌پی") {
+    nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
+    step("getmainatlaspay", $from_id);
+} elseif ($user['step'] == "getmainatlaspay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $atlaspay, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $text, "NamePay", "minbalanceatlaspay");
+} elseif ($text == "⬆️ سقف اطلس‌پی") {
+    nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
+    step("getmaxatlaspay", $from_id);
+} elseif ($user['step'] == "getmaxatlaspay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $atlaspay, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $text, "NamePay", "maxbalanceatlaspay");
+} elseif ($text == "⬇️ کف تتراپی") {
+    nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
+    step("getmaintetrapay", $from_id);
+} elseif ($user['step'] == "getmaintetrapay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $tetrapay, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $text, "NamePay", "minbalancetetrapay");
+} elseif ($text == "⬆️ سقف تتراپی") {
+    nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
+    step("getmaxtetrapay", $from_id);
+} elseif ($user['step'] == "getmaxtetrapay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $tetrapay, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $text, "NamePay", "maxbalancetetrapay");
+} elseif ($text == "⬇️ کف کیوب‌پی") {
+    nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
+    step("getmaincubepay", $from_id);
+} elseif ($user['step'] == "getmaincubepay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $cubepay, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $text, "NamePay", "minbalancecubepay");
+} elseif ($text == "⬆️ سقف کیوب‌پی") {
+    nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
+    step("getmaxcubepay", $from_id);
+} elseif ($user['step'] == "getmaxcubepay") {
+    if (!ctype_digit($text)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $cubepay, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $text, "NamePay", "maxbalancecubepay");
+} elseif ($text == "⬇️ کف زرین پال") {
     nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmainaqzarinpal", $from_id);
 } elseif ($user['step'] == "getmainaqzarinpal") {
@@ -3358,10 +2992,10 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $aqayepardakht, 'HTML');
+    nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $keyboardzarinpal, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "minbalancezarinpal");
-} elseif ($text == "⬆️ حداکثر مبلغ زرین پال") {
+} elseif ($text == "⬆️ سقف زرین پال") {
     nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("getmaaxzarinpal", $from_id);
 } elseif ($user['step'] == "getmaaxzarinpal") {
@@ -3369,7 +3003,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
     }
-    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $aqayepardakht, 'HTML');
+    nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $keyboardzarinpal, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "maxbalancezarinpal");
 } elseif ($datain == "walletaddress" && $adminrulecheck['rule'] == "administrator") {
@@ -3384,22 +3018,34 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             $w = (string) $row['wallet_address'];
             return mb_strlen($w) > 14 ? mb_substr($w, 0, 8) . '…' . mb_substr($w, -4) : $w;
         };
+        $manualCurrencies = function_exists('crypto_manual_currencies') ? crypto_manual_currencies() : [];
         $msg = "💼 <b>آدرس کیف پول هش‌چکر</b>\n\n"
              . "شبکه‌ای که می‌خواهید آدرسش را ثبت/ویرایش کنید را انتخاب کنید:\n\n"
              . "🟥 ترون (TRX): <code>" . $shorten($rowTrx) . "</code>\n"
              . "🟢 تتر روی ترون: <code>" . $shorten($rowUsdtT) . "</code>\n"
              . "🟦 تون (TON): <code>" . $shorten($rowTon) . "</code>\n"
-             . "🟢 تتر روی تون: <code>" . $shorten($rowUsdtN) . "</code>\n\n"
-             . "ℹ️ بعد از ثبت آدرس، کاربر هنگام انتخاب «ارز آفلاین» یک هش پرداخت می‌فرستد و ربات هر دقیقه به‌صورت خودکار از Tronscan / TonAPI تایید می‌کند.";
+             . "🟢 تتر روی تون: <code>" . $shorten($rowUsdtN) . "</code>\n";
+        $manualRows = [];
+        foreach ($manualCurrencies as $mCur => $mInfo) {
+            $mRow = function_exists('crypto_active_wallet') ? crypto_active_wallet($mCur) : null;
+            $msg .= "🛠 " . $mInfo['label'] . ": <code>" . $shorten($mRow) . "</code> <i>(دستی)</i>\n";
+            $manualRows[] = [
+                ['text' => '🛠 ' . $mInfo['label'], 'callback_data' => 'cryptowalletmanual_' . $mCur],
+                ['text' => '🗑', 'callback_data' => 'cryptowallet_del_' . $mCur],
+            ];
+        }
+        $msg .= "\nℹ️ بعد از ثبت آدرس، کاربر هنگام انتخاب «ارز آفلاین» یک هش پرداخت می‌فرستد. برای ۴ شبکه بالا ربات هر دقیقه به‌صورت خودکار از Tronscan / TonAPI تایید می‌کند؛ شبکه‌های «دستی» فقط توسط ادمین بررسی و تایید می‌شوند.";
         $networkPickerKb = json_encode([
-            'inline_keyboard' => [
+            'inline_keyboard' => array_merge([
                 [['text' => '🟥 ترون (TRX)',     'callback_data' => 'cryptowallet_TRX'],         ['text' => '🗑', 'callback_data' => 'cryptowallet_del_TRX']],
                 [['text' => '🟢 تتر روی ترون',  'callback_data' => 'cryptowallet_USDT_TRC20'],  ['text' => '🗑', 'callback_data' => 'cryptowallet_del_USDT_TRC20']],
                 [['text' => '🟦 تون (TON)',     'callback_data' => 'cryptowallet_TON'],         ['text' => '🗑', 'callback_data' => 'cryptowallet_del_TON']],
                 [['text' => '🟢 تتر روی تون',   'callback_data' => 'cryptowallet_USDT_TON'],    ['text' => '🗑', 'callback_data' => 'cryptowallet_del_USDT_TON']],
-                [['text' => '🔍 بررسی دستی هش (آفلاین)', 'callback_data' => 'cryptocheck_manual']],
+            ], $manualRows, [
+                [['text' => '➕ افزودن شبکه دستی', 'callback_data' => 'cryptowallet_new']],
+                [['text' => $textbotlang['Admin']['backmenu'] ?? '▶️ بازگشت به منوی قبل', 'callback_data' => 'wallet_backmenu']],
                 [['text' => '❌ بستن',          'callback_data' => 'close_stat']],
-            ],
+            ]),
         ], JSON_UNESCAPED_UNICODE);
         nm_adminInstantReply($from_id, $msg, $networkPickerKb, 'HTML');
     } else {
@@ -3469,11 +3115,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $successMsg = "✅ ممو برای کیف پول <b>{$memoCur}</b> ذخیره شد:\n<code>" . htmlspecialchars($memoText) . "</code>";
     nm_adminInstantReply($from_id, $successMsg, $keyboardadmin, 'HTML');
     step('home', $from_id);
-} elseif (preg_match('/^cryptowallet_del_(TRX|TON|USDT_TRC20|USDT_TON)$/', (string) $datain, $cwd) && $adminrulecheck['rule'] == "administrator") {
+} elseif (preg_match('/^cryptowallet_del_([A-Za-z0-9_]{2,20})$/', (string) $datain, $cwd) && $adminrulecheck['rule'] == "administrator") {
 
     $cur = $cwd[1];
     $supported = function_exists('crypto_supported_currencies') ? crypto_supported_currencies() : [];
-    $label = $supported[$cur]['label'] ?? $cur;
+    $manual = function_exists('crypto_manual_currencies') ? crypto_manual_currencies() : [];
+    $label = $supported[$cur]['label'] ?? $manual[$cur]['label'] ?? $cur;
     $ok = function_exists('crypto_delete_wallet') ? crypto_delete_wallet($cur) : false;
     if ($ok) {
         $doneTxt = "🗑 کیف پول <b>{$label}</b> حذف و خالی شد.\nاز این پس برای این ارز هیچ آدرسی تنظیم نیست و کاربر نمی‌تواند پرداخت آفلاین انجام دهد.";
@@ -3489,77 +3136,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         telegram('answerCallbackQuery', [
             'callback_query_id' => $callback_query_id,
             'text' => $ok ? '✅ حذف شد' : '❌ خطا',
-            'cache_time' => 1,
+            'cache_time' => 0,
         ]);
     }
-    step('home', $from_id);
-} elseif ($datain === "cryptocheck_manual" && $adminrulecheck['rule'] == "administrator") {
-
-    $msg  = "🔍 <b>بررسی دستی هش تراکنش</b>\n\n";
-    $msg .= "هش تراکنش (TX Hash) را در یک پیام ارسال کنید.\n\n";
-    $msg .= "ربات از روی هش، ارز را روی کیف پول‌های ثبت‌شده‌ی شما تشخیص می‌دهد و وضعیت تایید را گزارش می‌کند. اگر هش هنوز در بلاکچین نباشد، خطای «tx-not-found» می‌گیرید.";
-    update("user", "Processing_value", "", "id", $from_id);
-    nm_adminInstantReply($from_id, $msg, $backadmin, 'HTML');
-    step('cryptocheck_manual_wait', $from_id);
-} elseif ($user['step'] == "cryptocheck_manual_wait" && empty($datain)) {
-
-    $hash = trim((string) $text);
-    if ($hash === '' || mb_strlen($hash) < 20 || preg_match('/[\x{0600}-\x{06FF}\s]/u', $hash)) {
-        nm_adminInstantReply($from_id, "🏠 از حالت بررسی دستی خارج شدید.", $keyboardadmin, 'HTML');
-        step('home', $from_id);
-        return;
-    }
-    $hash = preg_replace('/^0x/i', '', $hash);
-    $supported = function_exists('crypto_supported_currencies') ? crypto_supported_currencies() : [];
-    $usdtTrc20Jetton = 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t';
-    $usdtTonJetton   = 'EQCxE6mUtQJKFnGfaROTKOt1lZbDiiX1kCixRv7Nw2Id_sDs';
-    $results = [];
-    foreach (array_keys($supported) as $cur) {
-        $wallet = function_exists('crypto_active_wallet') ? crypto_active_wallet($cur) : null;
-        $addr = is_array($wallet) ? trim((string)($wallet['wallet_address'] ?? '')) : '';
-        if ($addr === '') {
-            $results[$cur] = ['ok' => false, 'reason' => 'no-wallet-configured'];
-            continue;
-        }
-
-        $expectedAmount = 0.0;
-        if ($cur === 'TRX' && function_exists('crypto_check_tron_tx')) {
-            $r = crypto_check_tron_tx($hash, $addr, $expectedAmount, null, false);
-        } elseif ($cur === 'USDT_TRC20' && function_exists('crypto_check_tron_tx')) {
-            $r = crypto_check_tron_tx($hash, $addr, $expectedAmount, $usdtTrc20Jetton, false);
-        } elseif ($cur === 'TON' && function_exists('crypto_check_ton_tx')) {
-            $r = crypto_check_ton_tx($hash, $addr, $expectedAmount, null, false, '');
-        } elseif ($cur === 'USDT_TON' && function_exists('crypto_check_ton_tx')) {
-            $r = crypto_check_ton_tx($hash, $addr, $expectedAmount, $usdtTonJetton, false, '');
-        } else {
-            $r = ['ok' => false, 'reason' => 'helper-missing'];
-        }
-        $results[$cur] = is_array($r) ? $r : ['ok' => false, 'reason' => 'unknown'];
-    }
-    $lines = ["📋 <b>نتیجه بررسی دستی</b>\n", "🔗 هش: <code>" . htmlspecialchars($hash) . "</code>\n"];
-    $foundAny = false;
-    foreach ($results as $cur => $r) {
-        $label = $supported[$cur]['label'] ?? $cur;
-        $reason = (string)($r['reason'] ?? '');
-        if (!empty($r['ok']) || $reason === 'amount-mismatch') {
-            $foundAny = true;
-            $amt = $r['detail']['amount'] ?? '?';
-            $sender = $r['detail']['sender'] ?? '';
-            $statusEmoji = !empty($r['ok']) ? '✅' : '⚠️';
-            $statusTxt = !empty($r['ok']) ? 'تایید (بدون مقایسه مبلغ)' : 'گیرنده درست، مبلغ متفاوت';
-            $lines[] = "{$statusEmoji} <b>{$label}</b>: {$statusTxt}";
-            $lines[] = "   • مقدار: <code>{$amt}</code>";
-            if ($sender !== '') $lines[] = "   • فرستنده: <code>" . htmlspecialchars((string)$sender) . "</code>";
-            $explorer = function_exists('crypto_explorer_url') ? crypto_explorer_url($cur, $hash) : '';
-            if ($explorer !== '') $lines[] = "   🔎 <a href=\"" . htmlspecialchars($explorer, ENT_QUOTES) . "\">مشاهده در اکسپلورر</a>";
-        } else {
-            $lines[] = "❌ <b>{$label}</b>: " . htmlspecialchars($reason);
-        }
-    }
-    if (!$foundAny) {
-        $lines[] = "\nℹ️ هیچ‌کدام از کیف‌پول‌های شما این تراکنش را در شبکه‌ی متناظر دریافت نکرده‌اند، یا هش روی شبکه‌ها معتبر نیست.";
-    }
-    nm_adminInstantReply($from_id, implode("\n", $lines), $keyboardadmin, 'HTML');
     step('home', $from_id);
 } elseif (preg_match('/^cryptowallet_(TRX|TON|USDT_TRC20|USDT_TON)$/', (string) $datain, $cwm) && $adminrulecheck['rule'] == "administrator") {
 
@@ -3646,6 +3225,142 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
 
     update("user", "Processing_value", "0", "id", $from_id);
     step('home', $from_id);
+} elseif ($datain == "cryptowallet_new" && $adminrulecheck['rule'] == "administrator") {
+
+    update("user", "Processing_value", "0", "id", $from_id);
+    $askNetworkMsg = "🛠 <b>افزودن شبکه پرداخت دستی جدید (تتر)</b>\n\n"
+                . "ارز این شبکه‌ها همیشه <b>تتر (USDT)</b> است — فقط نام شبکه را ارسال کنید (مثل <code>ERC20</code> یا <code>BEP20</code> یا <code>POLYGON</code>):";
+    nm_adminInstantReply($from_id, $askNetworkMsg, $backadmin, 'HTML');
+    step('cryptowallet_new_network', $from_id);
+} elseif ($user['step'] == "cryptowallet_new_network" && empty($datain)) {
+
+    $networkInput = strtoupper(trim((string) $text));
+    if ($networkInput === '' || mb_strlen($networkInput) > 32) {
+        step('home', $from_id);
+        if ($networkInput !== '') {
+            nm_adminInstantReply($from_id, "🏠 از حالت افزودن شبکه خارج شدید.", $keyboardadmin, 'HTML');
+        }
+        return;
+    }
+    if (!preg_match('/^[A-Z0-9_]{2,20}$/', $networkInput)) {
+        nm_adminInstantReply($from_id, "❌ نام شبکه نامعتبر است. فقط حروف انگلیسی، اعداد و آندرلاین مجاز است (حداکثر ۲۰ کاراکتر).", null, 'HTML');
+        return;
+    }
+    $codeInput = 'USDT_' . $networkInput;
+    $supported = function_exists('crypto_supported_currencies') ? crypto_supported_currencies() : [];
+    $manual = function_exists('crypto_manual_currencies') ? crypto_manual_currencies() : [];
+    if (isset($supported[$codeInput]) || isset($manual[$codeInput])) {
+        nm_adminInstantReply($from_id, "❌ شبکه <b>{$networkInput}</b> برای تتر قبلاً ثبت شده است.", null, 'HTML');
+        return;
+    }
+    $label = 'تتر روی شبکه ' . $networkInput . ' (USDT-' . $networkInput . ')';
+    update("user", "Processing_value", json_encode(['code' => $codeInput, 'network' => $networkInput, 'label' => $label], JSON_UNESCAPED_UNICODE), "id", $from_id);
+    $memoAskMsg = "🏷 <b>آیا این کیف پول ممو/تگ (Memo / Tag) دارد؟</b>\n\n"
+                . "<i>اگر آدرس از یک صرافی است، معمولاً ممو لازم دارد. اگر شخصی و مستقل است، معمولاً نیاز ندارد.</i>";
+    $memoAskKb = json_encode([
+        'inline_keyboard' => [
+            [['text' => '✅ دارم — وارد می‌کنم', 'callback_data' => 'cryptowalletnewmemo_yes']],
+            [['text' => '❌ ندارم',              'callback_data' => 'cryptowalletnewmemo_no']],
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+    nm_adminInstantReply($from_id, $memoAskMsg, $memoAskKb, 'HTML');
+    step('home', $from_id);
+} elseif (preg_match('/^cryptowalletnewmemo_(yes|no)$/', (string) $datain, $cwnm) && $adminrulecheck['rule'] == "administrator") {
+
+    $pending = json_decode((string) ($user['Processing_value'] ?? ''), true);
+    if (!is_array($pending) || empty($pending['code']) || empty($pending['network']) || empty($pending['label'])) {
+        nm_adminInstantReply($from_id, "❌ خطای داخلی: اطلاعات ناقص است. مجدداً از منوی آدرس ولت اقدام کنید.", $backadmin, 'HTML');
+        step('home', $from_id);
+        return;
+    }
+    if ($cwnm[1] === 'no') {
+        $pending['memo'] = '';
+        update("user", "Processing_value", json_encode($pending, JSON_UNESCAPED_UNICODE), "id", $from_id);
+        $askAddrMsg = "💼 آدرس کیف پول را برای دریافت وجه ارسال کنید:";
+        if (!empty($message_id)) {
+            Editmessagetext($from_id, $message_id, $askAddrMsg, null);
+        } else {
+            sendmessage($from_id, $askAddrMsg, $backadmin, 'HTML');
+        }
+        step('cryptowallet_new_address', $from_id);
+    } else {
+        $askMemoMsg = "🏷 لطفاً <b>ممو/تگ (Memo / Tag)</b> کیف پول را ارسال کنید.";
+        if (!empty($message_id)) {
+            Editmessagetext($from_id, $message_id, $askMemoMsg, null);
+        } else {
+            sendmessage($from_id, $askMemoMsg, $backadmin, 'HTML');
+        }
+        step('cryptowallet_new_memo', $from_id);
+    }
+} elseif ($user['step'] == "cryptowallet_new_memo" && empty($datain)) {
+
+    $memoInput = trim((string) $text);
+    if ($memoInput === '' || mb_strlen($memoInput) > 200) {
+        step('home', $from_id);
+        if ($memoInput !== '') {
+            nm_adminInstantReply($from_id, "🏠 از حالت افزودن شبکه خارج شدید.", $keyboardadmin, 'HTML');
+        }
+        return;
+    }
+    $pending = json_decode((string) ($user['Processing_value'] ?? ''), true);
+    if (!is_array($pending) || empty($pending['code']) || empty($pending['network']) || empty($pending['label'])) {
+        nm_adminInstantReply($from_id, "❌ خطای داخلی: اطلاعات ناقص است. مجدداً از منوی آدرس ولت اقدام کنید.", $backadmin, 'HTML');
+        step('home', $from_id);
+        return;
+    }
+    $pending['memo'] = $memoInput;
+    update("user", "Processing_value", json_encode($pending, JSON_UNESCAPED_UNICODE), "id", $from_id);
+    nm_adminInstantReply($from_id, "💼 آدرس کیف پول را برای دریافت وجه ارسال کنید:", $backadmin, 'HTML');
+    step('cryptowallet_new_address', $from_id);
+} elseif ($user['step'] == "cryptowallet_new_address" && empty($datain)) {
+
+    $addressInput = trim((string) $text);
+    if ($addressInput === '' || mb_strlen($addressInput) < 10 || mb_strlen($addressInput) > 255) {
+        step('home', $from_id);
+        if ($addressInput !== '') {
+            nm_adminInstantReply($from_id, "🏠 از حالت افزودن شبکه خارج شدید.", $keyboardadmin, 'HTML');
+        }
+        return;
+    }
+    $pending = json_decode((string) ($user['Processing_value'] ?? ''), true);
+    if (!is_array($pending) || empty($pending['code']) || empty($pending['network']) || empty($pending['label'])) {
+        nm_adminInstantReply($from_id, "❌ خطای داخلی: اطلاعات ناقص است. مجدداً از منوی آدرس ولت اقدام کنید.", $backadmin, 'HTML');
+        step('home', $from_id);
+        return;
+    }
+    $ok = function_exists('crypto_create_manual_wallet')
+        ? crypto_create_manual_wallet($pending['code'], $pending['network'], $pending['label'], $addressInput)
+        : false;
+    if ($ok && !empty($pending['memo']) && function_exists('crypto_save_wallet_memo')) {
+        crypto_save_wallet_memo($pending['code'], $pending['memo']);
+    }
+    update("user", "Processing_value", "0", "id", $from_id);
+    if ($ok) {
+        $okMsg = "✅ شبکه دستی <b>" . htmlspecialchars($pending['label']) . "</b> با موفقیت ثبت شد.\n\n<code>" . htmlspecialchars($addressInput) . "</code>\n\n"
+               . "ℹ️ تراکنش‌های این شبکه به‌صورت خودکار تایید نمی‌شوند و باید توسط ادمین بررسی شوند.";
+    } else {
+        $okMsg = "❌ ذخیره‌سازی شبکه دستی با خطا مواجه شد. لاگ سرور را بررسی کنید.";
+    }
+    nm_adminInstantReply($from_id, $okMsg, $keyboardadmin, 'HTML');
+    step('home', $from_id);
+} elseif (preg_match('/^cryptowalletmanual_([A-Za-z0-9_]{2,20})$/', (string) $datain, $cwmm) && $adminrulecheck['rule'] == "administrator") {
+
+    $cur = $cwmm[1];
+    $manual = function_exists('crypto_manual_currencies') ? crypto_manual_currencies() : [];
+    if (!isset($manual[$cur])) {
+        nm_adminInstantReply($from_id, "❌ این شبکه دستی یافت نشد.", $backadmin, 'HTML');
+        step('home', $from_id);
+        return;
+    }
+    $label = $manual[$cur]['label'];
+    $row = function_exists('crypto_active_wallet') ? crypto_active_wallet($cur) : null;
+    $cur_now = $row['wallet_address'] ?? '';
+    $msg = "💼 شبکه انتخاب‌شده: <b>{$label}</b> <i>(دستی)</i>\n\n"
+         . "آدرس فعلی: <code>" . ($cur_now === '' ? '—' : htmlspecialchars($cur_now)) . "</code>\n\n"
+         . "آدرس کیف پول جدید را ارسال کنید:";
+    update("user", "Processing_value", json_encode(['code' => $cur, 'network' => $manual[$cur]['network'], 'label' => $label], JSON_UNESCAPED_UNICODE), "id", $from_id);
+    nm_adminInstantReply($from_id, $msg, $backadmin, 'HTML');
+    step('cryptowallet_new_address', $from_id);
 } elseif ($user['step'] == "walletaddresssiranpay") {
     $walletInput = trim((string) $text);
 
@@ -3661,38 +3376,17 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         return;
     }
 
-    $userRecord = select("user", "*", "id", $from_id, "select");
-    $processingData = [];
-    if ($userRecord && isset($userRecord['Processing_value'])) {
-        $decodedProcessing = json_decode($userRecord['Processing_value'], true);
-        if (is_array($decodedProcessing)) {
-            $processingData = $decodedProcessing;
-        }
-    }
-
-    $walletOrigin = $processingData['walletaddress_origin'] ?? 'general';
-    $invalidKeyboard = $walletOrigin === 'trnado' ? $trnado : $backadmin;
-
     if ($walletInput === '' || !preg_match('/^T[a-zA-Z0-9]{33}$/', $walletInput)) {
-        nm_adminInstantReply($from_id, "❌ آدرس ولت وارد شده نامعتبر است. لطفاً آدرس TRC20 معتبر ارسال کنید.", $invalidKeyboard, 'HTML');
+        nm_adminInstantReply($from_id, "❌ آدرس ولت وارد شده نامعتبر است. لطفاً آدرس TRC20 معتبر ارسال کنید.", $backadmin, 'HTML');
         return;
     }
 
     $standardizedWallet = strtoupper($walletInput);
 
-    $successKeyboard = $walletOrigin === 'trnado' ? $trnado : $keyboardadmin;
-
-    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $successKeyboard, 'HTML');
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $keyboardadmin, 'HTML');
     update("PaySetting", "ValuePay", $standardizedWallet, "NamePay", "walletaddress");
     update("user", "Processing_value", '{}', "id", $from_id);
     step('home', $from_id);
-} elseif ($text == "💼 ثبت آدرس ولت ترون (TRC20)" && $adminrulecheck['rule'] == "administrator") {
-    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "walletaddress", "select");
-    $currentWallet = $PaySetting['ValuePay'] ?? '';
-    $texttronseller = "💼 لطفاً آدرس ولت ترون (TRC20) مرتبط با درگاه ترنادو را ارسال کنید.\n\nولت فعلی شما: {$currentWallet}";
-    nm_adminInstantReply($from_id, $texttronseller, $trnado, 'HTML');
-    savedata('clear', 'walletaddress_origin', 'trnado');
-    step('walletaddresssiranpay', $from_id);
 } elseif ($text == "api  درگاه ارزی ریالی" && $adminrulecheck['rule'] == "administrator") {
     $PaySetting = select("PaySetting", "ValuePay", "NamePay", "apiiranpay", "select")['ValuePay'];
     $texttronseller = "📌 کد api خود را ارسال نمایید.
@@ -3704,7 +3398,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $iranpaykeyboard, 'HTML');
     update("PaySetting", "ValuePay", $text, "NamePay", "apiiranpay");
     step('home', $from_id);
-} elseif ($text == "⬇️ حداقل مبلغ ارزی ریالی سوم") {
+} elseif ($text == "⬇️ کف ریالی سوم") {
     nm_adminInstantReply($from_id, "📌 حداقل مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("minbalanceiranpay", $from_id);
 } elseif ($user['step'] == "minbalanceiranpay") {
@@ -3715,7 +3409,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ حداقل مبلغ واریزی تنظیم گردید.", $iranpaykeyboard, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "minbalanceiranpay");
-} elseif ($text == "⬆️ حداکثر مبلغ ارزی ریالی سوم") {
+} elseif ($text == "⬆️ سقف ریالی سوم") {
     nm_adminInstantReply($from_id, "📌 حداکثر مبلغ واریزی را ارسال نمایید", $backadmin, 'HTML');
     step("maxbalanceiranpay", $from_id);
 } elseif ($user['step'] == "maxbalanceiranpay") {
@@ -3726,7 +3420,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ حداکثر مبلغ واریزی تنظیم گردید.", $iranpaykeyboard, 'HTML');
     step("home", $from_id);
     update("PaySetting", "ValuePay", $text, "NamePay", "maxbalanceiranpay");
-} elseif ($text == "📍 حداقل حجم دلخواه" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "📍 کف حجم دلخواه" && $adminrulecheck['rule'] == "administrator") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
         nm_adminInstantReply($from_id, "❌ پنل انتخاب نشده است. ابتدا از «مدیریت پنل» پنل موردنظر را باز کنید، سپس دوباره این دکمه را بزنید.", $keyboardadmin, 'HTML');
@@ -3752,7 +3446,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('gettypeextramain', $from_id);
 } elseif ($user['step'] == "gettypeextramain") {
     $agentst = ["n", "n2", "f"];
-    $text = rx_resolveAgentGroup($text, $agentst);
+    $text = rx_resolveAgentGroupFromReplyButton($text, $agentst);
     if ($text === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(false), 'HTML');
         return;
@@ -3775,8 +3469,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $eextraprice = json_encode($eextraprice);
     update("marzban_panel", "mainvolume", $eextraprice, "name_panel", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
-    step('home', $from_id);
-} elseif ($text == "📍 حداکثر حجم دلخواه" && $adminrulecheck['rule'] == "administrator") {
+    step('PanelMenu', $from_id);
+} elseif ($text == "📍 سقف حجم دلخواه" && $adminrulecheck['rule'] == "administrator") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
         nm_adminInstantReply($from_id, "❌ پنل انتخاب نشده است. ابتدا از «مدیریت پنل» پنل موردنظر را باز کنید، سپس دوباره این دکمه را بزنید.", $keyboardadmin, 'HTML');
@@ -3802,7 +3496,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('gettypeextramax', $from_id);
 } elseif ($user['step'] == "gettypeextramax") {
     $agentst = ["n", "n2", "f"];
-    $text = rx_resolveAgentGroup($text, $agentst);
+    $text = rx_resolveAgentGroupFromReplyButton($text, $agentst);
     if ($text === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(false), 'HTML');
         return;
@@ -3825,8 +3519,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $eextraprice = json_encode($eextraprice);
     update("marzban_panel", "maxvolume", $eextraprice, "name_panel", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
-    step('home', $from_id);
-} elseif ($text == "📍 حداقل زمان دلخواه" && $adminrulecheck['rule'] == "administrator") {
+    step('PanelMenu', $from_id);
+} elseif ($text == "📍 کف زمان دلخواه" && $adminrulecheck['rule'] == "administrator") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
         nm_adminInstantReply($from_id, "❌ پنل انتخاب نشده است. ابتدا از «مدیریت پنل» پنل موردنظر را باز کنید، سپس دوباره این دکمه را بزنید.", $keyboardadmin, 'HTML');
@@ -3852,7 +3546,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('gettypeextramaintime', $from_id);
 } elseif ($user['step'] == "gettypeextramaintime") {
     $agentst = ["n", "n2", "f"];
-    $text = rx_resolveAgentGroup($text, $agentst);
+    $text = rx_resolveAgentGroupFromReplyButton($text, $agentst);
     if ($text === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(false), 'HTML');
         return;
@@ -3875,8 +3569,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $eextraprice = json_encode($eextraprice);
     update("marzban_panel", "maintime", $eextraprice, "name_panel", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
-    step('home', $from_id);
-} elseif ($text == "📍 حداکثر زمان دلخواه" && $adminrulecheck['rule'] == "administrator") {
+    step('PanelMenu', $from_id);
+} elseif ($text == "📍 سقف زمان دلخواه" && $adminrulecheck['rule'] == "administrator") {
     $panelName = function_exists('nmResolvePanelNameForUser') ? nmResolvePanelNameForUser($user) : (string)$user['Processing_value'];
     if ($panelName === '') {
         nm_adminInstantReply($from_id, "❌ پنل انتخاب نشده است. ابتدا از «مدیریت پنل» پنل موردنظر را باز کنید، سپس دوباره این دکمه را بزنید.", $keyboardadmin, 'HTML');
@@ -3902,7 +3596,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     step('gettypeextramaxtime', $from_id);
 } elseif ($user['step'] == "gettypeextramaxtime") {
     $agentst = ["n", "n2", "f"];
-    $text = rx_resolveAgentGroup($text, $agentst);
+    $text = rx_resolveAgentGroupFromReplyButton($text, $agentst);
     if ($text === null) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidtypeagent'], rx_agentGroupKeyboard(false), 'HTML');
         return;
@@ -3925,7 +3619,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     $eextraprice = json_encode($eextraprice);
     update("marzban_panel", "maxtime", $eextraprice, "name_panel", $userdata['namepanel']);
     update("user", "Processing_value", $userdata['namepanel'], "id", $from_id);
-    step('home', $from_id);
+    step('PanelMenu', $from_id);
 } elseif ($text == "🔼 اضافه کردن دپارتمان") {
     nm_adminInstantReply($from_id, "📌 ایدی عددی ادمینی که میخواهید پیام ها به آن ادمین ارسال شود را بفرستید", $backadmin, 'HTML');
     step("getidadmindep", $from_id);
@@ -3971,7 +3665,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     update("marzban_panel", "proxies", json_encode($userdata['service_ids']), "name_panel", $user['Processing_value']);
     step("home", $from_id);
-    nm_adminInstantReply($from_id, "✅ اطلاعات با موفقیت تنظیم گردید", $optionmarzneshin, 'HTML');
+    nm_adminInstantReply($from_id, "✅ اطلاعات با موفقیت تنظیم گردید", $optionMarzban, 'HTML');
 } elseif ($text == "👤 تنظیم آیدی پشتیبانی" && $adminrulecheck['rule'] == "administrator") {
     $textcart = "📌 نام کاربری خود را بدون @ برای پشتیبانی  ارسال کنید\n\n{$setting['id_support']}";
     nm_adminInstantReply($from_id, $textcart, $backadmin, 'HTML');
@@ -3980,7 +3674,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingPayment']['CartDirect'], $supportcenter, 'HTML');
     update("setting", "id_support", $text, null, null);
     step('home', $from_id);
-} elseif ($text == "📚 تنظیم آموزش کارت به کارت" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "📚 آموزش کارت به کارت" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
@@ -4016,7 +3710,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     step('home', $from_id);
     nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش nowpayment" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "📚 آموزش nowpayment" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
@@ -4052,7 +3746,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     step('home', $from_id);
     nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $nowpayment_setting_keyboard, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش پرفکت مانی" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "📚 آموزش پرفکت مانی" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
@@ -4088,7 +3782,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     step('home', $from_id);
     nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش plisio" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "📚 آموزش plisio" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
@@ -4124,43 +3818,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     step('home', $from_id);
     nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش ارزی ریالی اول" && $adminrulecheck['rule'] == "administrator") {
-    nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
-۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
-۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
-    step("gethelpiranpay1", $from_id);
-} elseif ($user['step'] == "gethelpiranpay1") {
-    if ($text) {
-        if (intval($text) == 2) {
-            update("PaySetting", "ValuePay", "0", "NamePay", "helpcart");
-        } else {
-            $data = json_encode(array(
-                'type' => "text",
-                'text' => $text
-            ));
-            update("PaySetting", "ValuePay", $data, "NamePay", "helpiranpay1");
-        }
-    } elseif ($photo) {
-        $data = json_encode(array(
-            'type' => "photo",
-            'text' => $caption,
-            'photoid' => $photoid
-        ));
-        update("PaySetting", "ValuePay", $data, "NamePay", "helpiranpay1");
-    } elseif ($video) {
-        $data = json_encode(array(
-            'type' => "video",
-            'text' => $caption,
-            'videoid' => $videoid
-        ));
-        update("PaySetting", "ValuePay", $data, "NamePay", "helpiranpay1");
-    } else {
-        nm_adminInstantReply($from_id, "❌ محتوای ارسال نامعتبر است.", $backadmin, 'HTML');
-        return;
-    }
-    step('home', $from_id);
-    nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش ارزی ریالی  دوم" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "📚 آموزش ترونادو" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
@@ -4196,21 +3854,21 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     step('home', $from_id);
     nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش ارزی ریالی سوم" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "📚 آموزش تون‌پی" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
-    step("helpiranpay3", $from_id);
-} elseif ($user['step'] == "helpiranpay3") {
+    step("helptonpay", $from_id);
+} elseif ($user['step'] == "helptonpay") {
     if ($text) {
         if (intval($text) == 2) {
-            update("PaySetting", "ValuePay", "0", "NamePay", "helpiranpay3");
+            update("PaySetting", "ValuePay", "0", "NamePay", "helptonpay");
         } else {
             $data = json_encode(array(
                 'type' => "text",
                 'text' => $text
             ));
-            update("PaySetting", "ValuePay", $data, "NamePay", "helpiranpay3");
+            update("PaySetting", "ValuePay", $data, "NamePay", "helptonpay");
         }
     } elseif ($photo) {
         $data = json_encode(array(
@@ -4218,35 +3876,35 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             'text' => $caption,
             'photoid' => $photoid
         ));
-        update("PaySetting", "ValuePay", $data, "NamePay", "helpiranpay3");
+        update("PaySetting", "ValuePay", $data, "NamePay", "helptonpay");
     } elseif ($video) {
         $data = json_encode(array(
             'type' => "video",
             'text' => $caption,
             'videoid' => $videoid
         ));
-        update("PaySetting", "ValuePay", $data, "NamePay", "helpiranpay3");
+        update("PaySetting", "ValuePay", $data, "NamePay", "helptonpay");
     } else {
         nm_adminInstantReply($from_id, "❌ محتوای ارسال نامعتبر است.", $backadmin, 'HTML');
         return;
     }
     step('home', $from_id);
-    nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش درگاه اقای پرداخت" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $tonpay, 'HTML');
+} elseif ($text == "📚 آموزش بلوپال" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
-    step("helpaqayepardakht", $from_id);
-} elseif ($user['step'] == "helpaqayepardakht") {
+    step("helpblupal", $from_id);
+} elseif ($user['step'] == "helpblupal") {
     if ($text) {
         if (intval($text) == 2) {
-            update("PaySetting", "ValuePay", "0", "NamePay", "helpcart");
+            update("PaySetting", "ValuePay", "0", "NamePay", "helpblupal");
         } else {
             $data = json_encode(array(
                 'type' => "text",
                 'text' => $text
             ));
-            update("PaySetting", "ValuePay", $data, "NamePay", "helpaqayepardakht");
+            update("PaySetting", "ValuePay", $data, "NamePay", "helpblupal");
         }
     } elseif ($photo) {
         $data = json_encode(array(
@@ -4254,21 +3912,129 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             'text' => $caption,
             'photoid' => $photoid
         ));
-        update("PaySetting", "ValuePay", $data, "NamePay", "helpaqayepardakht");
+        update("PaySetting", "ValuePay", $data, "NamePay", "helpblupal");
     } elseif ($video) {
         $data = json_encode(array(
             'type' => "video",
             'text' => $caption,
             'videoid' => $videoid
         ));
-        update("PaySetting", "ValuePay", $data, "NamePay", "helpaqayepardakht");
+        update("PaySetting", "ValuePay", $data, "NamePay", "helpblupal");
     } else {
         nm_adminInstantReply($from_id, "❌ محتوای ارسال نامعتبر است.", $backadmin, 'HTML');
         return;
     }
     step('home', $from_id);
-    nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش زرین پال" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $blupal, 'HTML');
+} elseif ($text == "📚 آموزش اطلس‌پی" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
+۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
+۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
+    step("helpatlaspay", $from_id);
+} elseif ($user['step'] == "helpatlaspay") {
+    if ($text) {
+        if (intval($text) == 2) {
+            update("PaySetting", "ValuePay", "0", "NamePay", "helpatlaspay");
+        } else {
+            $data = json_encode(array(
+                'type' => "text",
+                'text' => $text
+            ));
+            update("PaySetting", "ValuePay", $data, "NamePay", "helpatlaspay");
+        }
+    } elseif ($photo) {
+        $data = json_encode(array(
+            'type' => "photo",
+            'text' => $caption,
+            'photoid' => $photoid
+        ));
+        update("PaySetting", "ValuePay", $data, "NamePay", "helpatlaspay");
+    } elseif ($video) {
+        $data = json_encode(array(
+            'type' => "video",
+            'text' => $caption,
+            'videoid' => $videoid
+        ));
+        update("PaySetting", "ValuePay", $data, "NamePay", "helpatlaspay");
+    } else {
+        nm_adminInstantReply($from_id, "❌ محتوای ارسال نامعتبر است.", $backadmin, 'HTML');
+        return;
+    }
+    step('home', $from_id);
+    nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $atlaspay, 'HTML');
+} elseif ($text == "📚 آموزش تتراپی" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
+۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
+۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
+    step("helptetrapay", $from_id);
+} elseif ($user['step'] == "helptetrapay") {
+    if ($text) {
+        if (intval($text) == 2) {
+            update("PaySetting", "ValuePay", "0", "NamePay", "helptetrapay");
+        } else {
+            $data = json_encode(array(
+                'type' => "text",
+                'text' => $text
+            ));
+            update("PaySetting", "ValuePay", $data, "NamePay", "helptetrapay");
+        }
+    } elseif ($photo) {
+        $data = json_encode(array(
+            'type' => "photo",
+            'text' => $caption,
+            'photoid' => $photoid
+        ));
+        update("PaySetting", "ValuePay", $data, "NamePay", "helptetrapay");
+    } elseif ($video) {
+        $data = json_encode(array(
+            'type' => "video",
+            'text' => $caption,
+            'videoid' => $videoid
+        ));
+        update("PaySetting", "ValuePay", $data, "NamePay", "helptetrapay");
+    } else {
+        nm_adminInstantReply($from_id, "❌ محتوای ارسال نامعتبر است.", $backadmin, 'HTML');
+        return;
+    }
+    step('home', $from_id);
+    nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $tetrapay, 'HTML');
+} elseif ($text == "📚 آموزش کیوب‌پی" && $adminrulecheck['rule'] == "administrator") {
+    nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
+۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
+۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
+    step("helpcubepay", $from_id);
+} elseif ($user['step'] == "helpcubepay") {
+    if ($text) {
+        if (intval($text) == 2) {
+            update("PaySetting", "ValuePay", "0", "NamePay", "helpcubepay");
+        } else {
+            $data = json_encode(array(
+                'type' => "text",
+                'text' => $text
+            ));
+            update("PaySetting", "ValuePay", $data, "NamePay", "helpcubepay");
+        }
+    } elseif ($photo) {
+        $data = json_encode(array(
+            'type' => "photo",
+            'text' => $caption,
+            'photoid' => $photoid
+        ));
+        update("PaySetting", "ValuePay", $data, "NamePay", "helpcubepay");
+    } elseif ($video) {
+        $data = json_encode(array(
+            'type' => "video",
+            'text' => $caption,
+            'videoid' => $videoid
+        ));
+        update("PaySetting", "ValuePay", $data, "NamePay", "helpcubepay");
+    } else {
+        nm_adminInstantReply($from_id, "❌ محتوای ارسال نامعتبر است.", $backadmin, 'HTML');
+        return;
+    }
+    step('home', $from_id);
+    nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $cubepay, 'HTML');
+} elseif ($text == "📚 آموزش زرین پال" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
@@ -4304,7 +4070,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     step('home', $from_id);
     nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "📚 تنظیم آموزش  ارزی افلاین" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "📚 آموزش  ارزی افلاین" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آموزش خود را ارسال نمایید .
 ۱ - در صورتی که میخواید اموزشی نشان داده نشود عدد 2 را ارسال کنید
 ۲ - شما می توانید آموزش بصورت فیلم ُ  متن ُ تصویر ارسال نمایید", $backadmin, 'HTML');
@@ -4340,7 +4106,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     }
     step('home', $from_id);
     nm_adminInstantReply($from_id, "✅ آموزش با موفقیت ذخیره گردید.", $CartManage, 'HTML');
-} elseif ($text == "💰 مبلغ عضویت نمایندگی") {
+} elseif ($text == "💰 عضویت نمایندگی") {
     nm_adminInstantReply($from_id, "📌 قیمت درخواست  عضویت  برای نمایندگی را ارسال کنید.", $backadmin, 'HTML');
     step("getpricereqagent", $from_id);
 } elseif ($user['step'] == "getpricereqagent") {
@@ -4351,17 +4117,15 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ تغییرات با موفقیت ذخیره گردید", $setting_panel, 'HTML');
     step("home", $from_id);
     update("setting", "agentreqprice", $text, null, null);
-} elseif ($text == "🤖 تایید رسید  بدون بررسی" && $adminrulecheck['rule'] == "administrator") {
-    $paymentverify = select("PaySetting", "ValuePay", "NamePay", "statuscardautoconfirm", "select")['ValuePay'];
-    if ($paymentverify == "onautoconfirm") {
-        nm_adminInstantReply($from_id, "❌ ابتدا تایید خودکار را خاموش کنید.", null, 'HTML');
-        return;
-    }
+} elseif ($text == "🤖 تایید رسید بدون بررسی" && $adminrulecheck['rule'] == "administrator") {
     $paymentverify = select("PaySetting", "ValuePay", "NamePay", "autoconfirmcart", "select")['ValuePay'];
     $keyboardverify = json_encode([
         'inline_keyboard' => [
             [
                 ['text' => $paymentverify, 'callback_data' => $paymentverify],
+            ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'cart_back'],
             ],
         ]
     ]);
@@ -4374,6 +4138,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             [
                 ['text' => $paymentverify, 'callback_data' => $paymentverify],
             ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'cart_back'],
+            ],
         ]
     ]);
     Editmessagetext($from_id, $message_id, "خاموش شد", $keyboardverify);
@@ -4385,6 +4152,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             [
                 ['text' => $paymentverify, 'callback_data' => $paymentverify],
             ],
+            [
+                ['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'cart_back'],
+            ],
         ]
     ]);
     Editmessagetext($from_id, $message_id, "روشن شد", $keyboardverify);
@@ -4395,6 +4165,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     توجه داشتید باشید در کاربر مقصد در صورت داشتن موجودی حذف خواهد شد", $backadmin, 'HTML');
     step("getidfortransfers", $from_id);
 } elseif ($user['step'] == "getidfortransfers") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!userExists($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['not-user'], $backadmin, 'HTML');
         return;
@@ -4414,7 +4185,42 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     update("service_other", "id_user", $text, "id_user", $user['Processing_value']);
     update("Giftcodeconsumed", "id_user", $text, "id_user", $user['Processing_value']);
     step("home", $from_id);
-} elseif ($text == "🖼 پس زمینه کیوآرکد") {
+} elseif ($text == "📷 تنظیمات کیو آر کد") {
+    $__qrDisabledNow = function_exists('isQrDisabled') && isQrDisabled();
+    $__qrToggleLabel = $__qrDisabledNow ? "✅ فعال کردن کیو آر کد در سراسر سیستم" : "🚫 غیرفعال کردن کیو آر کد در سراسر سیستم";
+    $__qrStatusText  = $__qrDisabledNow ? "❌ کیو آر کد در حال حاضر <b>غیرفعال</b> است." : "✅ کیو آر کد در حال حاضر <b>فعال</b> است.";
+    $__qrSettingsKb = json_encode([
+        'inline_keyboard' => [
+            [['text' => $__qrToggleLabel, 'callback_data' => 'set_qr_toggle']],
+            [['text' => "🖼 تغییر پس‌زمینه کیو آر کد", 'callback_data' => 'set_qrbg']],
+            [['text' => "🔙 بازگشت", 'callback_data' => 'admin_settings']],
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+    nm_adminInstantReply($from_id, "📷 <b>تنظیمات کیو آر کد</b>\n\n{$__qrStatusText}", $__qrSettingsKb, 'HTML');
+} elseif ($text == "🔄 وضعیت کیوآرکد") {
+    $__qrDisabledNow = function_exists('isQrDisabled') && isQrDisabled();
+    $__newVal = $__qrDisabledNow ? '0' : '1';
+    $__existingQrRow = select("shopSetting", "*", "Namevalue", "qr_disabled", "select");
+    if (is_array($__existingQrRow)) {
+        update("shopSetting", "value", $__newVal, "Namevalue", "qr_disabled");
+    } else {
+        $__qrPdo = function_exists('getDatabaseConnection') ? getDatabaseConnection() : ($GLOBALS['pdo'] ?? null);
+        if ($__qrPdo instanceof PDO) {
+            $__qrPdo->prepare("INSERT INTO shopSetting (Namevalue, value) VALUES ('qr_disabled', ?) ON DUPLICATE KEY UPDATE value = VALUES(value)")->execute([$__newVal]);
+        }
+    }
+    $__qrNowDisabled = ($__newVal === '1');
+    $__qrToggleLabel2 = $__qrNowDisabled ? "✅ فعال کردن کیو آر کد در سراسر سیستم" : "🚫 غیرفعال کردن کیو آر کد در سراسر سیستم";
+    $__qrStatusText2  = $__qrNowDisabled ? "❌ کیو آر کد در حال حاضر <b>غیرفعال</b> است." : "✅ کیو آر کد در حال حاضر <b>فعال</b> است.";
+    $__qrSettingsKb2 = json_encode([
+        'inline_keyboard' => [
+            [['text' => $__qrToggleLabel2, 'callback_data' => 'set_qr_toggle']],
+            [['text' => "🖼 تغییر پس‌زمینه کیو آر کد", 'callback_data' => 'set_qrbg']],
+            [['text' => "🔙 بازگشت", 'callback_data' => 'admin_settings']],
+        ],
+    ], JSON_UNESCAPED_UNICODE);
+    nm_adminInstantReply($from_id, "📷 <b>تنظیمات کیو آر کد</b>\n\n{$__qrStatusText2}\n\n" . ($__qrNowDisabled ? "🚫 کیو آر کد با موفقیت <b>غیرفعال</b> شد." : "✅ کیو آر کد با موفقیت <b>فعال</b> شد."), $__qrSettingsKb2, 'HTML');
+} elseif ($text == "🖼 پس‌زمینه کیوآرکد") {
     nm_adminInstantReply($from_id, "تصویر خود را برای پس زمینه ارسال کنید", $backadmin, 'HTML');
     step("getimagebackgroundqr", $from_id);
 } elseif ($user['step'] == "getimagebackgroundqr") {
@@ -4440,7 +4246,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         }
         step("home", $from_id);
     }
-} elseif ($text == "⚙️ تنظیم پروتکل و اینباند" || $text == "🎛 تنظیم نام گروه" || $text == "⚙️ تنظیم نود") {
+} elseif ($text == "⚙️ پروتکل اینباند" || $text == "🎛 تنظیم نام گروه" || $text == "⚙️ تنظیم نود") {
     if ($text == "🎛 تنظیم نام گروه") {
         $textsetprotocol = "📌 نام گروهی که بصورت پیشفرض می خواهید از آن ساخته شود را ارسال نمایید.";
     } elseif ($text == "⚙️ تنظیم نود") {
@@ -4451,6 +4257,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textsetprotocol, $backadmin, 'HTML');
     step("setinboundandprotocol", $from_id);
 } elseif ($user['step'] == "setinboundandprotocol") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $panel = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
     if ($panel['type'] == "marzban") {
         if ((string)($panel['version_panel'] ?? '0') === '1') {
@@ -4512,29 +4319,44 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             update("marzban_panel", "inbounds", json_encode($DataUserOut['inbounds']), "name_panel", $user['Processing_value']);
             update("marzban_panel", "proxies", json_encode($DataUserOut['proxies'], true), "name_panel", $user['Processing_value']);
         }
-    } elseif ($panel['type'] == "s_ui") {
-        $data = GetClientsS_UI($text, $panel['name_panel']); {
-            if (count($data) == 0) {
-                nm_adminInstantReply($from_id, "❌ یوزر در پنل وجود ندارد.", $options_ui, 'HTML');
-                return;
-            }
-            $servies = [];
-            foreach ($data['inbounds'] as $service) {
-                $servies[] = $service;
-            }
-            update("marzban_panel", "proxies", json_encode($servies, true), "name_panel", $user['Processing_value']);
-            syncSuiInboundsWithProxies($panel['id'] ?? null);
+    } elseif ($panel['type'] == "pasarguard") {
+        $DataUserOut = pasarguardGetUser($text, $user['Processing_value']);
+        if (!empty($DataUserOut['error'])) {
+            nm_adminInstantReply($from_id, $DataUserOut['error'], null, 'HTML');
+            return;
         }
-    } elseif ($panel['type'] == "ibsng" || $panel['type'] == "mikrotik") {
-        update("marzban_panel", "proxies", $text, "name_panel", $user['Processing_value']);
+        if (!empty($DataUserOut['status']) && $DataUserOut['status'] != 200) {
+            nm_adminInstantReply($from_id, "❌  خطایی رخ داده است کد خطا :  {$DataUserOut['status']}", null, 'HTML');
+            return;
+        }
+        $DataUserOut = json_decode($DataUserOut['body'], true);
+        if ((isset($DataUserOut['detail']) && !empty($DataUserOut['detail'])) or !isset($DataUserOut['proxy_settings'])) {
+            nm_adminInstantReply($from_id, $textbotlang['users']['stateus']['UserNotFound'], null, 'html');
+            return;
+        }
+        foreach ($DataUserOut['proxy_settings'] as $key => &$value) {
+            if ($key == "shadowsocks") {
+                unset($DataUserOut['proxy_settings'][$key]['password']);
+            } elseif ($key == "trojan") {
+                unset($DataUserOut['proxy_settings'][$key]['password']);
+            } elseif ($key == "wireguard") {
+                unset($DataUserOut['proxy_settings'][$key]['private_key']);
+                unset($DataUserOut['proxy_settings'][$key]['public_key']);
+                unset($DataUserOut['proxy_settings'][$key]['peer_ips']);
+            } elseif ($key == "hysteria") {
+                unset($DataUserOut['proxy_settings'][$key]['auth']);
+            } else {
+                unset($DataUserOut['proxy_settings'][$key]['id']);
+            }
+            if (count($DataUserOut['proxy_settings'][$key]) == 0) {
+                $DataUserOut['proxy_settings'][$key] = new stdClass();
+            }
+        }
+        update("marzban_panel", "inbounds", json_encode($DataUserOut['group_ids'] ?? []), "name_panel", $user['Processing_value']);
+        update("marzban_panel", "proxies", json_encode($DataUserOut['proxy_settings'], true), "name_panel", $user['Processing_value']);
     }
-    if ($panel['type'] == "ibsng") {
-        nm_adminInstantReply($from_id, "✅ نام گروه با موفقیت تنظیم گردید.", $optionibsng, 'HTML');
-    } elseif ($panel['type'] == "mikrotik") {
-        nm_adminInstantReply($from_id, "✅ نام گروه با موفقیت تنظیم گردید.", $option_mikrotik, 'HTML');
-    } else {
-        nm_adminInstantReply($from_id, "✅ اینباند و پروتکل های شما با موفقیت تنظیم گردیدند.", $optionMarzban, 'HTML');
-    }
+    $rxInboundSetupKeyboard = $panel['type'] == "pasarguard" ? $optionPasarGuard : $optionMarzban;
+    nm_adminInstantReply($from_id, "✅ اینباند و پروتکل های شما با موفقیت تنظیم گردیدند.", $rxInboundSetupKeyboard, 'HTML');
     step("home", $from_id);
 } elseif ($text == "🔋 وضعیت تمدید" && $adminrulecheck['rule'] == "administrator") {
     $marzbanstatus = select("marzban_panel", "*", "name_panel", $user['Processing_value'], "select");
@@ -4542,6 +4364,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'inline_keyboard' => [
             [
                 ['text' => $marzbanstatus['status_extend'], 'callback_data' => $marzbanstatus['status_extend']],
+            ],
+            [
+                ['text' => "🔙 بازگشت به منوی پنل", 'callback_data' => 'panelmenu_back'],
             ],
         ]
     ]);
@@ -4554,6 +4379,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
             [
                 ['text' => $marzbanstatus['status_extend'], 'callback_data' => $marzbanstatus['status_extend']],
             ],
+            [
+                ['text' => "🔙 بازگشت به منوی پنل", 'callback_data' => 'panelmenu_back'],
+            ],
         ]
     ]);
     Editmessagetext($from_id, $message_id, $textbotlang['Admin']['Status']['activepanelStatusOff'], $keyboardstatus);
@@ -4564,6 +4392,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         'inline_keyboard' => [
             [
                 ['text' => $marzbanstatus['status_extend'], 'callback_data' => $marzbanstatus['status_extend']],
+            ],
+            [
+                ['text' => "🔙 بازگشت به منوی پنل", 'callback_data' => 'panelmenu_back'],
             ],
         ]
     ]);
@@ -4599,7 +4430,7 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "✅ ادمین با موفقیت حذف گردید", null, 'HTML');
 }
 
-elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $adminrulecheck['rule'] == "administrator") {
+elseif ($text == "🫣 مخفی پنل برای کاربر" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آیدی عددی کاربر را برای این پنل را ارسال نمایید.", $backadmin, 'HTML');
     step('getuserhide', $from_id);
 } elseif ($user['step'] == "getuserhide") {
@@ -4618,7 +4449,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     $hideuserid = json_encode($hideuserid);
     update("marzban_panel", "hide_user", $hideuserid, "name_panel", $user['Processing_value']);
     step('home', $from_id);
-} elseif ($text == "❌  حذف کاربر از لیست مخفی شدگان" && $adminrulecheck['rule'] == "administrator") {
+} elseif ($text == "❌ حذف از لیست مخفی" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, "📌آیدی عددی کاربر را برای این پنل را ارسال نمایید.", $backadmin, 'HTML');
     step('getuserhideforremove', $from_id);
 } elseif ($user['step'] == "getuserhideforremove") {
@@ -4650,11 +4481,13 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     update("marzban_panel", "hide_user", $hideuserid, "name_panel", $user['Processing_value']);
     outtypepanel($typepanel['type'], "✅  کاربر با موفقیت از لیست حذف گردید.");
 } elseif ($datain == "scoresetting") {
+    step('featnav_lottery', $from_id);
     nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $lottery, 'HTML');
 } elseif ($text == "1️⃣ تنظیم جایزه نفر اول") {
     nm_adminInstantReply($from_id, "📌 مقدار مبلغی که می خواهید حساب کاربر شارژ شود را ارسال نمایید.", $lottery, 'HTML');
     step("getonelotary", $from_id);
 } elseif ($user['step'] == "getonelotary") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
@@ -4669,6 +4502,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     nm_adminInstantReply($from_id, "📌 مقدار مبلغی که می خواهید حساب کاربر شارژ شود را ارسال نمایید.", $lottery, 'HTML');
     step("getonelotary2", $from_id);
 } elseif ($user['step'] == "getonelotary2") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
@@ -4683,6 +4517,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     nm_adminInstantReply($from_id, "📌 مقدار مبلغی که می خواهید حساب کاربر شارژ شود را ارسال نمایید.", $lottery, 'HTML');
     step("getonelotary3", $from_id);
 } elseif ($user['step'] == "getonelotary3") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
@@ -4694,11 +4529,13 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     $data = json_encode($data, true);
     update("setting", "Lottery_prize", $data, null, null);
 } elseif ($datain == "gradonhshans") {
+    step('featnav_wheel', $from_id);
     nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $wheelkeyboard, 'HTML');
 } elseif ($text == "🎲 مبلغ برنده شدن کاربر") {
     nm_adminInstantReply($from_id, "📌 مقدار مبلغی که می خواهید حساب کاربر شارژ شود را ارسال نمایید.", $backadmin, 'HTML');
     step("getpricewheel", $from_id);
 } elseif ($user['step'] == "getpricewheel") {
+    if (!isset($update['message']) && empty($text)) { return; }
     if (!ctype_digit($text)) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
         return;
@@ -4774,6 +4611,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     nm_adminInstantReply($from_id, "📌 در صورتی که پنل مرزبان  یا مرزنشین هستید یک نام کاربری کانفیگ از پنل کپی و ارسال نمایید در غیراینصورت برای پنل های ثنایی و علیرضا شناسه اینباند را ارسال نمایید", $backadmin, 'HTML');
     step("getdatainboundproduct", $from_id);
 } elseif ($user['step'] == "getdatainboundproduct") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $marzban_list_get = select("marzban_panel", "*", "code_panel", $user['Processing_value_one']);
     $datainbound = "";
     if ($marzban_list_get['type'] == "marzban") {
@@ -4811,27 +4649,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
         $stmt->bindParam(':agent', $user['Processing_value_tow']);
         $stmt->execute();
         $datainbound = json_encode($DataUserOut['inbounds']);
-    } elseif ($marzban_list_get['type'] == "marzneshin") {
-        $userdata = json_decode(getuserm($text, $marzban_list_get['name_panel'])['body'], true);
-        if (isset($userdata['detail']) and $userdata['detail'] == "User not found") {
-            nm_adminInstantReply($from_id, "کاربر در پنل وجود ندارد", null, 'HTML');
-            return;
-        }
-        $datainbound = json_encode($userdata['service_ids'], true);
-    } elseif ($marzban_list_get['type'] == "x-ui_single" || $marzban_list_get['type'] == "alireza_single") {
-        $datainbound = $text;
-    } elseif ($marzban_list_get['type'] == "s_ui") {
-        $data = GetClientsS_UI($text, $panel['name_panel']);
-        if (count($data) == 0) {
-            nm_adminInstantReply($from_id, "❌ یوزر در پنل وجود ندارد.", $options_ui, 'HTML');
-            return;
-        }
-        $servies = [];
-        foreach ($data['inbounds'] as $service) {
-            $servies[] = $service;
-        }
-        $datainbound = json_encode($servies);
-    } elseif ($marzban_list_get['type'] == "ibsng" || $marzban_list_get['type'] == "mikrotik") {
+    } elseif ($marzban_list_get['type'] == "x-ui_single") {
         $datainbound = $text;
     } else {
         nm_adminInstantReply($from_id, "❌ برای این پنل قابلیت تعریف اینباند وجود ندارد", $shopkeyboard, 'HTML');
@@ -4846,24 +4664,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     nm_adminInstantReply($from_id, "✅محصول بروزرسانی شد", $shopkeyboard, 'HTML');
     step('home', $from_id);
 } elseif ($datain == "iploginset") {
-    $setting_row = select("setting", "*", null, null, "select");
-    $raw_ip = $setting_row['iplogin'] ?? '';
-    $ip_list = [];
-    $iplogin_unlimited = false;
-    if ($raw_ip === '*' || $raw_ip === 'all' || $raw_ip === 'unlimited') {
-        $iplogin_unlimited = true;
-    } elseif (!empty($raw_ip) && $raw_ip !== '0') {
-        $decoded = json_decode($raw_ip, true);
-        if (is_array($decoded)) {
-            if (in_array('*', $decoded, true) || in_array('all', $decoded, true) || in_array('unlimited', $decoded, true)) {
-                $iplogin_unlimited = true;
-            } else {
-                $ip_list = $decoded;
-            }
-        } elseif (filter_var($raw_ip, FILTER_VALIDATE_IP)) {
-            $ip_list = [$raw_ip];
-        }
-    }
+    [$ip_list, $iplogin_unlimited] = getIpLoginState();
 
     $msg = "🛡 <b>تنظیم آیپی ورود</b>\n";
     $msg .= "━━━━━━━━━━━━━━━━━━━━\n";
@@ -4883,21 +4684,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     $msg .= "➕ برای افزودن آیپی جدید، دکمه <b>افزودن آیپی</b> را بزنید.\n";
     $msg .= "♾️ برای دسترسی نامحدود، دکمه <b>حالت نامحدود</b> را بزنید.";
 
-    $ip_keyboard = ['inline_keyboard' => []];
-    foreach ($ip_list as $i => $ip) {
-        $ip_keyboard['inline_keyboard'][] = [
-            ['text' => "🔸 " . $ip, 'callback_data' => "noop"],
-            ['text' => "🗑 حذف",     'callback_data' => "deliplogin_" . $i],
-        ];
-    }
-    $ip_keyboard['inline_keyboard'][] = [['text' => "➕ افزودن آیپی", 'callback_data' => "addiplogin"]];
-    if ($iplogin_unlimited) {
-        $ip_keyboard['inline_keyboard'][] = [['text' => "🔒 غیرفعال‌سازی حالت نامحدود", 'callback_data' => "iploginunlim_off"]];
-    } else {
-        $ip_keyboard['inline_keyboard'][] = [['text' => "♾️ فعال‌سازی حالت نامحدود", 'callback_data' => "iploginunlim_on"]];
-    }
-    $ip_keyboard['inline_keyboard'][] = [['text' => "🏠 بازگشت به منوی اصلی", 'callback_data' => "backadmin"]];
-    $ip_keyboard_json = json_encode($ip_keyboard);
+    $ip_keyboard_json = buildIpLoginKeyboard($ip_list, $iplogin_unlimited);
 
     if ($message_id) {
         Editmessagetext($from_id, $message_id, $msg, $ip_keyboard_json);
@@ -4924,16 +4711,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
         $msg .= "⚠️ هیچ آیپی‌ای تنظیم نشده است.\n";
     }
     $msg .= "━━━━━━━━━━━━━━━━━━━━";
-    $ip_keyboard = ['inline_keyboard' => []];
-    $ip_keyboard['inline_keyboard'][] = [['text' => "➕ افزودن آیپی", 'callback_data' => "addiplogin"]];
-    if ($iplogin_unlimited) {
-        $ip_keyboard['inline_keyboard'][] = [['text' => "🔒 غیرفعال‌سازی حالت نامحدود", 'callback_data' => "iploginunlim_off"]];
-    } else {
-        $ip_keyboard['inline_keyboard'][] = [['text' => "♾️ فعال‌سازی حالت نامحدود", 'callback_data' => "iploginunlim_on"]];
-    }
-    $ip_keyboard['inline_keyboard'][] = [['text' => "🛡 مدیریت آیپی‌ها", 'callback_data' => "iploginset"]];
-    $ip_keyboard['inline_keyboard'][] = [['text' => "🏠 بازگشت به منوی اصلی", 'callback_data' => "backadmin"]];
-    $ip_keyboard_json = json_encode($ip_keyboard);
+    $ip_keyboard_json = buildIpLoginKeyboard($ip_list, $iplogin_unlimited);
     if ($message_id) {
         Editmessagetext($from_id, $message_id, $msg, $ip_keyboard_json);
     } else {
@@ -4944,6 +4722,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     step("getiplogin", $from_id);
 
 } elseif ($user['step'] == "getiplogin") {
+    if (!isset($update['message']) && empty($text)) { return; }
     $new_ip = trim($text);
     if (!filter_var($new_ip, FILTER_VALIDATE_IP)) {
         nm_adminInstantReply($from_id, "❌ آیپی وارد شده معتبر نیست. لطفاً یک آیپی صحیح ارسال کنید.\nمثال: <code>1.2.3.4</code>", null, 'HTML');
@@ -5005,16 +4784,7 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     }
     $msg .= "━━━━━━━━━━━━━━━━━━━━";
 
-    $ip_keyboard = ['inline_keyboard' => []];
-    foreach ($ip_list as $i => $ip) {
-        $ip_keyboard['inline_keyboard'][] = [
-            ['text' => "🔸 " . $ip, 'callback_data' => "noop"],
-            ['text' => "🗑 حذف",     'callback_data' => "deliplogin_" . $i],
-        ];
-    }
-    $ip_keyboard['inline_keyboard'][] = [['text' => "➕ افزودن آیپی", 'callback_data' => "addiplogin"]];
-    $ip_keyboard['inline_keyboard'][] = [['text' => "🏠 بازگشت به منوی اصلی", 'callback_data' => "backadmin"]];
-    $ip_keyboard_json = json_encode($ip_keyboard);
+    $ip_keyboard_json = buildIpLoginKeyboard($ip_list, false);
 
     if ($message_id) {
         Editmessagetext($from_id, $message_id, $msg, $ip_keyboard_json);
@@ -5117,16 +4887,19 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     deletemessage($from_id, $message_id);
     $extend = $ManagePanel->extend($marzban_list_get['Methodextend'], $prodcut['Volume_constraint'], $prodcut['Service_time'], $nameloc['username'], $prodcut['code_product'], $marzban_list_get['code_panel']);
     if ($extend['status'] == false) {
-        if (nmStockCompleteExtendFallback($from_id, $user, $nameloc, $prodcut, 0, 'maintenance_extend_panel_fallback')) {
-            return;
-        }
         $extend['msg'] = json_encode($extend['msg']);
         $textreports = "
         خطای تمدید سرویس
-نام پنل : {$marzban_list_get['name_panel']}
-نام کاربری سرویس : {$nameloc['username']}
-دلیل خطا : {$extend['msg']}";
-        nm_adminInstantReply($from_id, "❌خطایی در تمدید سرویس رخ داده با پشتیبانی در ارتباط باشید", null, 'HTML');
+<blockquote>نام پنل : {$marzban_list_get['name_panel']}</blockquote>
+<blockquote>نام کاربری سرویس : {$nameloc['username']}</blockquote>
+<blockquote>دلیل خطا : {$extend['msg']}</blockquote>";
+        $rxAdminExtendMsg = "❌خطایی در تمدید سرویس رخ داده با پشتیبانی در ارتباط باشید";
+        if (($extend['code'] ?? '') === 'manual_stock_empty') {
+            $rxAdminExtendMsg = "❌ موجودی انبار فروش دستی برای این محصول تمام شده است.";
+        } elseif (($extend['code'] ?? '') === 'queued_renewal_exists') {
+            $rxAdminExtendMsg = "❌ یک رزرو اشتراک برای این سرویس در انتظار فعال‌سازی است.";
+        }
+        nm_adminInstantReply($from_id, $rxAdminExtendMsg, null, 'HTML');
         if (strlen($setting['Channel_Report']) > 0) {
             telegram('sendmessage', [
                 'chat_id' => $setting['Channel_Report'],
@@ -5151,16 +4924,20 @@ elseif ($text == "🫣 مخفی کردن پنل برای یک کاربر" && $ad
     $stmt->bindParam(':output', $output_json, PDO::PARAM_STR);
     $stmt->execute();
     update("invoice", "Status", "active", "id_invoice", $id_invoice);
-    nm_adminInstantReply($from_id, $textbotlang['users']['extend']['thanks'], null, 'HTML');
+    $rxAdminExtendThanks = $textbotlang['users']['extend']['thanks'];
+    if (!empty($extend['queued'])) {
+        $rxAdminExtendThanks .= "\n\n⏳ این بسته هم‌اکنون فعال نشد. به محض اتمام حجم یا زمان سرویس فعلی، این بسته به‌صورت خودکار فعال خواهد شد.";
+    }
+    nm_adminInstantReply($from_id, $rxAdminExtendThanks, null, 'HTML');
     $text_report = "⭕️ ادمین سرویس کاربر را تمدید کرد.
 
 اطلاعات کاربر :
 
-🪪 آیدی عددی ادمین : <code>$from_id</code>
-🪪 آیدی عددی : <code>{$nameloc['id_user']}</code>
-🛍 نام محصول :  {$prodcut['name_product']}
-👤 نام کاربری مشتری در پنل  : {$nameloc['username']}
-موقعیت سرویس سرویس کاربر : {$nameloc['Service_location']}";
+<blockquote>🪪 آیدی عددی ادمین : <code>$from_id</code></blockquote>
+<blockquote>🪪 آیدی عددی : <code>{$nameloc['id_user']}</code></blockquote>
+<blockquote>🛍 نام محصول :  {$prodcut['name_product']}</blockquote>
+<blockquote>👤 نام کاربری مشتری در پنل  : {$nameloc['username']}</blockquote>
+<blockquote>موقعیت سرویس سرویس کاربر : {$nameloc['Service_location']}</blockquote>";
     if (strlen($setting['Channel_Report']) > 0) {
         telegram('sendmessage', [
             'chat_id' => $setting['Channel_Report'],

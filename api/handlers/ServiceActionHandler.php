@@ -23,30 +23,20 @@ final class ServiceActionHandler extends BaseHandler
             case 'transfer':
                 $target = trim((string)($payload['target_user_id'] ?? ''));
                 if ($target === '') {
-                    return ['شناسه کاربر مقصد را وارد کنید.', ''];
+                    return [faoxima_textbot_get('dyn_serviceaction_transfer_target_required', 'شناسه کاربر مقصد را وارد کنید.'), ''];
                 }
                 if (!ctype_digit($target)) {
-                    return ['شناسه کاربر باید عدد باشد.', ''];
+                    return [faoxima_textbot_get('dyn_serviceaction_transfer_target_must_be_numeric', 'شناسه کاربر باید عدد باشد.'), ''];
                 }
                 if ($target === (string)$this->user['id']) {
-                    return ['نمی‌توانید سرویس را به خودتان انتقال دهید.', ''];
+                    return [faoxima_textbot_get('dyn_serviceaction_transfer_cannot_self', 'نمی‌توانید سرویس را به خودتان انتقال دهید.'), ''];
                 }
-                return [null, "👤 کاربر مقصد: <code>" . htmlspecialchars($target, ENT_QUOTES) . "</code>"];
-
-            case 'change_location':
-                $target = trim((string)($payload['target_panel'] ?? ''));
-                if ($target === '') {
-                    return ['موقعیت جدید را انتخاب کنید.', ''];
-                }
-                if (mb_strlen($target) > 200) {
-                    return ['نام موقعیت بیش از حد طولانی است.', ''];
-                }
-                return [null, "🌍 موقعیت پیشنهادی: <code>" . htmlspecialchars($target, ENT_QUOTES) . "</code>"];
+                return [null, faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_transfer_target_block_tpl', '👤 کاربر مقصد: <code>{target}</code>'), ['target' => htmlspecialchars($target, ENT_QUOTES)])];
 
             case 'refund':
                 $reason = trim((string)($payload['reason'] ?? ''));
                 if (mb_strlen($reason) > 500) $reason = mb_substr($reason, 0, 500);
-                return [null, $reason !== '' ? "📝 توضیح کاربر: " . htmlspecialchars($reason, ENT_QUOTES) : ''];
+                return [null, $reason !== '' ? faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_refund_reason_block_tpl', '📝 توضیح کاربر: {reason}'), ['reason' => htmlspecialchars($reason, ENT_QUOTES)]) : ''];
 
             case 'changelink':
             default:
@@ -72,8 +62,7 @@ final class ServiceActionHandler extends BaseHandler
 
 
             if (in_array($action, self::LEGACY_ACTIONS, true)) {
-                FaoximaResponse::fail(409,
-                    '⚠️ نسخهٔ مینی‌اپ شما قدیمی است. لطفاً صفحه را بازنشانی کنید (Pull-to-refresh یا بستن و باز کردن مینی‌اپ).');
+                FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceaction_miniapp_outdated', '⚠️ نسخهٔ مینی‌اپ شما قدیمی است. لطفاً صفحه را بازنشانی کنید (Pull-to-refresh یا بستن و باز کردن مینی‌اپ).'));
             }
             FaoximaResponse::badRequest('Invalid action');
         }
@@ -96,11 +85,21 @@ final class ServiceActionHandler extends BaseHandler
             return;
         }
 
+        if ($action === 'change_location') {
+            $payload = FaoximaInput::array($this->data, 'payload');
+            $targetPanel = trim((string)($payload['target_panel'] ?? ''));
+            if ($targetPanel === '') {
+                FaoximaResponse::fail(422, faoxima_textbot_get('dyn_serviceaction_select_new_location', '❌ موقعیت جدید را انتخاب کنید.'));
+            }
+            $this->performChangeLocation($invoice, $targetPanel);
+            return;
+        }
+
 
         $payload = FaoximaInput::array($this->data, 'payload');
         [$err, $extraBlock] = $this->validatePayload($action, $payload);
         if ($err !== null) {
-            FaoximaResponse::fail(422, '❌ ' . $err);
+            FaoximaResponse::fail(422, faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_validation_error_tpl', '❌ {err}'), ['err' => $err]));
         }
 
 
@@ -119,7 +118,7 @@ final class ServiceActionHandler extends BaseHandler
             FaoximaLogger::userFacing('admin table fetch failed (service_action)', ['err' => $e->getMessage()]);
         }
         if (empty($adminIds)) {
-            FaoximaResponse::fail(503, '❌ هیچ ادمینی روی سرور تنظیم نشده است.');
+            FaoximaResponse::fail(503, faoxima_textbot_get('dyn_receipt_no_admin_configured', '❌ هیچ ادمینی روی سرور تنظیم نشده است.'));
         }
 
 
@@ -130,7 +129,7 @@ final class ServiceActionHandler extends BaseHandler
             $apiKey = is_array($rowKey) ? (string)($rowKey['token_bot'] ?? '') : '';
         }
         if ($apiKey === '') {
-            FaoximaResponse::fail(503, '❌ توکن ربات روی سرور تنظیم نشده است.');
+            FaoximaResponse::fail(503, faoxima_textbot_get('dyn_receipt_bot_token_missing', '❌ توکن ربات روی سرور تنظیم نشده است.'));
         }
 
 
@@ -139,25 +138,28 @@ final class ServiceActionHandler extends BaseHandler
         $userFull = trim((string)($this->user['first_name'] ?? '') . ' ' . (string)($this->user['last_name'] ?? ''));
         if ($userFull === '') $userFull = $userId;
 
-        $label = self::ACTION_LABELS[$action];
+        $label = faoxima_textbot_get('dyn_serviceaction_label_' . $action, self::ACTION_LABELS[$action]);
 
         $textParts = [];
-        $textParts[] = $label . ' (از مینی‌اپ)';
+        $textParts[] = $label . faoxima_textbot_get('dyn_serviceaction_from_miniapp_suffix', ' (از مینی‌اپ)');
         $textParts[] = '';
-        $textParts[] = '👤 کاربر: <a href="tg://user?id=' . $userId . '">' . htmlspecialchars($userFull, ENT_QUOTES) . '</a>'
-                     . ($userName !== '' ? ' (@' . htmlspecialchars($userName, ENT_QUOTES) . ')' : '');
-        $textParts[] = '🪪 شناسه عددی: <code>' . htmlspecialchars($userId, ENT_QUOTES) . '</code>';
+        $textParts[] = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_user_line_tpl', '👤 کاربر: <a href="tg://user?id={user_id}">{user_full}</a>{username_part}'), [
+            'user_id' => $userId,
+            'user_full' => htmlspecialchars($userFull, ENT_QUOTES),
+            'username_part' => $userName !== '' ? ' (@' . htmlspecialchars($userName, ENT_QUOTES) . ')' : '',
+        ]);
+        $textParts[] = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_user_id_line_tpl', '🪪 شناسه عددی: <code>{user_id}</code>'), ['user_id' => htmlspecialchars($userId, ENT_QUOTES)]);
         $textParts[] = '';
-        $textParts[] = '🛍 محصول: ' . htmlspecialchars((string)$invoice['name_product'], ENT_QUOTES);
-        $textParts[] = '👤 نام کاربری سرویس: <code>' . htmlspecialchars((string)$invoice['username'], ENT_QUOTES) . '</code>';
-        $textParts[] = '🌍 موقعیت سرویس: ' . htmlspecialchars((string)$invoice['Service_location'], ENT_QUOTES);
-        $textParts[] = '🆔 کد فاکتور: <code>' . htmlspecialchars((string)$invoice['id_invoice'], ENT_QUOTES) . '</code>';
+        $textParts[] = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_product_line_tpl', '🛍 محصول: {product}'), ['product' => htmlspecialchars((string)$invoice['name_product'], ENT_QUOTES)]);
+        $textParts[] = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_service_username_line_tpl', '👤 نام کاربری سرویس: <code>{username}</code>'), ['username' => htmlspecialchars((string)$invoice['username'], ENT_QUOTES)]);
+        $textParts[] = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_location_line_tpl', '🌍 موقعیت سرویس: {location}'), ['location' => htmlspecialchars((string)$invoice['Service_location'], ENT_QUOTES)]);
+        $textParts[] = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_invoice_id_line_tpl', '🆔 کد فاکتور: <code>{invoice_id}</code>'), ['invoice_id' => htmlspecialchars((string)$invoice['id_invoice'], ENT_QUOTES)]);
         if ($extraBlock !== '') {
             $textParts[] = '';
             $textParts[] = $extraBlock;
         }
         $textParts[] = '';
-        $textParts[] = '🕒 زمان: ' . jdate('Y/m/d H:i:s');
+        $textParts[] = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_time_line_tpl', '🕒 زمان: {when}'), ['when' => jdate('Y/m/d H:i:s')]);
         $text = implode("\n", $textParts);
 
 
@@ -168,7 +170,7 @@ final class ServiceActionHandler extends BaseHandler
         }
 
         $manageUserBtn = ($botUsername !== '' && strcasecmp($botUsername, 'NOT_USERNAME') !== 0)
-            ? ['text' => '⚙️ مدیریت کاربر در ربات', 'url' => 'https://t.me/' . $botUsername . '?start=manageuser_' . $userId]
+            ? ['text' => faoxima_textbot_get('dyn_serviceaction_manage_user_in_bot_btn', '⚙️ مدیریت کاربر در ربات'), 'url' => 'https://t.me/' . $botUsername . '?start=manageuser_' . $userId]
             : null;
 
         $kbRows = [];
@@ -178,15 +180,15 @@ final class ServiceActionHandler extends BaseHandler
             $invId = (string)($invoice['id_invoice'] ?? '');
             if ($invId !== '') {
                 $kbRows[] = [
-                    ['text' => '🔄 بازگشت خودکار (مبلغ خرید)', 'callback_data' => 'mafurefauto-' . $invId],
+                    ['text' => faoxima_textbot_get('dyn_serviceaction_refund_auto_btn', '🔄 بازگشت خودکار (مبلغ خرید)'), 'callback_data' => 'mafurefauto-' . $invId],
                 ];
                 $kbRows[] = [
-                    ['text' => '✋ بازگشت دستی (تعیین مبلغ)',  'callback_data' => 'mafurefmanu-' . $invId],
+                    ['text' => faoxima_textbot_get('dyn_serviceaction_refund_manual_btn', '✋ بازگشت دستی (تعیین مبلغ)'),  'callback_data' => 'mafurefmanu-' . $invId],
                 ];
             }
         }
 
-        $kbRows[] = [['text' => '👁 مشاهده کاربر', 'url' => 'tg://user?id=' . $userId]];
+        $kbRows[] = [['text' => faoxima_textbot_get('dyn_receipt_view_user_btn', '👁 مشاهده کاربر'), 'url' => 'tg://user?id=' . $userId]];
         if ($manageUserBtn !== null) {
             $kbRows[] = [$manageUserBtn];
         }
@@ -200,7 +202,7 @@ final class ServiceActionHandler extends BaseHandler
             }
         }
         if ($sent === 0) {
-            FaoximaResponse::fail(502, '❌ ارسال درخواست به ادمین ناموفق بود. لطفاً دوباره تلاش کنید.');
+            FaoximaResponse::fail(502, faoxima_textbot_get('dyn_serviceaction_admin_delivery_failed', '❌ ارسال درخواست به ادمین ناموفق بود. لطفاً دوباره تلاش کنید.'));
         }
 
         FaoximaLogger::debug('Service action request notified', [
@@ -212,7 +214,7 @@ final class ServiceActionHandler extends BaseHandler
 
         FaoximaResponse::ok([
             'kind'    => 'request_sent',
-            'message' => '✅ درخواست شما برای ادمین ارسال شد. ادمین پس از بررسی، با شما تماس می‌گیرد.',
+            'message' => faoxima_textbot_get('dyn_serviceaction_request_sent_success', '✅ درخواست شما برای ادمین ارسال شد. ادمین پس از بررسی، با شما تماس می‌گیرد.'),
             'action'  => $action,
         ]);
     }
@@ -222,26 +224,19 @@ final class ServiceActionHandler extends BaseHandler
         $panelName = (string)($invoice['Service_location'] ?? '');
         $svcUsername = (string)($invoice['username'] ?? '');
         if ($panelName === '' || $svcUsername === '') {
-            FaoximaResponse::fail(422, '❌ اطلاعات سرویس ناقص است.');
+            FaoximaResponse::fail(422, faoxima_textbot_get('dyn_serviceaction_incomplete_service_info', '❌ اطلاعات سرویس ناقص است.'));
         }
 
         $panel = select('marzban_panel', '*', 'name_panel', $panelName, 'select');
         if (!is_array($panel) || empty($panel)) {
-            FaoximaResponse::fail(404, '❌ پنل سرویس پیدا نشد.');
-        }
-        if (function_exists('nmEmergencyHidesPanel') && nmEmergencyHidesPanel((array)$panel)) {
-            $emergencyMap = nmEmergencyReplacementMap();
-            $srcCode = (string)$panel['code_panel'];
-            if (isset($emergencyMap['by_code'][$srcCode])) {
-                $panel = $emergencyMap['by_code'][$srcCode];
-            }
+            FaoximaResponse::fail(404, faoxima_textbot_get('dyn_serviceaction_service_panel_not_found', '❌ پنل سرویس پیدا نشد.'));
         }
 
 
         try {
             $managePanel = new ManagePanel();
             if (!method_exists($managePanel, 'Revoke_sub')) {
-                FaoximaResponse::fail(503, '❌ امکان تغییر لینک روی این سرور فعال نیست.');
+                FaoximaResponse::fail(503, faoxima_textbot_get('dyn_serviceaction_changelink_unavailable', '❌ امکان تغییر لینک روی این سرور فعال نیست.'));
             }
             $result = $managePanel->Revoke_sub($panelName, $svcUsername);
         } catch (Throwable $e) {
@@ -249,11 +244,11 @@ final class ServiceActionHandler extends BaseHandler
                 'user'    => $this->user['id'],
                 'invoice' => $invoice['id_invoice'] ?? null,
             ]);
-            FaoximaResponse::fail(502, '❌ خطایی در تغییر لینک رخ داد. لطفاً دوباره تلاش کنید.');
+            FaoximaResponse::fail(502, faoxima_textbot_get('dyn_serviceaction_changelink_error_retry', '❌ خطایی در تغییر لینک رخ داد. لطفاً دوباره تلاش کنید.'));
         }
 
         if (!is_array($result) || (isset($result['status']) && $result['status'] === 'Unsuccessful')) {
-            $msg = is_array($result) && isset($result['msg']) ? (string)$result['msg'] : '❌ خطایی در تغییر لینک رخ داد.';
+            $msg = is_array($result) && isset($result['msg']) ? (string)$result['msg'] : faoxima_textbot_get('dyn_serviceaction_changelink_error_short', '❌ خطایی در تغییر لینک رخ داد.');
             FaoximaLogger::warn('changelink Revoke_sub failed', [
                 'user'    => $this->user['id'],
                 'invoice' => $invoice['id_invoice'] ?? null,
@@ -278,14 +273,15 @@ final class ServiceActionHandler extends BaseHandler
             $userName = (string)($this->user['username'] ?? '');
             $userFirst = (string)($this->user['first_name'] ?? '');
             $agent    = (string)($this->user['agent'] ?? '');
-            $text = "📣 جزئیات تغییر لینک از مینی‌اپ ثبت شد .
-▫️آیدی عددی کاربر : <code>{$this->user['id']}</code>
-▫️نام کاربری کاربر :@{$userName}
-▫️نام کاربری کانفیگ :{$svcUsername}
-▫️نام کاربر : {$userFirst}
-▫️موقعیت سرویس : {$panelName}
-▫️نوع کاربر : {$agent}
-▫️زمان تغییر لینک : {$timejalali}";
+            $text = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_changelink_report_tpl', "📣 جزئیات تغییر لینک از مینی‌اپ ثبت شد .\n<blockquote>▫️آیدی عددی کاربر : <code>{user_id}</code></blockquote>\n<blockquote>▫️نام کاربری کاربر :@{username}</blockquote>\n<blockquote>▫️نام کاربری کانفیگ :{config_username}</blockquote>\n<blockquote>▫️نام کاربر : {first_name}</blockquote>\n<blockquote>▫️موقعیت سرویس : {panel_name}</blockquote>\n<blockquote>▫️نوع کاربر : {agent}</blockquote>\n<blockquote>▫️زمان تغییر لینک : {when}</blockquote>"), [
+                'user_id' => $this->user['id'],
+                'username' => $userName,
+                'config_username' => $svcUsername,
+                'first_name' => $userFirst,
+                'panel_name' => $panelName,
+                'agent' => $agent,
+                'when' => $timejalali,
+            ]);
 
             $otherservice = (string)(select('topicid', 'idreport', 'report', 'otherservice', 'select')['idreport'] ?? '');
             try {
@@ -305,15 +301,233 @@ final class ServiceActionHandler extends BaseHandler
 
         FaoximaResponse::ok([
             'kind'             => 'changelink_done',
-            'message'          => '✅ لینک سرویس شما با موفقیت تغییر کرد.',
+            'message'          => faoxima_textbot_get('dyn_serviceaction_changelink_success', '✅ لینک سرویس شما با موفقیت تغییر کرد.'),
             'username'         => $svcUsername,
             'subscription_url' => $newSubLink,
             'configs'          => $newConfigs,
         ]);
     }
 
+    private function performChangeLocation(array $invoice, string $targetPanelCode): void
+    {
+        $svcUsername = (string)($invoice['username'] ?? '');
+        $oldPanelName = (string)($invoice['Service_location'] ?? '');
+        if ($svcUsername === '' || $oldPanelName === '') {
+            FaoximaResponse::fail(422, faoxima_textbot_get('dyn_serviceaction_incomplete_service_info', '❌ اطلاعات سرویس ناقص است.'));
+        }
+
+        $oldPanel = select('marzban_panel', '*', 'name_panel', $oldPanelName, 'select');
+        if (!is_array($oldPanel) || empty($oldPanel)) {
+            FaoximaResponse::fail(404, faoxima_textbot_get('dyn_serviceaction_current_panel_not_found', '❌ پنل فعلی سرویس پیدا نشد.'));
+        }
+
+        $newPanel = select('marzban_panel', '*', 'code_panel', $targetPanelCode, 'select');
+        if (!is_array($newPanel) || empty($newPanel)) {
+            FaoximaResponse::fail(404, faoxima_textbot_get('dyn_serviceaction_new_location_not_found', '❌ موقعیت جدید پیدا نشد.'));
+        }
+
+        if (($newPanel['changeloc'] ?? '') === 'offchangeloc') {
+            FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceaction_changeloc_unavailable_for_target', '❌ این قابلیت برای موقعیت مقصد در دسترس نیست.'));
+        }
+
+        $marzbanCount = (int) FaoximaDb::fetchScalar(
+            "SELECT COUNT(*) FROM marzban_panel WHERE status = 'active'"
+        );
+        if ($marzbanCount <= 1) {
+            FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceaction_no_other_location', '❌ موقعیت دیگری برای انتقال وجود ندارد.'));
+        }
+        if ((string)$newPanel['code_panel'] === (string)$oldPanel['code_panel']) {
+            FaoximaResponse::fail(422, faoxima_textbot_get('dyn_serviceaction_target_same_as_current', '❌ موقعیت مقصد نمی‌تواند همان موقعیت فعلی باشد.'));
+        }
+
+        $limitJson = json_decode((string)($this->setting['limitnumber'] ?? ''), true);
+        $limitAll  = (int)($limitJson['all']  ?? 0);
+        $limitFreeMax = (int)($limitJson['free'] ?? 0);
+        $limitEnforced = (int)($this->setting['statuslimitchangeloc'] ?? 0) === 1;
+        $userLimitUsed = (int)($this->user['limitchangeloc'] ?? 0);
+
+        if ($limitEnforced && $userLimitUsed >= $limitAll) {
+            FaoximaResponse::fail(403, faoxima_textbot_get('dyn_serviceaction_changeloc_limit_reached', '❌ محدودیت تغییر لوکیشن شما به پایان رسیده است.'));
+        }
+        $isFree = !$limitEnforced || $userLimitUsed < $limitFreeMax;
+
+        $agent = (string)($this->user['agent'] ?? 'f');
+
+        if ((string)($invoice['name_product'] ?? '') === '🛍 حجم دلخواه' || (string)($invoice['name_product'] ?? '') === '⚙️ سرویس دلخواه') {
+            $product = ['inbounds' => null];
+        } else {
+            $product = FaoximaDb::fetchOne(
+                "SELECT * FROM product WHERE (FIND_IN_SET(:loc, Location) > 0 OR Location = '/all') AND name_product = :name AND (agent = :agent OR agent = 'all')",
+                [':loc' => $invoice['Service_location'], ':name' => $invoice['name_product'], ':agent' => $agent]
+            );
+        }
+
+        if (($newPanel['type'] ?? '') === 'Manualsale' && ($oldPanel['url_panel'] ?? '') === ($newPanel['url_panel'] ?? '')) {
+            FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceaction_transfer_to_panel_unavailable', '❌ امکان انتقال به این پنل وجود ندارد.'));
+        }
+
+        $managePanel = new ManagePanel();
+        $remoteUser = $managePanel->DataUser($oldPanelName, $svcUsername);
+        if (!is_array($remoteUser) || ($remoteUser['status'] ?? '') === 'on_hold') {
+            FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceaction_config_on_hold_no_transfer', '❌ کانفیگ شما در وضعیت استفاده‌نشده است و امکان انتقال موقعیت وجود ندارد.'));
+        }
+        if (($remoteUser['status'] ?? '') !== 'active') {
+            FaoximaResponse::fail(409, faoxima_textbot_get('dyn_serviceaction_status_forbids_transfer', '❌ وضعیت سرویس فعلی اجازه انتقال نمی‌دهد.'));
+        }
+
+        $priceChange = $isFree ? 0 : (float)($newPanel['priceChangeloc'] ?? 0);
+
+        $discount = (int)($this->user['pricediscount'] ?? 0);
+        if ($discount !== 0 && $priceChange > 0) {
+            $priceChange = $priceChange - (($priceChange * $discount) / 100);
+        }
+
+        $balance = (float)($this->user['Balance'] ?? 0);
+        $maxBuyAgent = (int)($this->user['maxbuyagent'] ?? 0);
+
+        if ($priceChange > $balance) {
+            if ($agent === 'n2' && $maxBuyAgent !== 0) {
+                if (($balance - $priceChange) < (-1 * $maxBuyAgent)) {
+                    FaoximaResponse::fail(402, faoxima_textbot_get('dyn_serviceaction_purchase_limit_exhausted', '❌ مبلغ مجاز خرید شما به اتمام رسیده است.'));
+                }
+            } elseif ($agent !== 'n2') {
+                FaoximaResponse::fail(402, faoxima_textbot_get('dyn_serviceaction_insufficient_balance_changeloc', '❌ موجودی کیف پول شما برای انتقال موقعیت کافی نیست. لطفاً ابتدا کیف پول را شارژ کنید.'));
+            }
+        }
+
+        $balanceCharged = false;
+        if ($priceChange > 0) {
+            $allowNeg = ($agent === 'n2') ? $maxBuyAgent : 0;
+            $charge = balance_atomic_charge($this->user['id'], $priceChange, $allowNeg);
+            if (empty($charge['ok'])) {
+                FaoximaResponse::fail(402, faoxima_textbot_get('dyn_purchase_concurrent_balance_conflict', 'موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.'));
+            }
+            $balanceCharged = true;
+            if (function_exists('wallet_ledger_record')) {
+                wallet_ledger_record($this->user['id'], 'debit', $priceChange, 'service_action', faoxima_textbot_get('dyn_serviceaction_changeloc_ledger_debit_note', 'تغییر موقعیت سرویس'), null, 'invoice', (string)($invoice['id_invoice'] ?? ''));
+            }
+        }
+
+        if (is_array($product) && ($product['inbounds'] ?? null) !== null) {
+            $newPanel['inboundid'] = $product['inbounds'];
+        }
+
+        $dataLimit = 0;
+        if (($remoteUser['data_limit'] ?? 0) != 0) {
+            $dataLimit = (int)($remoteUser['data_limit'] ?? 0) - (int)($remoteUser['used_traffic'] ?? 0);
+        }
+
+        $datac = [
+            'expire'     => $remoteUser['expire'] ?? null,
+            'data_limit' => $dataLimit,
+            'from_id'    => $this->user['id'],
+            'username'   => $svcUsername,
+            'type'       => 'usertest',
+            'ip_limit'   => (int)($invoice['ip_limit'] ?? 0),
+        ];
+
+        try {
+            if (($oldPanel['url_panel'] ?? '') === ($newPanel['url_panel'] ?? '')) {
+                $managePanel->RemoveUser($oldPanelName, $svcUsername);
+                $remoteOut = $managePanel->createUser($newPanel['name_panel'], 'usertest', $svcUsername, $datac);
+            } else {
+                $remoteOut = $managePanel->createUser($newPanel['name_panel'], 'usertest', $svcUsername, $datac);
+                if (empty($remoteOut['username'])) {
+                    if ($balanceCharged) {
+                        balance_atomic_credit($this->user['id'], $priceChange);
+                        if (function_exists('wallet_ledger_record')) {
+                            wallet_ledger_record($this->user['id'], 'credit', $priceChange, 'refund', faoxima_textbot_get('dyn_serviceaction_changeloc_refund_note', 'بازگشت وجه به دلیل خطای تغییر موقعیت'), null, 'invoice', (string)($invoice['id_invoice'] ?? ''));
+                        }
+                    }
+                    $reason = is_array($remoteOut) ? json_encode($remoteOut['msg'] ?? $remoteOut) : (string)$remoteOut;
+                    FaoximaLogger::error('change_location createUser failed', [
+                        'user' => $this->user['id'], 'reason' => $reason,
+                    ]);
+                    FaoximaResponse::fail(502, faoxima_textbot_get('dyn_serviceaction_changeloc_generic_error', '❌ خطایی هنگام تغییر موقعیت رخ داد. با پشتیبانی در ارتباط باشید.'));
+                }
+                $managePanel->RemoveUser($oldPanelName, $svcUsername);
+            }
+        } catch (Throwable $e) {
+            if ($balanceCharged) {
+                balance_atomic_credit($this->user['id'], $priceChange);
+                if (function_exists('wallet_ledger_record')) {
+                    wallet_ledger_record($this->user['id'], 'credit', $priceChange, 'refund', faoxima_textbot_get('dyn_serviceaction_changeloc_refund_note', 'بازگشت وجه به دلیل خطای تغییر موقعیت'), null, 'invoice', (string)($invoice['id_invoice'] ?? ''));
+                }
+            }
+            FaoximaLogger::exception($e, 'change_location panel swap threw', ['user' => $this->user['id']]);
+            FaoximaResponse::fail(502, faoxima_textbot_get('dyn_serviceaction_changeloc_generic_error', '❌ خطایی هنگام تغییر موقعیت رخ داد. با پشتیبانی در ارتباط باشید.'));
+        }
+
+        if (empty($remoteOut['username'])) {
+            if ($balanceCharged) {
+                balance_atomic_credit($this->user['id'], $priceChange);
+                if (function_exists('wallet_ledger_record')) {
+                    wallet_ledger_record($this->user['id'], 'credit', $priceChange, 'refund', faoxima_textbot_get('dyn_serviceaction_changeloc_refund_note', 'بازگشت وجه به دلیل خطای تغییر موقعیت'), null, 'invoice', (string)($invoice['id_invoice'] ?? ''));
+                }
+            }
+            $reason = is_array($remoteOut) ? json_encode($remoteOut['msg'] ?? $remoteOut) : (string)$remoteOut;
+            FaoximaLogger::error('change_location createUser failed (same domain)', [
+                'user' => $this->user['id'], 'reason' => $reason,
+            ]);
+            FaoximaResponse::fail(502, faoxima_textbot_get('dyn_serviceaction_changeloc_generic_error', '❌ خطایی هنگام تغییر موقعیت رخ داد. با پشتیبانی در ارتباط باشید.'));
+        }
+
+        update('user', 'limitchangeloc', $userLimitUsed + 1, 'id', $this->user['id']);
+        update('invoice', 'Service_location', $newPanel['name_panel'], 'username', $svcUsername);
+        if (($newPanel['inboundid'] ?? null) !== null) {
+            update('invoice', 'inboundid', $newPanel['inboundid'], 'username', $svcUsername);
+        }
+
+        $subLink = ($newPanel['sublink'] ?? '') === 'onsublink' ? (string)($remoteOut['subscription_url'] ?? '') : '';
+        $newConfigs = is_array($remoteOut['configs'] ?? null)
+            ? array_values(array_filter(array_map('strval', $remoteOut['configs']), static function ($c) { return trim($c) !== ''; }))
+            : [];
+
+        $channel = (string)($this->setting['Channel_Report'] ?? '');
+        if ($channel !== '' && function_exists('telegram')) {
+            $userName = (string)($this->user['username'] ?? '');
+            $balanceAfter = number_format((float) FaoximaDb::fetchScalar('SELECT Balance FROM user WHERE id = :id', [':id' => $this->user['id']]));
+            $timejalali = function_exists('jdate') ? jdate('Y/m/d H:i:s') : date('Y/m/d H:i:s');
+            $text = faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_changeloc_report_tpl', "📍 تغییر موقعیت سرویس (از مینی‌اپ)\n\n<blockquote>▫️آیدی عددی کاربر : <code>{user_id}</code></blockquote>\n<blockquote>▫️نام کاربری کاربر : @{username}</blockquote>\n<blockquote>▫️نام کاربری کانفیگ : {config_username}</blockquote>\n<blockquote>▫️پنل قدیم : {old_panel}</blockquote>\n<blockquote>▫️پنل جدید : {new_panel}</blockquote>\n<blockquote>▫️موجودی کاربر : {balance} تومان</blockquote>\n<blockquote>▫️زمان : {when}</blockquote>"), [
+                'user_id' => $this->user['id'],
+                'username' => $userName,
+                'config_username' => $svcUsername,
+                'old_panel' => $oldPanelName,
+                'new_panel' => $newPanel['name_panel'],
+                'balance' => $balanceAfter,
+                'when' => $timejalali,
+            ]);
+            $otherservice = (string)(select('topicid', 'idreport', 'report', 'otherservice', 'select')['idreport'] ?? '');
+            try {
+                telegram('sendmessage', [
+                    'chat_id'           => $channel,
+                    'message_thread_id' => $otherservice,
+                    'text'              => $text,
+                    'parse_mode'        => 'HTML',
+                ]);
+            } catch (Throwable $_) {  }
+        }
+
+        FaoximaLogger::debug('Service change_location completed', [
+            'user'      => $this->user['id'],
+            'invoice'   => $invoice['id_invoice'] ?? null,
+            'old_panel' => $oldPanelName,
+            'new_panel' => $newPanel['name_panel'],
+        ]);
+
+        FaoximaResponse::ok([
+            'kind'             => 'change_location_done',
+            'message'          => faoxima_render_text(faoxima_textbot_get('dyn_serviceaction_changeloc_success_tpl', '✅ موقعیت سرویس شما با موفقیت به «{panel_name}» تغییر کرد.'), ['panel_name' => $newPanel['name_panel']]),
+            'username'         => $svcUsername,
+            'panel_name'       => (string)$newPanel['name_panel'],
+            'subscription_url' => $subLink,
+            'configs'          => $newConfigs,
+        ]);
+    }
+
     private function sendAdminMessage(string $apiKey, string $chatId, string $text, string $keyboardJson): bool
     {
+        if (function_exists('applyPremiumEmojiTransform')) { $text = applyPremiumEmojiTransform($text, 'HTML'); }
         $url = 'https://api.telegram.org/bot' . $apiKey . '/sendMessage';
         $payload = [
             'chat_id'      => $chatId,

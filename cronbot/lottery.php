@@ -95,13 +95,17 @@ if (intval($setting['scorestatus']) == 1) {
             continue;
         }
 
+        if (function_exists('wallet_ledger_record')) {
+            wallet_ledger_record($result['id'], 'credit', $prizeAmount, 'lottery', 'جایزه قرعه‌کشی رتبه ' . ($count + 1));
+        }
+
         $balanceFormatted = number_format($prizeAmount);
         $rank = $count + 1;
 
         $textlottery = "🎁 نتیجه قرعه کشی \n\n😎 کاربر عزیز تبریک! شما نفر $rank برنده $balanceFormatted تومان موجودی شدید و حساب شما شارژ گردید.";
         sendmessage($result['id'], $textlottery, null, 'html');
 
-        $textlotterygroup .= "\nنام کاربری : @{$result['username']}\nآیدی عددی : {$result['id']}\nمبلغ : $balanceFormatted\nنفر : $rank\n---------------\n";
+        $textlotterygroup .= "\n<blockquote>نام کاربری : @{$result['username']}</blockquote>\n<blockquote>آیدی عددی : {$result['id']}</blockquote>\n<blockquote>مبلغ : $balanceFormatted</blockquote>\n<blockquote>نفر : $rank</blockquote>\n---------------\n";
 
         $awarded++;
         $count++;

@@ -18,7 +18,6 @@ if (!isset($_SESSION["user"]) || !$adminRow) {
     exit;
 }
 
-
 $ALLOWED_STYLES = ['default', 'primary', 'success', 'danger'];
 
 
@@ -49,6 +48,9 @@ $MENUS = [
             'changelink'       => '🔄 تغییر لینک',
             'changenameconfig' => '📝 تغییر یادداشت',
             'backorder'        => '🏠 بازگشت به لیست سرویس‌ها',
+            'discountextend'   => '🎁 تمدید با کد تخفیف',
+            'productcheckdata' => '↩️ بازگشت به اطلاعات سرویس',
+            'config_header'    => '🔐 سرتیتر کانفیگ اشتراک',
         ],
     ],
     'account' => [
@@ -57,7 +59,25 @@ $MENUS = [
         'buttons' => [
             'Discount'    => '🎁 کد تخفیف',
             'Add_Balance' => '💰 افزایش موجودی',
+            'TransferBalance' => '🔄 انتقال موجودی',
+            'MyTransactions'  => '📑 تراکنش‌های من',
+            'transferbal_confirm' => '✅ تایید و انتقال',
+            'transferbal_cancel'  => '❌ انصراف',
             'backuser'    => '◀️ بازگشت',
+            'my_miniapp_pending' => '⏳ رسید تایید نشده از مینی‌اپ',
+        ],
+    ],
+    'tx_stats' => [
+        'title' => 'فیلتر زمانی تراکنش‌ها', 'icon' => 'clock', 'type' => 'inline',
+        'desc'  => 'دکمه‌های بازه‌ی زمانی در صفحه‌ی «تراکنش‌های من».',
+        'buttons' => [
+            'tx_24h'  => '🕐 ۲۴ ساعت گذشته',
+            'tx_3d'   => '📅 ۳ روز گذشته',
+            'tx_7d'   => '🗓 ۷ روز گذشته',
+            'tx_30d'  => '📆 ۳۰ روز گذشته',
+            'tx_prev' => '◀️ قبلی',
+            'tx_next' => '▶️ بعدی',
+            'tx_back' => '◀️ بازگشت',
         ],
     ],
     'payment' => [
@@ -68,14 +88,17 @@ $MENUS = [
             'plisio'           => '🔵 Plisio',
             'nowpayment'       => '🟣 NowPayment',
             'digitaltron'      => '🟡 رمزارز Tron',
-            'iranpay1'         => '🔴 پرداخت ارزی (Swapino)',
-            'iranpay2'         => '🟠 ترنادو',
+            'iranpay2'         => '🟠 ترونادو',
             'iranpay3'         => '🟢 ارزی ریالی ۳',
             'aqayepardakht'    => '💜 آقای پرداخت',
             'zarinpal'         => '🔷 زرین پال',
             'zarinpey'         => '🔶 زرین پی',
             'paymentnotverify' => '📋 پرداخت بدون تایید',
             'startelegrams'    => '⭐ ستاره تلگرام',
+            'piroozpay'        => '💳 پیروزپی',
+            'aptdc'            => '🎁 ثبت کد تخفیف (پرداخت)',
+            'chargenodiscount' => '➡️ ادامه بدون تخفیف',
+            'chargehasdiscount'=> '🎁 ادامه با تخفیف',
             'colselist'        => '❌ بستن لیست',
         ],
     ],
@@ -90,6 +113,11 @@ $MENUS = [
             'nav_back'         => '◀️ دکمه بازگشت عمومی',
             'contact_phone'    => '☎️ ارسال شماره تلفن',
             'contact_back'     => '◀️ بازگشت (فرم شماره)',
+            'confirmandgetserviceDiscount' => '💰 پرداخت و دریافت (با تخفیف)',
+            'tk_cancel'        => '🔙 انصراف (تیکت)',
+            'tk_media_yes'     => '🖼 بله (رسانه تیکت)',
+            'tk_media_no'      => '✏️ فقط متن (تیکت)',
+            'confirmchannel'   => '📑 تایید عضویت کانال',
         ],
     ],
     'pay_receipt' => [
@@ -103,546 +131,8 @@ $MENUS = [
             'pay_wallet_copy'  => '📋 کپی آدرس ولت',
             'pay_card_copy'    => '💳 کپی شماره کارت',
             'pay_check'        => '🔍 بررسی وضعیت پرداخت',
-        ],
-    ],
-    'admin_main' => [
-        'title' => 'ادمین — منوی اصلی', 'icon' => 'shield', 'type' => 'inline',
-        'desc'  => 'منوی اصلی که ادمین پس از ورود به پنل مدیریت مشاهده می‌کند.',
-        'buttons' => [
-            'admin_status'      => '📊 وضعیت ربات',
-            'admin_managepanel' => '🖥 مدیریت پنل',
-            'admin_addpanel'    => '➕ اضافه کردن پنل',
-            'admin_timeprice'   => '⏳ تنظیم سریع قیمت زمان',
-            'admin_volprice'    => '🔋 تنظیم سریع قیمت حجم',
-            'admin_users'       => '👤 مدیریت کاربر',
-            'admin_shop'        => '🏬 تنظیمات فروشگاه',
-            'admin_finance'     => '💎 مالی',
-            'admin_support'     => '🤙 بخش پشتیبانی',
-            'admin_help'        => '📚 بخش آموزش',
-            'admin_features'    => '🛠 قابلیت‌های پنل',
-            'admin_settings'    => '⚙️ تنظیمات عمومی',
-            'admin_invoices'    => '💵 رسیدهای تایید نشده',
-            'admin_back'        => '◀️ بازگشت',
-        ],
-    ],
-    'admin_settings' => [
-        'title' => 'ادمین — تنظیمات', 'icon' => 'sliders', 'type' => 'inline',
-        'desc'  => 'منوی پنل تنظیمات عمومی ربات.',
-        'buttons' => [
-            'set_features'   => '⚙️ وضعیت قابلیت‌ها',
-            'set_reports'    => '📣 گزارشات ربات',
-            'set_channel'    => '📯 تنظیمات کانال',
-            'set_webpanel'   => '✅ فعالسازی پنل تحت وب',
-            'set_optimize'   => '🗑 بهینه‌سازی ربات',
-            'set_text'       => '📝 تنظیم متن ربات',
-            'set_adminmgr'   => '👨‍🔧 بخش ادمین',
-            'set_testlimit'  => '➕ محدودیت اکانت تست',
-            'set_agentprice' => '💰 مبلغ عضویت نمایندگی',
-            'set_qrbg'       => '🖼 پس‌زمینه کیوآرکد',
-            'set_webhook'    => '🔗 وبهوک مجدد ربات‌های نماینده',
-            'set_backadmin'  => '🏠 بازگشت به منوی ادمین',
-            'set_backmenu'   => '▶️ بازگشت به منوی قبل',
-        ],
-    ],
-    'admin_shop' => [
-        'title' => 'ادمین — فروشگاه', 'icon' => 'package', 'type' => 'inline',
-        'desc'  => 'منوی تنظیمات فروشگاه و محصولات.',
-        'buttons' => [
-            'shop_status'      => '🛒 وضعیت قابلیت‌های فروشگاه',
-            'shop_category'    => '🗂 مدیریت دسته‌بندی',
-            'shop_products'    => '🛍 مدیریت محصولات',
-            'shop_giftadd'     => '🎁 ساخت کد هدیه',
-            'shop_giftdel'     => '❌ حذف کد هدیه',
-            'shop_discountadd' => '🎁 ساخت کد تخفیف',
-            'shop_discountdel' => '❌ حذف کد تخفیف',
-            'shop_minbulk'     => '⬇️ حداقل موجودی خرید عمده',
-            'shop_renewcb'     => '🎁 کش‌بک تمدید',
-            'shop_backadmin'   => '🏠 بازگشت به منوی ادمین',
-            'shop_backmenu'    => '▶️ بازگشت به منوی قبل',
-        ],
-    ],
-    'admin_roles' => [
-        'title' => 'ادمین — نقش‌ها', 'icon' => 'users', 'type' => 'inline',
-        'desc'  => 'منوی ادمین برای نقش‌های Seller (فروشنده) و Support (پشتیبان).',
-        'buttons' => [
-            
-            'seller_status'   => '📊 وضعیت ربات (Seller)',
-            'seller_users'    => '👤 مدیریت کاربر (Seller)',
-            'seller_back'     => '◀️ بازگشت (Seller)',
-            
-            'support_users'   => '👤 مدیریت کاربر (Support)',
-            'support_search'  => '👁‍🗨 جستجو کاربر (Support)',
-            'support_back'    => '◀️ بازگشت (Support)',
-        ],
-    ],
-    'admin_gateways' => [
-        'title' => 'ادمین — تنظیمات درگاه‌ها', 'icon' => 'wallet', 'type' => 'inline',
-        'desc'  => 'منوهای تنظیمات تمام درگاه‌های پرداخت (کارت‌به‌کارت، ترنادو، زرین‌پال، زرین‌پی، آقای پرداخت، Plisio).',
-        'buttons' => [
-            
-            'cart_title'       => '🗂 نام درگاه کارت‌به‌کارت',
-            'cart_setnum'      => '💳 تنظیم شماره کارت',
-            'cart_delnum'      => '❌ حذف شماره کارت',
-            'cart_support'     => '👤 آیدی پشتیبانی',
-            'cart_pvmode'      => '💳 درگاه آفلاین در پیوی',
-            'cart_autoconfirm' => '♻️ تایید خودکار رسید',
-            'cart_cashback'    => '💰 کش‌بک کارت‌به‌کارت',
-            'cart_firstpay'    => '🔒 نمایش پس از اولین پرداخت',
-            'cart_min'         => '⬇️ حداقل مبلغ کارت‌به‌کارت',
-            'cart_max'         => '⬆️ حداکثر مبلغ کارت‌به‌کارت',
-            'cart_edu'         => '📚 تنظیم آموزش کارت‌به‌کارت',
-            'cart_back'        => '◀️ بازگشت (کارت‌به‌کارت)',
-            
-            'trnado_name'      => '🏷️ نام درگاه ترنادو',
-            'trnado_apikey'    => '🔑 API Key ترنادو',
-            'trnado_wallet'    => '💼 آدرس ولت ترون',
-            'trnado_apiurl'    => '🌐 آدرس API ترنادو',
-            'trnado_cashback'  => '💰 کش‌بک ترنادو',
-            'trnado_min'       => '⬇️ حداقل مبلغ ترنادو',
-            'trnado_max'       => '⬆️ حداکثر مبلغ ترنادو',
-            'trnado_edu'       => '📚 تنظیم آموزش ترنادو',
-            'trnado_back'      => '◀️ بازگشت (ترنادو)',
-            
-            'zpal_name'        => '🗂 نام درگاه زرین‌پال',
-            'zpal_merchant'    => '🔑 مرچنت زرین‌پال',
-            'zpal_cashback'    => '💰 کش‌بک زرین‌پال',
-            'zpal_min'         => '⬇️ حداقل مبلغ زرین‌پال',
-            'zpal_max'         => '⬆️ حداکثر مبلغ زرین‌پال',
-            'zpal_edu'         => '📚 تنظیم آموزش زرین‌پال',
-            'zpal_back'        => '◀️ بازگشت (زرین‌پال)',
-            
-            'zpey_name'        => '🗂 نام درگاه زرین‌پی',
-            'zpey_token'       => '🔑 توکن زرین‌پی',
-            'zpey_cashback'    => '💰 کش‌بک زرین‌پی',
-            'zpey_tutorial'    => '🧑🏼‍💻 آموزش اتصال زرین‌پی',
-            'zpey_min'         => '⬇️ حداقل مبلغ زرین‌پی',
-            'zpey_max'         => '⬆️ حداکثر مبلغ زرین‌پی',
-            'zpey_edu'         => '📚 تنظیم آموزش زرین‌پی',
-            'zpey_back'        => '◀️ بازگشت (زرین‌پی)',
-            
-            'aqaye_name'       => '🗂 نام درگاه آقای پرداخت',
-            'aqaye_merchant'   => '🔑 مرچنت آقای پرداخت',
-            'aqaye_cashback'   => '💰 کش‌بک آقای پرداخت',
-            'aqaye_min'        => '⬇️ حداقل مبلغ آقای پرداخت',
-            'aqaye_max'        => '⬆️ حداکثر مبلغ آقای پرداخت',
-            'aqaye_edu'        => '📚 تنظیم آموزش آقای پرداخت',
-            'aqaye_back'       => '◀️ بازگشت (آقای پرداخت)',
-            
-            'plisio_name'      => '🗂 نام درگاه Plisio',
-            'plisio_api'       => '🧩 API Key Plisio',
-            'plisio_cashback'  => '💰 کش‌بک Plisio',
-            'plisio_min'       => '⬇️ حداقل مبلغ Plisio',
-            'plisio_max'       => '⬆️ حداکثر مبلغ Plisio',
-            'plisio_edu'       => '📚 تنظیم آموزش Plisio',
-            'plisio_back'      => '◀️ بازگشت (Plisio)',
-        ],
-    ],
-    'admin_features' => [
-        'title' => 'ادمین — قابلیت‌ها', 'icon' => 'wrench', 'type' => 'inline',
-        'desc'  => 'منوی فعال/غیرفعال کردن قابلیت‌ها (اطلاعات اکانت، اکانت تست، آموزش).',
-        'buttons' => [
-            'feat_info'       => '⚙️ قابلیت مشاهده اطلاعات اکانت',
-            'feat_test'       => '🧪 قابلیت اکانت تست',
-            'feat_help'       => '📚 قابلیت آموزش',
-            'feat_back'       => '🏠 بازگشت به منوی ادمین',
-            'feat_backmenu'   => '▶️ بازگشت به منوی قبل',
-        ],
-    ],
-    'admin_channel' => [
-        'title' => 'ادمین — کانال', 'icon' => 'megaphone', 'type' => 'inline',
-        'desc'  => 'منوی مدیریت کانال‌های اجباری.',
-        'buttons' => [
-            'ch_add'         => '➕ اضافه کردن کانال',
-            'ch_del'         => '❌ حذف کانال',
-            'ch_back'        => '🏠 بازگشت به منوی ادمین',
-            'ch_backmenu'    => '▶️ بازگشت به منوی قبل',
-        ],
-    ],
-    'admin_help' => [
-        'title' => 'ادمین — آموزش', 'icon' => 'book-open', 'type' => 'inline',
-        'desc'  => 'منوی مدیریت بخش آموزش (افزودن/حذف/ویرایش).',
-        'buttons' => [
-            'help_add'        => '📚 اضافه کردن آموزش',
-            'help_del'        => '❌ حذف آموزش',
-            'help_edit'       => '✏️ ویرایش آموزش',
-            'help_back'       => '🏠 بازگشت به منوی ادمین',
-            'help_backmenu'   => '▶️ بازگشت به منوی قبل',
-        ],
-    ],
-    'admin_category' => [
-        'title' => 'ادمین — دسته‌بندی فروشگاه', 'icon' => 'folder-tree', 'type' => 'inline',
-        'desc'  => 'منوی مدیریت دسته‌بندی محصولات فروشگاه.',
-        'buttons' => [
-            'cat_add'   => '🛒 اضافه کردن دسته بندی',
-            'cat_del'   => '❌ حذف دسته بندی',
-            'cat_edit'  => '✏️ ویرایش دسته بندی',
-            'cat_back'  => '⬅️ بازگشت به منوی فروشگاه',
-        ],
-    ],
-    'admin_products' => [
-        'title' => 'ادمین — محصولات فروشگاه', 'icon' => 'shopping-bag', 'type' => 'inline',
-        'desc'  => 'منوی مدیریت محصولات فروشگاه (افزودن، حذف، ویرایش، تغییر قیمت گروهی).',
-        'buttons' => [
-            'shopitem_add'      => '🛍 اضافه کردن محصول',
-            'shopitem_del'      => '❌ حذف محصول',
-            'shopitem_edit'     => '✏️ ویرایش محصول',
-            'shopitem_priceinc' => '⬆️ افزایش گروهی قیمت',
-            'shopitem_pricedec' => '⬇️ کاهش گروهی قیمت',
-            'shopitem_back'     => '⬅️ بازگشت به منوی فروشگاه',
-        ],
-    ],
-    'admin_product_edit' => [
-        'title' => 'ادمین — منوی ویرایش محصول', 'icon' => 'edit', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش هر محصول (تغییر قیمت، حجم، زمان، نام محصول و ...). کلید هر دکمه = متن دقیق آن دکمه در ربات.',
-        'buttons' => [
-            'قیمت'                  => '💰 قیمت',
-            'حجم'                   => '🔋 حجم',
-            'زمان'                  => '⏳ زمان',
-            'نام محصول'             => '📝 نام محصول',
-            'نوع کاربری'            => '👤 نوع کاربری',
-            'نوع ریست حجم'          => '♻️ نوع ریست حجم',
-            'یادداشت'               => '🗒 یادداشت',
-            'موقعیت محصول'          => '🌍 موقعیت محصول',
-            'دسته بندی'             => '🗂 دسته بندی',
-            '🎛 تنظیم اینباند'      => '🎛 تنظیم اینباند',
-            'نمایش برای خرید اول'   => '🛒 نمایش برای خرید اول',
-            'مخفی کردن پنل'         => '🫣 مخفی کردن پنل',
-            'حذف کلی پنل های مخفی'  => '❌ حذف کلی پنل های مخفی',
-            'backadmin'             => '🏠 بازگشت به منوی مدیریت',
-            'backmenu'              => '▶️ بازگشت به منوی قبل',
-        ],
-    ],
-    'features_bot' => [
-        'title' => 'قابلیت‌ها — آپشن اصلی', 'icon' => 'bot', 'type' => 'inline',
-        'desc'  => 'دکمه‌های عنوان منوی «🤖 آپشن‌های اصلی ربات» (وضعیت قابلیت‌ها › آپشن اصلی).',
-        'buttons' => [
-            'subject'            => '📡 موضوع ربات',
-            'subjectde'          => '📝 توضیحات موضوع',
-            'statusbot'          => '📡 وضعیت ربات',
-            'stautsrolee'        => '♨️ قوانین',
-            'Authenticationphone'=> '☎️ احراز هویت شماره تماس',
-            'Authenticationiran' => '🇮🇷 تایید شماره ایرانی',
-            'verify'             => '🔒 احراز هویت',
-            'verifybyuser'       => '🔑 احراز هویت با لینک',
-            'inlinebtnmain'      => '🛡 شیشه‌ای بودن دکمه ربات',
-        ],
-    ],
-    'features_users' => [
-        'title' => 'قابلیت‌ها — کاربران/پشتیبانی', 'icon' => 'users', 'type' => 'inline',
-        'desc'  => 'دکمه‌های منوی «👥 کاربران و پشتیبانی».',
-        'buttons' => [
-            'usernamebtn'         => '👤 یوزرنیم',
-            'statusnewuser'       => '🆕 اعلان کاربر جدید',
-            'statussupportpv'     => '👤 پشتیبانی در پیوی',
-            'statusnamecustom'    => '📨 یادداشت کانفیگ',
-            'statusnamecustomf'   => '📨 یادداشت کاربر عادی',
-        ],
-    ],
-    'features_shop' => [
-        'title' => 'قابلیت‌ها — فروش/خدمات', 'icon' => 'shopping-cart', 'type' => 'inline',
-        'desc'  => 'دکمه‌های منوی «🛍 فروش و خدمات».',
-        'buttons' => [
-            'bulkbuy'              => '🛍 خرید عمده',
-            'btn_status_category'  => '📗 دسته‌بندی آموزش',
-            'keyconfig'            => '🔗 کیبورد کانفیگی',
-            'copycart'             => '💳 کپی شماره کارت',
-            'Debtsettlement'       => '💎 تسویه بدهی',
-            'changeloc'            => '🌍 محدودیت تغییر لوکیشن',
-            'changeloclimit'       => '⚙️ تنظیمات تغییر لوکیشن',
-            'infocard_status'      => '📊 کارت مشخصات سرویس',
-            'infocard_color_menu'  => '🎨 انتخاب رنگ کارت',
-            'linkappstatus'        => '🔗 لینک دانلود برنامه',
-            'linkappsetting'       => '⚙️ تنظیمات لینک برنامه',
-        ],
-    ],
-    'features_lottery' => [
-        'title' => 'قابلیت‌ها — گردونه/قرعه‌کشی', 'icon' => 'gift', 'type' => 'inline',
-        'desc'  => 'دکمه‌های منوی «🎁 گردونه و قرعه‌کشی».',
-        'buttons' => [
-            'wheel_luck'         => '🎲 گردونه شانس',
-            'gradonhshans'       => '⚙️ تنظیمات گردونه',
-            'wheelagentfirst'    => '🎲 گردونه خرید اول',
-            'wheelagent'         => '🎲 گردونه نمایندگان',
-            'score'              => '🎁 قرعه‌کشی شبانه',
-            'scoresetting'       => '⚙️ تنظیمات قرعه‌کشی',
-            'Lotteryagent'       => '🎁 قرعه‌کشی نمایندگان',
-            'affiliatesstatus'   => '🎁 زیرمجموعه',
-            'settingaffiliatesf' => '⚙️ تنظیمات زیرمجموعه',
-            'Dice'               => '🎰 نمایش تاس',
-        ],
-    ],
-    'features_crons' => [
-        'title' => 'قابلیت‌ها — کرون/زمان', 'icon' => 'clock', 'type' => 'inline',
-        'desc'  => 'دکمه‌های منوی «⏱ کرون‌ها و زمان‌بندی».',
-        'buttons' => [
-            'cronday'                  => '🕚 کرون زمان',
-            'settimecornday'           => '⚙️ تنظیم زمان هشدار',
-            'on_hold'                  => '🕚 کرون اولین اتصال',
-            'setting_on_holdcron'      => '⚙️ زمان اولین اتصال',
-            'cronvolume'               => '🔋 کرون حجم',
-            'settimecornvolume'        => '⚙️ تنظیم حجم هشدار',
-            'notifremove'              => '❌ کرون حذف',
-            'settimecornremove'        => '⚙️ زمان حذف',
-            'notifremove_volume'       => '❌ کرون حذف حجم',
-            'settimecornremovevolume'  => '⚙️ زمان حذف حجم',
-            'cronjobs_settings'        => '⏱ مدیریت کرون‌ها',
-        ],
-    ],
-    'features_antispam' => [
-        'title' => 'قابلیت‌ها — آنتی اسپم', 'icon' => 'shield', 'type' => 'inline',
-        'desc'  => 'دکمه‌های منوی «🛡 آنتی اسپم».',
-        'buttons' => [
-            'antispam_toggle'       => '🛡 تغییر وضعیت آنتی اسپم',
-            'antispam_set_count'    => '✉️ تعداد پیام مجاز',
-            'antispam_set_seconds'  => '⏱ بازه زمانی',
-            'antispam_set_mute'     => '🔇 مدت آف بودن',
-        ],
-    ],
-    'features_nav' => [
-        'title' => 'قابلیت‌ها — منوی دسته', 'icon' => 'list-tree', 'type' => 'inline',
-        'desc'  => 'دکمه‌های منوی اصلی «📌 وضعیت قابلیت‌ها» (دسته‌بندی).',
-        'buttons' => [
-            'featcat_bot'              => '🤖 دسته آپشن اصلی',
-            'featcat_users'            => '👥 دسته کاربران',
-            'featcat_shop'             => '🛍 دسته فروش',
-            'featcat_lottery'          => '🎁 دسته گردونه',
-            'featcat_crons'            => '⏱ دسته کرون‌ها',
-            'featcat_antispam'         => '🛡 دسته آنتی‌اسپم',
-            'premium_emoji_settings'   => '🌟 ایموجی پرمیوم',
-            'featcat_main'             => '🔙 بازگشت به منوی دسته',
-            'close_stat'               => '❌ بستن منو',
-        ],
-    ],
-    'admin_pagination' => [
-        'title' => 'صفحه‌بندی', 'icon' => 'pagination', 'type' => 'inline',
-        'desc'  => 'دکمه‌های «صفحه بعدی / صفحه قبلی» در همه لیست‌های ربات.',
-        'buttons' => [
-            'next_page'               => '➡️ صفحه بعدی',
-            'previous_page'           => '⬅️ صفحه قبلی',
-            'next_page_extends'       => '➡️ صفحه بعدی (تمدید)',
-            'previous_page_extends'   => '⬅️ صفحه قبلی (تمدید)',
-            'next_pageuser'           => '➡️ صفحه بعدی (کاربران)',
-            'previous_pageuser'       => '⬅️ صفحه قبلی (کاربران)',
-            'next_pageuserbalance'    => '➡️ صفحه بعدی (موجودی)',
-            'previous_pageuserbalance'=> '⬅️ صفحه قبلی (موجودی)',
-            'next_pageusercart'       => '➡️ صفحه بعدی (کارت)',
-            'previous_pageusercart'   => '⬅️ صفحه قبلی (کارت)',
-            'next_pageuserrefral'     => '➡️ صفحه بعدی (زیرمجموعه)',
-            'previous_pageuserrefral' => '⬅️ صفحه قبلی (زیرمجموعه)',
-            'next_pageuserzero'       => '➡️ صفحه بعدی (موجودی صفر)',
-            'previous_pageuserzero'   => '⬅️ صفحه قبلی (موجودی صفر)',
-        ],
-    ],
-    'admin_stats' => [
-        'title' => 'گزارشات / آمار', 'icon' => 'chart-bar', 'type' => 'inline',
-        'desc'  => 'دکمه‌های گزارش و آمار ربات (امروز، دیروز، ماه و ...).',
-        'buttons' => [
-            'today_stat'        => '☀️ آمار امروز',
-            'yesterday_stat'    => '🌙 آمار دیروز',
-            'hoursago_stat'     => '⏰ آمار ساعات گذشته',
-            'view_stat_time'    => '🕐 مشاهده با زمان',
-            'month_current_stat'=> '📊 آمار ماه جاری',
-            'month_old_stat'    => '📅 آمار ماه قبل',
-            'stat_all_bot'      => '📈 آمار کلی ربات',
-            'status_var'        => '📋 وضعیت متغیر',
-            'showprice'         => '💰 نمایش قیمت',
-        ],
-    ],
-    'admin_search' => [
-        'title' => 'جستجو', 'icon' => 'search', 'type' => 'inline',
-        'desc'  => 'دکمه‌های جستجو در ربات (کاربر، سرویس، سفارش).',
-        'buttons' => [
-            'searchorder'   => '🔍 جستجوی سفارش',
-            'searchservice' => '🔍 جستجوی سرویس',
-            'searchuser'    => '🔍 جستجوی کاربر',
-            'selectname'    => '🏷️ انتخاب نام',
-        ],
-    ],
-    'admin_user_lists' => [
-        'title' => 'لیست‌های کاربر', 'icon' => 'list-checks', 'type' => 'inline',
-        'desc'  => 'دکمه‌های فیلتر و نمایش لیست‌های مختلف کاربران.',
-        'buttons' => [
-            'alllistusers'    => '👥 همه کاربران',
-            'agentlistusers'  => '🤝 لیست نمایندگان',
-            'balanceuserlist' => '💰 لیست موجودی',
-            'cartuserlist'    => '💳 لیست کارت‌ها',
-            'adminlist'       => '👨‍💼 لیست ادمین‌ها',
-            'listrefral'      => '🎁 لیست زیرمجموعه',
-            'zerobalance'     => '0️⃣ موجودی صفر',
-            'balanceaddall'   => '➕ افزایش موجودی همه',
-        ],
-    ],
-    'admin_filters' => [
-        'title' => 'فیلترها', 'icon' => 'filter', 'type' => 'inline',
-        'desc'  => 'دکمه‌های فیلتر نوع کاربر/نماینده/قیمت/تخفیف/کش‌بک.',
-        'buttons' => [
-            
-            'typecustomer_all'         => '👤 همه (نوع کاربر)',
-            'typecustomer_customer'    => '👤 مشتری',
-            'typecustomer_notcustomer' => '👤 غیر مشتری',
-            
-            'typebalanceall_all' => '💰 موجودی همه',
-            'typebalanceall_f'   => '💰 موجودی نوع F',
-            'typebalanceall_n2'  => '💰 موجودی نوع N2',
-            'typebalanceall_nl'  => '💰 موجودی نوع NL',
-            
-            'typeaddprice_percent' => '📊 درصدی',
-            'typeaddprice_static'  => '🔢 مبلغ ثابت',
-            
-            'typeagenteditproduct_f'  => '🛠 ویرایش محصول نوع F',
-            'typeagenteditproduct_n'  => '🛠 ویرایش محصول نوع N',
-            'typeagenteditproduct_n2' => '🛠 ویرایش محصول نوع N2',
-            
-            'discounttype_all'    => '🎁 همه تخفیف‌ها',
-            'discounttype_buy'    => '🎁 فقط خرید',
-            'discounttype_extend' => '🎁 فقط تمدید',
-            'discountlimitbuy_0'  => '🚫 بدون محدودیت خرید',
-            'discountlimitbuy_1'  => '✅ با محدودیت خرید',
-            
-            'typegift_day'    => '🎁 هدیه روزانه',
-            'typegift_volume' => '🎁 هدیه حجمی',
-            
-            'voloume_or_day_all' => '📦 حجم یا روز - همه',
-            
-            'agenttypshowlist_all' => '🤝 همه نمایندگان',
-            'agenttypshowlist_n'   => '🤝 نمایندگان N',
-            'agenttypshowlist_n2'  => '🤝 نمایندگان N2',
-        ],
-    ],
-    'admin_node' => [
-        'title' => 'مدیریت نود', 'icon' => 'server', 'type' => 'inline',
-        'desc'  => 'دکمه‌های مدیریت سرور (نود) — نام، آی‌پی، اضافه، حذف و ...',
-        'buttons' => [
-            'namenode'         => '🏷️ نام نود',
-            'changenamenode'   => '✏️ تغییر نام نود',
-            'changeipnode'     => '✏️ تغییر آی‌پی نود',
-            'addiplogin'       => '➕ افزودن آی‌پی لاگین',
-            'iploginset'       => '⚙️ تنظیم آی‌پی لاگین',
-            'removenode'       => '❌ حذف نود',
-            'reconnectnode'    => '♻️ اتصال مجدد نود',
-            'bakcnode'         => '🔙 بازگشت نود',
-            'actionnode'       => '⚙️ اقدامات نود',
-        ],
-    ],
-    'admin_gateway_extra' => [
-        'title' => 'تنظیمات درگاه‌ها — تکمیلی', 'icon' => 'credit-card', 'type' => 'inline',
-        'desc'  => 'دکمه‌های تکمیلی هر درگاه (settings, کش‌بک، کاربران و ...).',
-        'buttons' => [
-            'cartsetting'              => '⚙️ تنظیمات کارت‌به‌کارت',
-            'carttocart'               => '💳 درگاه کارت‌به‌کارت',
-            'aqayepardakhtsetting'     => '⚙️ تنظیمات آقای پرداخت',
-            'zarinpalsetting'          => '⚙️ تنظیمات زرین‌پال',
-            'zarinpeysetting'          => '⚙️ تنظیمات زرین‌پی',
-            'plisiosetting'            => '⚙️ تنظیمات Plisio',
-            'nowpaymentsetting'        => '⚙️ تنظیمات NowPayment',
-            'iranpay1setting'          => '⚙️ تنظیمات ایران‌پی ۱',
-            'iranpay2setting'          => '⚙️ تنظیمات ایران‌پی ۲ (ترنادو)',
-            'iranpay3setting'          => '⚙️ تنظیمات ایران‌پی ۳',
-            'affilnecurrency'          => '💰 ارزی ریالی',
-            'affilnecurrencysetting'   => '⚙️ تنظیمات ارزی ریالی',
-            'arzireyali1'              => '💵 ارزی ریالی ۱',
-            'arzireyali2'              => '💵 ارزی ریالی ۲',
-            'oniranpay3'               => '🟢 ارزی ریالی ۳',
-        ],
-    ],
-    'admin_cart_advanced' => [
-        'title' => 'کارت‌به‌کارت — پیشرفته', 'icon' => 'credit-card-cog', 'type' => 'inline',
-        'desc'  => 'تنظیمات پیشرفته درگاه کارت‌به‌کارت.',
-        'buttons' => [
-            'cart_autocheck'   => '🤖 تایید رسید بدون بررسی',
-            'cart_autotime'    => '⏳ زمان تایید خودکار',
-            'cart_except_user' => '💳 استثناء کاربر',
-            'cart_export_num'  => '📄 خروجی شماره‌کارت‌ها',
-            'cart_group_num'   => '♻️ نمایش گروهی شماره‌کارت',
-            'cart_hide_num'    => '🚫 مخفی کردن شماره',
-            'cart_show_num'    => '👁️ نمایش شماره',
-            'checkpay'         => '✅ بررسی پرداخت',
-            'paydirect'        => '💳 پرداخت مستقیم',
-        ],
-    ],
-    'admin_crypto' => [
-        'title' => 'کیف پول کریپتو', 'icon' => 'wallet', 'type' => 'inline',
-        'desc'  => 'انتخاب کیف پول کریپتو + گفت‌و‌گوی ممو (TON, TRX, USDT).',
-        'buttons' => [
-            'cryptowallet_TON'        => '🟦 تون (TON)',
-            'cryptowallet_TRX'        => '🟩 ترون (TRX)',
-            'cryptowallet_USDT_TON'   => '💵 USDT-TON',
-            'cryptowallet_USDT_TRC20' => '💵 USDT-TRC20',
-            'walletaddress'           => '📋 آدرس کیف پول',
-            'cryptomemo_yes_TON'      => '✅ دارم (ممو TON)',
-            'cryptomemo_no_TON'       => '❌ ندارم (ممو TON)',
-            'cryptomemo_yes_USDT_TON' => '✅ دارم (ممو USDT-TON)',
-            'cryptomemo_no_USDT_TON'  => '❌ ندارم (ممو USDT-TON)',
-        ],
-    ],
-    'admin_iplogin' => [
-        'title' => 'ادمین — مدیریت آی‌پی ورود', 'icon' => 'shield-halved', 'type' => 'inline',
-        'desc'  => 'دکمه‌های منوی تنظیم آی‌پی ورود به پنل وب.',
-        'buttons' => [
-            'addiplogin'        => '➕ افزودن آیپی',
-            'iploginunlim_on'   => '♾️ فعال‌سازی حالت نامحدود',
-            'iploginunlim_off'  => '🔒 غیرفعال‌سازی حالت نامحدود',
-            'iploginset'        => '🛡 مدیریت آیپی‌ها',
-        ],
-    ],
-    'admin_infocard' => [
-        'title' => 'کارت مشخصات — رنگ', 'icon' => 'palette', 'type' => 'inline',
-        'desc'  => 'انتخاب رنگ کارت مشخصات سرویس.',
-        'buttons' => [
-            'infocard_setcolor_red'    => '🔴 قرمز',
-            'infocard_setcolor_green'  => '🟢 سبز',
-            'infocard_setcolor_blue'   => '🔵 آبی',
-            'infocard_setcolor_orange' => '🟠 نارنجی',
-            'infocard_setcolor_purple' => '🟣 بنفش',
-            'infocard_setcolor_yellow' => '🟡 زرد',
-        ],
-    ],
-    'admin_discount_settings' => [
-        'title' => 'تخفیف / هدیه', 'icon' => 'gift', 'type' => 'inline',
-        'desc'  => 'دکمه‌های مدیریت کدهای تخفیف و هدیه.',
-        'buttons' => [
-            'discountextend'    => '🎁 تخفیف تمدید',
-            'startgift'         => '🎁 شروع هدیه',
-            'get_gift_start'    => '🎁 دریافت هدیه (شروع)',
-            'statuscategorytime'=> '📊 وضعیت دسته زمان',
-            'statustimeextra'   => '⏳ وضعیت زمان اضافه',
-        ],
-    ],
-    'admin_misc_actions' => [
-        'title' => 'اقدامات متفرقه ادمین', 'icon' => 'wand-2', 'type' => 'inline',
-        'desc'  => 'دکمه‌های متفرقه ادمین (افزودن ادمین، کش، بهینه‌سازی و ...).',
-        'buttons' => [
-            'addnewadmin'           => '➕ افزودن ادمین جدید',
-            'customsellvolume'      => '💰 فروش حجم سفارشی',
-            'changecoefficient'     => '🔢 تغییر ضریب',
-            'changgestatus'         => '🔁 تغییر وضعیت',
-            'categroygenral'        => '📂 دسته عمومی',
-            'changenote'            => '📝 تغییر یادداشت',
-            'optimizebot'           => '🗑 بهینه‌سازی ربات',
-            'removeresid'           => '❌ حذف رسید',
-            'productcheckdata'      => '🔍 بررسی محصول',
-            'mainbalanceaccount'    => '💎 موجودی اصلی',
-            'maxbalanceaccount'     => '🔝 حداکثر موجودی',
-            'kharidanbuh'           => '🛒 خرید عمده',
-            'systemsms'             => '📲 سیستم پیامک',
-            'linkappdownlod'        => '🔗 لینک دانلود برنامه',
-            'fqQuestions'           => '❓ سوالات متداول',
-            'disorderss'            => '⚠️ گزارش اختلال',
-            'reasetchangeloc'       => '♻️ ریست تغییر لوکیشن',
-            'serviceextendselect_pre'=> '🔄 پیش‌انتخاب تمدید',
-            'removeservicebackbtn'  => '🔙 بازگشت حذف سرویس',
-            'startelegram'          => '⭐ ستاره تلگرام',
-        ],
-    ],
-    'admin_premium_stock' => [
-        'title' => 'پرمیوم / استاک', 'icon' => 'star', 'type' => 'inline',
-        'desc'  => 'مدیریت ایموجی پرمیوم و موجودی استاک.',
-        'buttons' => [
-            'premium_emoji_add'   => '🌟 افزودن ایموجی پرمیوم',
-            'premium_emoji_noop'  => '🌟 (placeholder)',
-            'nm_del_all_stock'    => '❌ حذف کل موجودی',
-            'nm_del_one_stock'    => '❌ حذف یک موجودی',
-            'antispam_noop'       => '🛡 (placeholder آنتی‌اسپم)',
+            'cv_use'           => '💳 استفاده از کارت تاییدشده',
+            'cv_new'           => '📷 پرداخت با کارت جدید',
         ],
     ],
     'user_subscription' => [
@@ -654,56 +144,21 @@ $MENUS = [
             'support'          => '📞 پشتیبانی (تک)',
             'Status'           => '📊 وضعیت سرویس',
             'LastTraffic'      => '📊 آخرین ترافیک',
+            'usedtraffic'      => '📥 حجم مصرف‌شده',
             'RemainingVolume'  => '🔋 حجم باقیمانده',
             'expirationDate'   => '⏳ تاریخ انقضا',
+            'daysleft'         => '📆 روز باقی‌مانده',
             'extravolunme'     => '➕ حجم اضافه',
             'exntedagei'       => '⏳ تمدید زمان',
-            'Responseuser'     => '💬 پاسخ به کاربر',
-            'requestagent'     => '🤝 درخواست نمایندگی',
             'iduser'           => '🆔 آیدی کاربر',
             'username'         => '👤 یوزرنیم',
             'notusernameme'    => '🚫 بدون یوزرنیم',
-        ],
-    ],
-    'admin_lists' => [
-        'title' => 'ادمین — لیست‌های داینامیک', 'icon' => 'list', 'type' => 'inline',
-        'desc'  => 'رنگ پیش‌فرض دکمه‌های لیست‌های داینامیک (لیست پنل‌ها، کاربران، محصولات، کانال‌ها و...). همه دکمه‌های هر لیست با همون رنگ نمایش داده می‌شن.',
-        'buttons' => [
-            'panel_list'    => '🖥 لیست پنل‌ها (مدیریت پنل)',
-            'paneluser_list'=> '👤 لیست پنل‌ها (جستجوی کاربر)',
-            'usertest_list' => '🧪 لیست پنل‌ها (اکانت تست)',
-            'changeloc_list'=> '🌍 لیست لوکیشن‌ها (تغییر مکان)',
-            'product_list'  => '🛍 لیست محصولات',
-            'user_services_list' => '🛒 لیست سرویس‌های کاربر (سرویس‌های من)',
-            'discount_list' => '🎁 لیست کدهای تخفیف',
-            'inbound_list'  => '🔌 لیست اینباندها',
-            'help_list'     => '📚 لیست آیتم‌های آموزش',
-            'channel_list'  => '📯 لیست کانال‌ها',
-            'card_list'     => '💳 لیست شماره‌کارت‌ها',
-            'protocol_list' => '🔗 لیست پروتکل‌ها',
-            'category_list' => '🗂 لیست دسته‌بندی‌ها',
-            'user_list'     => '👥 لیست کاربران',
-            'agent_list'    => '🤝 لیست نمایندگان',
-            'feature_toggle'   => '🔘 دکمه‌های وضعیت روشن/خاموش (editstsuts-)',
-            'support_response' => '💬 دکمه‌های پاسخ پشتیبانی (Response_*)',
-            'extra_purchase'   => '➕ دکمه‌های خرید اضافی (Extra_time_, Extra_volume_, ...)',
-            'btnmsg_settings'  => '📝 تنظیمات نوع پیام منو (btntypemessage-*)',
-            'user_confirms'    => '✅ دکمه‌های تایید (confirmaccountdisable_, confirmaextra-, ...)',
-            'admin_removes'    => '🗑 دکمه‌های حذف ادمین (removeadmin_, removeagent_, ...)',
-            'crypto_actions'   => '₿ دکمه‌های انتخاب کیف کریپتو (crypto_pay_, cryptowallet_)',
-            'service_actions'  => '🔧 اقدامات سرویس (config_, changelink_, changestatus_, ...)',
-            'pagination_btns'  => '◀▶ دکمه‌های صفحه‌بندی (previous_page, next_page)',
-            'broadcast_actions'=> '📢 دکمه‌های ارسال پیام انبوه',
-            'affiliate_actions'=> '🤝 دکمه‌های زیرمجموعه (affiliates-*)',
-            'shop_edit_actions'=> '✏️ ویرایش‌های فروشگاه (editshops-*)',
-            'node_actions'     => '🖧 اقدامات نود (changeipnode, changenamenode, ...)',
-            'admin_iplogin_dyn'=> '🛡 دکمه‌های حذف آی‌پی ورود (deliplogin_*)',
-            'crypto_manual_actions' => '🔁 دکمه‌های بررسی دستی کریپتو (confirmcryptomanual_, rejectcryptomanual_, rcc_pick_)',
-            'fallback_inline'  => '🌐 ✱ پیش‌فرض همه دکمه‌های دیگر inline (بدون رنگ خاص)',
+            'ticketnew'        => '➕ تیکت جدید',
+            'supporttickets'   => '🎫 تیکت‌های پشتیبانی',
         ],
     ],
     'user_dynamic_lists' => [
-        'title' => 'کاربر — لیست‌های داینامیک', 'icon' => 'shopping-cart', 'type' => 'inline',
+        'title' => 'کاربر — لیست‌های داینامیک', 'icon' => 'server-stack', 'type' => 'inline',
         'desc'  => 'رنگ پیش‌فرض دکمه‌های لیست‌های داینامیک سمت کاربر (لیست محصولات خرید، دسته‌بندی، انتخاب پنل، انتخاب زمان/حجم و...). همه دکمه‌های هر لیست با همون رنگ نمایش داده می‌شن.',
         'buttons' => [
             'product_buy'    => '🛒 لیست محصولات (انتخاب سرویس برای خرید)',
@@ -717,24 +172,19 @@ $MENUS = [
             'product_back'   => '◀️ بازگشت از لیست محصولات',
             'category_back'  => '◀️ بازگشت از لیست دسته‌بندی‌ها',
             'panel_back'     => '◀️ بازگشت از لیست پنل‌ها',
+            'service_actions'      => '🛠 پیش‌فرض کل لیست مدیریت سرویس (تنظیم تکی: تب «منوی سرویس»)',
+            'user_services_list'   => '📋 لیست «سرویس‌های من» (quickview)',
+            'paneluser_list'       => '🖥 انتخاب لوکیشن/پنل کاربر',
+            'crypto_actions'       => '🪙 پیش‌فرض کل لیست پرداخت کریپتو (تنظیم تکی: تب «دکمه‌های پرداخت کریپتو»)',
+            'crypto_manual_actions'=> '🔁 پیش‌فرض کل لیست بررسی دستی هش (تنظیم تکی: تب «بررسی مجدد هش کریپتو»)',
+            'user_confirms'        => '✅ پیش‌فرض کل لیست تاییدهای کاربر (تنظیم تکی: تب «تایید / ناوبری»)',
+            'extra_purchase'       => '➕ پیش‌فرض کل لیست خرید حجم/زمان اضافه (تنظیم تکی: تب «منوی سرویس»)',
+            'ticket_list'          => '🎫 پیش‌فرض کل لیست تیکت‌ها (تنظیم تکی: تب‌های «اشتراک» و «ناوبری»)',
+            'copy_card_num'        => '💳 کپی شماره کارت (کارت‌به‌کارت)',
+            'copy_card_amount'     => '🪙 کپی مبلغ (کارت‌به‌کارت)',
+            'copy_text_btn'        => '📋 سایر دکمه‌های کپی بدون کال‌بک (پیش‌فرض)',
             'auto_inline_btn'=> '🎨 ✱ پیش‌فرض همه دکمه‌های inline تبدیل‌شده از reply (apn:*)',
-        ],
-    ],
-    'cron_notifications' => [
-        'title' => 'کرون‌ها و گروه گزارش — دکمه اطلاعیه‌ها', 'icon' => 'bell', 'type' => 'inline',
-        'desc'  => 'رنگ دکمه‌های اطلاعیه‌های کرون (هشدار اتمام سرویس، حذف اکانت تست، گزارش‌های گروه ادمین و ...). همه‌ی دکمه‌های دینامیک با همین کلیدها نمایش داده می‌شوند.',
-        'buttons' => [
-            'cron_extend'        => '💊 تمدید سرویس (هشدار اتمام، NoticationsService/webhooks)',
-            'cron_manage_user'   => '👤 مدیریت کاربر جدید (گزارش گروه ادمین)',
-            'cron_manage_panel'  => '🖥 مدیریت پنل (گزارش گروه ادمین)',
-            'cron_action_btn'    => '⚙️ سایر اقدامات کرون (cronnotify_*)',
-            'cron_buy_service'   => '🛒 خرید سرویس (حذف اکانت تست، broadcast)',
-            'cron_start_bot'     => '🚀 شروع ربات (broadcast)',
-            'cron_usertest'      => '🧪 اکانت تست (broadcast)',
-            'cron_help'          => '📚 آموزش (broadcast)',
-            'cron_affiliates'    => '👥 زیرمجموعه (broadcast)',
-            'cron_addbalance'    => '💰 افزایش موجودی (broadcast)',
-            'cron_cancel'        => '❌ انصراف (broadcast)',
+            'nmstock_actions'      => '📦 دکمه‌های تحویل کالای دستی (تمدید/بازگشت وجه/کانفیگ/لینک اشتراک)',
         ],
     ],
     'recheckcrypto_buttons' => [
@@ -750,19 +200,8 @@ $MENUS = [
             'rcc_cancel'                    => '❌ انصراف',
         ],
     ],
-    'recheckcrypto_admin_buttons' => [
-        'title' => 'ادمین — تایید/رد بررسی دستی کریپتو', 'icon' => 'shield-check', 'type' => 'inline',
-        'desc'  => 'دکمه‌های تایید و رد درخواست بررسی دستی پرداخت کریپتو در پیام ادمین (پیوی + گروه گزارش).',
-        'buttons' => [
-            'confirmcryptomanual'   => '✅ تایید و شارژ کیف پول',
-            'rejectcryptomanual'    => '❌ رد درخواست',
-            'cmauto'                => '⚡ تایید با همان مبلغ خودکار',
-            'cmmanual'              => '✏️ ویرایش مبلغ و تایید',
-            'cmback'                => '🔙 بازگشت',
-        ],
-    ],
     'invoice_copy_buttons' => [
-        'title' => 'کاربر — دکمه‌های پرداخت کریپتو', 'icon' => 'copy', 'type' => 'inline',
+        'title' => 'کاربر — دکمه‌های پرداخت کریپتو', 'icon' => 'coins', 'type' => 'inline',
         'desc'  => 'رنگ دکمه‌های مسیر کامل پرداخت ارز دیجیتال در سمت کاربر — از انتخاب ارز تا کپی‌کردن آدرس/مبلغ/ممو و پرداخت کردم.',
         'buttons' => [
             'currency_pick' => '💎 انتخاب ارز (TRX/TON/USDT)',
@@ -772,446 +211,53 @@ $MENUS = [
             'copy_memo'     => '🏷 کپی ممو',
             'paid_submit'   => '✅ پرداخت کردم | ارسال هش',
             'invoice_back'  => '🔙 بازگشت',
+            'cancel_hash_input' => '❌ انصراف از ورود هش',
+        ],
+    ],
+    'home_menu' => [
+        'title' => 'کاربر — منوی اصلی', 'icon' => 'house', 'type' => 'reply',
+        'desc'  => 'دکمه‌های منوی اصلی کاربر (گردونه شانس، زیرمجموعه‌گیری، تمدید، پشتیبانی، آموزش، اکانت تست، پنل/درخواست نمایندگی).',
+        'buttons' => [
+            'home_buy'         => '🛒 خرید سرویس (منوی اصلی)',
+            'home_myservices'  => '📦 سرویس‌های من / میزان مصرف (منوی اصلی)',
+            'home_account'     => '💳 کیف پول (منوی اصلی)',
+            'home_tariff'      => '💰 لیست تعرفه (منوی اصلی)',
+            'wheel_luck'    => '🎡 گردونه شانس',
+            'affiliatesbtn' => '🤝 زیرمجموعه‌گیری',
+            'extendbtn'     => '🔄 تمدید سرویس (منوی اصلی)',
+            'supportbtns'   => '📞 پشتیبانی (منوی اصلی)',
+            'helpbtns'      => '📚 آموزش (منوی اصلی)',
+            'usertestbtn'   => '🧪 اکانت تست (منوی اصلی)',
+            'agentpanel'    => '🧑‍💼 پنل نمایندگی',
+            'requestagent'  => '📝 درخواست نمایندگی',
         ],
     ],
     'misc_buttons' => [
-        'title' => 'ادمین — دکمه‌های متفرقه', 'icon' => 'square-plus', 'type' => 'inline',
-        'desc'  => 'دکمه‌های تک منوها (دکمه بازگشت ادمین، پذیرش قوانین، انصراف و ...).',
+        'title' => 'کاربر — سایر دکمه‌ها', 'icon' => 'more-horizontal', 'type' => 'inline',
+        'desc'  => 'دکمه‌های پراکنده سمت کاربر که در تب‌های دیگر جای نمی‌گیرند (تایید قوانین، تایید پرداخت، تخفیف، بازگشت به خرید).',
         'buttons' => [
-            'adm_backmenu'      => '▶️ بازگشت به منوی قبل (ادمین)',
-            'adm_backadmin'     => '🏠 بازگشت به منوی ادمین',
-            'hide_mini_app'     => '⛓️‍💥 دیگر نمایش نده (Mini App)',
-            'backproductadmin'  => '🔙 بازگشت محصول (ادمین)',
-            'backadmin'         => '🏠 بازگشت (Reply back ادمین)',
-            'backlistuser'      => '🔙 بازگشت به لیست کاربر',
-            'buyback'           => '◀️ بازگشت خرید',
-            'cancel_gift'       => '❌ انصراف کد هدیه',
-            'cancel_hash_input' => '❌ انصراف ورود هش',
-            'cancel_sendmessage'=> '❌ انصراف ارسال پیام',
-            'close_listusers'   => '❌ بستن لیست کاربران',
-            'close_stat'        => '❌ بستن منوی قابلیت‌ها',
-            'cronjobs_back_settings'=> '🔙 بازگشت تنظیمات کرون',
-            'resetbot_cancel'   => '❌ انصراف ریست ربات',
-            'resetbot_confirm'  => '✅ تایید ریست ربات',
-            'broadcast_status_refresh' => '🔄 بروزرسانی وضعیت پیام انبوه',
-            'reject'            => '❌ رد',
-            'accept'            => '✅ پذیرش',
-            'acceptrule'        => '✅ پذیرش قوانین',
-            'confirmpaid'       => '✅ تایید پرداخت',
-            'confirmandgetservice' => '✅ تایید و دریافت سرویس',
-            'confirmandgetserviceDiscount' => '🎁 تایید با تخفیف',
-            'confirmchannel'    => '✅ تایید کانال',
-            'confirmserdiscount'=> '🎁 تایید سرویس تخفیف',
-            'confirmserivce'    => '✅ تایید سرویس',
-            'agentpanel'        => '🤝 پنل نماینده',
-            'cronjob_display'   => '⏱ نمایش کرون‌ها',
-            'startaction'       => '▶️ شروع اقدام',
-            'locationedit_all'  => '🌍 ویرایش همه لوکیشن‌ها',
-            'locationmessage_all'=> '📢 پیام به همه لوکیشن‌ها',
-            'backuser'          => '👤 بازگشت کاربر (backuser)',
-            'nav_back'          => '◀️ بازگشت عمومی کاربر (nav_back)',
-            'backorder'         => '🏠 بازگشت به لیست سرویس‌ها (backorder)',
-            'colselist'         => '❌ بستن لیست (colselist)',
-            'supportbtns'       => '🤙 دکمه پشتیبانی (supportbtns)',
-            'helpbtns'          => '📚 دکمه آموزش (helpbtns)',
-            'usertestbtn'       => '🧪 دکمه اکانت تست (usertestbtn)',
-            'inert_label'       => '🏷️ دکمه‌های لیبل بدون عملکرد (callback=none)',
+            'acceptrule'            => '✅ قوانین را می‌پذیرم',
+            'confirmpaid'           => '✅ پرداخت را تایید کردم',
+            'confirmandgetservice'  => '💰 پرداخت و دریافت سرویس',
+            'confirmserivce'        => '✅ تایید سرویس',
+            'confirmserdiscount'    => '🎁 تایید با کد تخفیف',
+            'buyback'               => '◀️ بازگشت به خرید',
         ],
     ],
-    'admin_panel_marzban' => [
-        'title' => 'ادمین — ویرایش پنل مرزبان', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل مرزبان (پس از انتخاب پنل توسط ادمین). هر دکمه می‌تواند رنگ مجزا داشته باشد. کلید هر دکمه = متن دقیق آن دکمه در ربات.',
+    'cron_notifications' => [
+        'title' => 'کاربر — دکمه‌های کرون‌جاب', 'icon' => 'clock', 'type' => 'inline',
+        'desc'  => 'دکمه‌های ارسال‌شده در پیام‌های خودکار کرون‌جاب (اعلان حجم/زمان رو به اتمام، پیام‌های همگانی، یادآوری شروع ربات و...).',
         'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل"     => '⚙️ وضعیت قابلیت‌ها پنل',
-            "✍️ نام پنل"                 => '✍️ نام پنل',
-            "❌ حذف پنل"                 => '❌ حذف پنل',
-            "🔐 ویرایش رمز عبور"         => '🔐 ویرایش رمز عبور',
-            "👤 ویرایش نام کاربری"        => '👤 ویرایش نام کاربری',
-            "🔗 ویرایش آدرس پنل"         => '🔗 ویرایش آدرس پنل',
-            "⚙️ تنظیم پروتکل و اینباند" => '⚙️ تنظیم پروتکل و اینباند',
-            "🔋 روش تمدید سرویس"          => '🔋 روش تمدید سرویس',
-            "💡 روش ساخت نام کاربری"      => '💡 روش ساخت نام کاربری',
-            "🚨 محدودیت ساخت اکانت"       => '🚨 محدودیت ساخت اکانت',
-            "📍 تغییر گروه کاربری"        => '📍 تغییر گروه کاربری',
-            "⏳ زمان سرویس تست"          => '⏳ زمان سرویس تست',
-            "💾 حجم اکانت تست"           => '💾 حجم اکانت تست',
-            "⚙️ قیمت حجم سرویس دلخواه"  => '⚙️ قیمت حجم سرویس دلخواه',
-            "➕ قیمت حجم اضافه"           => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه"          => '⏳ قیمت زمان اضافه',
-            "⏳ قیمت زمان دلخواه"         => '⏳ قیمت زمان دلخواه',
-            "🌍 قیمت تغییر لوکیشن"        => '🌍 قیمت تغییر لوکیشن',
-            "📍 حداقل حجم دلخواه"         => '📍 حداقل حجم دلخواه',
-            "📍 حداکثر حجم دلخواه"        => '📍 حداکثر حجم دلخواه',
-            "📍 حداقل زمان دلخواه"        => '📍 حداقل زمان دلخواه',
-            "📍 حداکثر زمان دلخواه"       => '📍 حداکثر زمان دلخواه',
-            "⚙️  اینباند اکانت غیرفعال"  => '⚙️ اینباند اکانت غیرفعال',
-            "📦 انبار شبکه ملی"           => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری"          => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری"              => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی"            => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل برای کاربر',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
+            'cron_extend'       => '💊 تمدید سرویس (اعلان کرون)',
+            'cron_buy_service'  => '🛒 خرید سرویس (پیام همگانی)',
+            'cron_start_bot'    => '🚀 شروع ربات (پیام همگانی)',
+            'cron_usertest'     => '🧪 اکانت تست (پیام همگانی)',
+            'cron_help'         => '📚 آموزش (پیام همگانی)',
+            'cron_affiliates'   => '🤝 زیرمجموعه‌گیری (پیام همگانی)',
+            'cron_addbalance'   => '💰 افزایش موجودی (پیام همگانی)',
         ],
     ],
-    'admin_panel_guard' => [
-        'title' => 'ادمین — ویرایش پنل Guard', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل Guard.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔐 ویرایش کلید" => '🔐 ویرایش کلید',
-            "⁉️ وضعیت اتصال به پنل" => '⁉️ وضعیت اتصال',
-            "⚙️ تنظیم سرویس ها" => '⚙️ تنظیم سرویس‌ها',
-            "🎛️ تنظیمات سرویس" => '🎛️ تنظیمات سرویس',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "⏳ زمان سرویس تست" => '⏳ زمان تست',
-            "💾 حجم اکانت تست" => '💾 حجم تست',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "🌍 قیمت تغییر لوکیشن" => '🌍 قیمت لوکیشن',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "⚙️  اینباند اکانت غیرفعال" => '⚙️ اینباند غیرفعال',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_ibsng' => [
-        'title' => 'ادمین — ویرایش پنل IBSng', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل IBSng.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔐 ویرایش رمز عبور" => '🔐 ویرایش رمز عبور',
-            "👤 ویرایش نام کاربری" => '👤 ویرایش نام کاربری',
-            "🔗 ویرایش آدرس پنل" => '🔗 ویرایش آدرس',
-            '🎛 تنظیم نام گروه' => '🎛 تنظیم نام گروه',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_mikrotik' => [
-        'title' => 'ادمین — ویرایش پنل Mikrotik', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل Mikrotik.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔐 ویرایش رمز عبور" => '🔐 ویرایش رمز عبور',
-            "👤 ویرایش نام کاربری" => '👤 ویرایش نام کاربری',
-            "🔗 ویرایش آدرس پنل" => '🔗 ویرایش آدرس',
-            '🎛 تنظیم نام گروه' => '🎛 تنظیم نام گروه',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_s_ui' => [
-        'title' => 'ادمین — ویرایش پنل S-UI', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل S-UI.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔐 ویرایش رمز عبور" => '🔐 ویرایش رمز عبور',
-            "👤 ویرایش نام کاربری" => '👤 ویرایش نام کاربری',
-            "🔗 ویرایش آدرس پنل" => '🔗 ویرایش آدرس',
-            "⚙️ تنظیم پروتکل و اینباند" => '⚙️ پروتکل و اینباند',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "⏳ زمان سرویس تست" => '⏳ زمان تست',
-            "💾 حجم اکانت تست" => '💾 حجم تست',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "🌍 قیمت تغییر لوکیشن" => '🌍 قیمت لوکیشن',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "⚙️  اینباند اکانت غیرفعال" => '⚙️ اینباند غیرفعال',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_wg' => [
-        'title' => 'ادمین — ویرایش پنل WGDashboard', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل WGDashboard.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔐 ویرایش رمز عبور" => '🔐 ویرایش رمز عبور',
-            "🔗 ویرایش آدرس پنل" => '🔗 ویرایش آدرس',
-            "💎 تنظیم شناسه اینباند" => '💎 شناسه اینباند',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "⏳ زمان سرویس تست" => '⏳ زمان تست',
-            "💾 حجم اکانت تست" => '💾 حجم تست',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "🌍 قیمت تغییر لوکیشن" => '🌍 قیمت لوکیشن',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "⚙️  اینباند اکانت غیرفعال" => '⚙️ اینباند غیرفعال',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_marzneshin' => [
-        'title' => 'ادمین — ویرایش پنل Marzneshin', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل Marzneshin.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔐 ویرایش رمز عبور" => '🔐 ویرایش رمز عبور',
-            "👤 ویرایش نام کاربری" => '👤 ویرایش نام کاربری',
-            "🔗 ویرایش آدرس پنل" => '🔗 ویرایش آدرس',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            "⚙️ تنظیمات سرویس" => '⚙️ تنظیمات سرویس',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "⏳ زمان سرویس تست" => '⏳ زمان تست',
-            "💾 حجم اکانت تست" => '💾 حجم تست',
-            "🌍 قیمت تغییر لوکیشن" => '🌍 قیمت لوکیشن',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_manualsale' => [
-        'title' => 'ادمین — ویرایش پنل فروش دستی', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل فروش دستی (Manualsale).',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "➕ اضافه کردن کانفیگ" => '➕ افزودن کانفیگ',
-            "❌ حذف کانفیگ " => '❌ حذف کانفیگ',
-            "✏️ ویرایش کانفیگ" => '✏️ ویرایش کانفیگ',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_x_ui_single' => [
-        'title' => 'ادمین — ویرایش پنل X-UI تک‌پورت', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل X-UI تک‌پورت.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔐 ویرایش رمز عبور" => '🔐 ویرایش رمز عبور',
-            "👤 ویرایش نام کاربری" => '👤 ویرایش نام کاربری',
-            "🔗 ویرایش آدرس پنل" => '🔗 ویرایش آدرس',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "💎 تنظیم شناسه اینباند" => '💎 شناسه اینباند',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            '🔗 دامنه لینک ساب' => '🔗 دامنه لینک ساب',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "⏳ زمان سرویس تست" => '⏳ زمان تست',
-            "💾 حجم اکانت تست" => '💾 حجم تست',
-            "🌍 قیمت تغییر لوکیشن" => '🌍 قیمت لوکیشن',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_alireza_single' => [
-        'title' => 'ادمین — ویرایش پنل علیرضا تک‌پورت', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل علیرضا تک‌پورت.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔐 ویرایش رمز عبور" => '🔐 ویرایش رمز عبور',
-            "👤 ویرایش نام کاربری" => '👤 ویرایش نام کاربری',
-            "🔗 ویرایش آدرس پنل" => '🔗 ویرایش آدرس',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "💎 تنظیم شناسه اینباند" => '💎 شناسه اینباند',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            '🔗 دامنه لینک ساب' => '🔗 دامنه لینک ساب',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "⏳ زمان سرویس تست" => '⏳ زمان تست',
-            "💾 حجم اکانت تست" => '💾 حجم تست',
-            "🌍 قیمت تغییر لوکیشن" => '🌍 قیمت لوکیشن',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_hiddify' => [
-        'title' => 'ادمین — ویرایش پنل Hiddify', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی ویرایش پنل Hiddify.',
-        'buttons' => [
-            "⚙️ وضعیت قابلیت ها پنل" => '⚙️ وضعیت قابلیت‌ها',
-            "✍️ نام پنل" => '✍️ نام پنل',
-            "❌ حذف پنل" => '❌ حذف پنل',
-            "🔗 ویرایش آدرس پنل" => '🔗 ویرایش آدرس',
-            "🔋 روش تمدید سرویس" => '🔋 روش تمدید',
-            "📍 تغییر گروه کاربری" => '📍 تغییر گروه',
-            "💡 روش ساخت نام کاربری" => '💡 روش ساخت نام',
-            '🔗 دامنه لینک ساب' => '🔗 دامنه لینک ساب',
-            "🚨 محدودیت ساخت اکانت" => '🚨 محدودیت ساخت',
-            "🔗 uuid admin" => '🔗 UUID Admin',
-            "⏳ زمان سرویس تست" => '⏳ زمان تست',
-            "💾 حجم اکانت تست" => '💾 حجم تست',
-            "🌍 قیمت تغییر لوکیشن" => '🌍 قیمت لوکیشن',
-            "➕ قیمت حجم اضافه" => '➕ قیمت حجم اضافه',
-            "⏳ قیمت زمان اضافه" => '⏳ قیمت زمان اضافه',
-            "⚙️ قیمت حجم سرویس دلخواه" => '⚙️ قیمت حجم دلخواه',
-            "⏳ قیمت زمان دلخواه" => '⏳ قیمت زمان دلخواه',
-            "📍 حداقل حجم دلخواه" => '📍 حداقل حجم',
-            "📍 حداکثر حجم دلخواه" => '📍 حداکثر حجم',
-            "📍 حداقل زمان دلخواه" => '📍 حداقل زمان',
-            "📍 حداکثر زمان دلخواه" => '📍 حداکثر زمان',
-            "📦 انبار شبکه ملی" => '📦 انبار شبکه ملی',
-            "📌 ثبت پنل اضطراری" => '📌 ثبت پنل اضطراری',
-            "🚨 پنل اضطراری" => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی" => '🌐 وضعیت نت ملی',
-            "🫣 مخفی کردن پنل برای یک کاربر" => '🫣 مخفی کردن پنل',
-            "❌  حذف کاربر از لیست مخفی شدگان" => '❌ حذف کاربر مخفی',
-        ],
-    ],
-    'admin_panel_athmarzban' => [
-        'title' => 'ادمین — احراز هویت Marzban', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی احراز هویت Marzban (ATH).',
-        'buttons' => [
-            "🔧 ساخت کانفیگ دستی" => '🔧 ساخت کانفیگ دستی',
-            "🖥 مدیریت نود ها"     => '🖥 مدیریت نودها',
-        ],
-    ],
-    'admin_panel_athx_ui' => [
-        'title' => 'ادمین — احراز هویت X-UI', 'icon' => 'gear', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی احراز هویت X-UI (ATH).',
-        'buttons' => [
-            "🔧 ساخت کانفیگ دستی" => '🔧 ساخت کانفیگ دستی',
-        ],
-    ],
-    'admin_panel_stock_manage' => [
-        'title' => 'ادمین — مدیریت انبار شبکه ملی', 'icon' => 'package', 'type' => 'reply',
-        'desc'  => 'دکمه‌های منوی «📦 انبار شبکه ملی» (افزودن/ویرایش/حذف انبار و کانفیگ).',
-        'buttons' => [
-            "➕ افزودن انبار مدنظر"             => '➕ افزودن انبار',
-            "➕ وارد کردن دسته‌ای انبار"        => '➕ ورود دسته‌ای',
-            "➕ افزودن کانفیگ تکی انبار"        => '➕ کانفیگ تکی',
-            "✏️ ویرایش انبار"                  => '✏️ ویرایش انبار',
-            "❌ حذف کانفیگ انبار"              => '❌ حذف کانفیگ',
-            "🗑 حذف کامل انبار"                => '🗑 حذف کامل انبار',
-            "📊 گزارش موجودی انبار"             => '📊 گزارش موجودی',
-            "🔄 همگام‌سازی محصولات انبار"      => '🔄 همگام‌سازی',
-            "🚨 پنل اضطراری"                   => '🚨 پنل اضطراری',
-            "🌐 وضعیت نت ملی"                 => '🌐 وضعیت نت ملی',
-            "🔙 بازگشت به انبار"                => '🔙 بازگشت به انبار',
-            "🔢 حذف کانفیگ با آیدی"             => '🔢 حذف با آیدی',
-            "📋 نمایش لیست کانفیگ‌ها"           => '📋 لیست کانفیگ‌ها',
-            "🗑 حذف همه کانفیگ‌های فعال این انبار" => '🗑 حذف همه کانفیگ‌ها',
-        ],
-    ],
+
 ];
 
 $ALL_DB_KEYS = array_keys($MENUS);
@@ -1328,6 +374,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'GET' && (filter_input(INPUT_GET, 'action') =
 }
 
 
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $raw     = file_get_contents('php://input');
     $payload = json_decode($raw, true);
@@ -1361,7 +408,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $jsonToSave = json_encode($clean, JSON_UNESCAPED_UNICODE);
     update("setting", "keyboard_styles_all", $jsonToSave, null, null);
 
-    
+
     $verify = select("setting", "keyboard_styles_all", null, null, "select", ['cache' => false]);
     $savedOk = (is_array($verify) && isset($verify['keyboard_styles_all'])
                 && $verify['keyboard_styles_all'] === $jsonToSave);
@@ -1382,82 +429,51 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
 
 
 $TAB_GROUPS = [
-    'user'  => ['label' => '👤 بخش کاربر',  'menus' => ['service','account','payment','user_nav','pay_receipt','user_subscription','invoice_copy_buttons','recheckcrypto_buttons','user_dynamic_lists']],
-    'admin' => ['label' => '🛡 بخش ادمین', 'menus' => ['admin_main','admin_settings','admin_shop','admin_roles','admin_gateways','admin_features','admin_channel','admin_help','admin_category','admin_products','admin_product_edit','features_nav','features_bot','features_users','features_shop','features_lottery','features_crons','features_antispam','admin_pagination','admin_stats','admin_search','admin_user_lists','admin_filters','admin_node','admin_gateway_extra','admin_cart_advanced','admin_crypto','admin_iplogin','admin_infocard','admin_discount_settings','admin_misc_actions','admin_premium_stock','admin_lists','cron_notifications','admin_panel_marzban','admin_panel_guard','admin_panel_ibsng','admin_panel_mikrotik','admin_panel_s_ui','admin_panel_wg','admin_panel_marzneshin','admin_panel_manualsale','admin_panel_x_ui_single','admin_panel_alireza_single','admin_panel_hiddify','admin_panel_athmarzban','admin_panel_athx_ui','recheckcrypto_admin_buttons','misc_buttons']],
+    'user'  => ['label' => '👤 بخش کاربر',  'menus' => ['service','account','tx_stats','payment','user_nav','pay_receipt','user_subscription','invoice_copy_buttons','recheckcrypto_buttons','user_dynamic_lists','misc_buttons','cron_notifications']],
 ];
 
 
 function phoneRows(string $mKey, array $btns): array {
-    if ($mKey === 'service') {
-        $rest = array_values(array_filter($btns, function($b) { return $b !== 'updateinfo' && $b !== 'backorder'; }));
-        $rows = [['updateinfo']];
-        while (count($rest) >= 2) $rows[] = [array_shift($rest), array_shift($rest)];
-        if ($rest) $rows[] = $rest;
-        $rows[] = ['backorder'];
-        return $rows;
+    $rows = [];
+    for ($i = 0; $i < count($btns); $i += 2) {
+        $rows[] = array_slice($btns, $i, 2);
     }
-    if ($mKey === 'account')       return [['Discount','Add_Balance'],['backuser']];
-    if ($mKey === 'admin_main')    return [['admin_status'],['admin_managepanel','admin_addpanel'],['admin_timeprice','admin_volprice'],['admin_users','admin_shop'],['admin_finance'],['admin_support','admin_help'],['admin_features'],['admin_settings','admin_invoices'],['admin_back']];
-    if ($mKey === 'admin_settings')return [['set_features'],['set_reports','set_channel'],['set_webpanel'],['set_optimize'],['set_text','set_adminmgr'],['set_testlimit'],['set_agentprice','set_qrbg'],['set_webhook'],['set_backadmin','set_backmenu']];
-    if ($mKey === 'admin_shop')    return [['shop_status'],['shop_category','shop_products'],['shop_giftadd','shop_giftdel'],['shop_discountadd','shop_discountdel'],['shop_minbulk','shop_renewcb'],['shop_backadmin','shop_backmenu']];
-    if ($mKey === 'user_nav')      return [['confirm_pay'],['confirm_discount'],['confirm_back'],['rules_accept'],['nav_back'],['contact_phone','contact_back']];
-    if ($mKey === 'pay_receipt')   return [['pay_done'],['pay_sendreceipt'],['pay_wallet_copy','pay_card_copy'],['pay_check'],['pay_cancel','pay_back']];
-    if ($mKey === 'admin_roles')   return [['seller_status'],['seller_users'],['seller_back'],['support_users','support_search'],['support_back']];
-    if ($mKey === 'admin_features') return [['feat_info'],['feat_test','feat_help'],['feat_back','feat_backmenu']];
-    if ($mKey === 'admin_channel')  return [['ch_add','ch_del'],['ch_back','ch_backmenu']];
-    if ($mKey === 'admin_help')     return [['help_add','help_del'],['help_edit'],['help_back','help_backmenu']];
-    if ($mKey === 'admin_category') return [['cat_add','cat_del'],['cat_edit'],['cat_back']];
-    if ($mKey === 'admin_products') return [['shopitem_add','shopitem_del'],['shopitem_edit'],['shopitem_priceinc','shopitem_pricedec'],['shopitem_back']];
-    if ($mKey === 'features_nav')   return [['featcat_bot','featcat_users'],['featcat_shop','featcat_lottery'],['featcat_crons','featcat_antispam'],['premium_emoji_settings'],['featcat_main','close_stat']];
-    if ($mKey === 'features_bot')   return [['subject','subjectde'],['statusbot'],['stautsrolee'],['Authenticationphone'],['Authenticationiran'],['verify'],['verifybyuser'],['inlinebtnmain']];
-    if ($mKey === 'features_users') return [['usernamebtn'],['statusnewuser'],['statussupportpv'],['statusnamecustom'],['statusnamecustomf']];
-    if ($mKey === 'features_shop')  return [['bulkbuy'],['btn_status_category'],['keyconfig'],['copycart'],['Debtsettlement'],['changeloc','changeloclimit'],['infocard_status','infocard_color_menu'],['linkappstatus','linkappsetting']];
-    if ($mKey === 'features_lottery')return[['wheel_luck','gradonhshans'],['wheelagentfirst'],['wheelagent'],['score','scoresetting'],['Lotteryagent'],['affiliatesstatus','settingaffiliatesf'],['Dice']];
-    if ($mKey === 'features_crons') return [['cronday','settimecornday'],['on_hold','setting_on_holdcron'],['cronvolume','settimecornvolume'],['notifremove','settimecornremove'],['notifremove_volume','settimecornremovevolume'],['cronjobs_settings']];
-    if ($mKey === 'features_antispam')return[['antispam_toggle'],['antispam_set_count'],['antispam_set_seconds'],['antispam_set_mute']];
-    if ($mKey === 'admin_pagination')      return [['next_page','previous_page'],['next_pageuser','previous_pageuser'],['next_pageuserbalance','previous_pageuserbalance']];
-    if ($mKey === 'admin_stats')            return [['today_stat','yesterday_stat'],['hoursago_stat','view_stat_time'],['month_current_stat','month_old_stat'],['stat_all_bot']];
-    if ($mKey === 'admin_search')           return [['searchorder'],['searchservice','searchuser'],['selectname']];
-    if ($mKey === 'admin_user_lists')       return [['alllistusers','agentlistusers'],['balanceuserlist','cartuserlist'],['adminlist','listrefral'],['zerobalance','balanceaddall']];
-    if ($mKey === 'admin_filters')          return [['typecustomer_all'],['typecustomer_customer','typecustomer_notcustomer'],['typebalanceall_all'],['typebalanceall_f','typebalanceall_n2'],['typeaddprice_percent','typeaddprice_static']];
-    if ($mKey === 'admin_node')             return [['namenode','changenamenode'],['changeipnode','addiplogin'],['removenode','reconnectnode'],['bakcnode','actionnode']];
-    if ($mKey === 'admin_gateway_extra')    return [['cartsetting','carttocart'],['aqayepardakhtsetting','zarinpalsetting'],['zarinpeysetting','plisiosetting'],['nowpaymentsetting'],['iranpay1setting','iranpay2setting'],['iranpay3setting']];
-    if ($mKey === 'admin_cart_advanced')    return [['cart_autocheck'],['cart_autotime'],['cart_except_user'],['cart_export_num'],['cart_show_num','cart_hide_num'],['cart_group_num'],['checkpay','paydirect']];
-    if ($mKey === 'admin_crypto')           return [['cryptowallet_TON','cryptowallet_TRX'],['cryptowallet_USDT_TON','cryptowallet_USDT_TRC20'],['walletaddress']];
-    if ($mKey === 'admin_infocard')         return [['infocard_setcolor_red','infocard_setcolor_green'],['infocard_setcolor_blue','infocard_setcolor_orange'],['infocard_setcolor_purple','infocard_setcolor_yellow']];
-    if ($mKey === 'admin_discount_settings')return [['discountextend'],['startgift','get_gift_start'],['statuscategorytime','statustimeextra']];
-    if ($mKey === 'admin_misc_actions')     return [['addnewadmin'],['customsellvolume','changecoefficient'],['changgestatus','categroygenral'],['optimizebot','removeresid'],['productcheckdata','mainbalanceaccount'],['kharidanbuh','systemsms'],['linkappdownlod','fqQuestions'],['disorderss','startelegram']];
-    if ($mKey === 'admin_premium_stock')    return [['premium_emoji_add'],['nm_del_all_stock','nm_del_one_stock']];
-    if ($mKey === 'user_subscription')      return [['buy_service'],['Status','LastTraffic'],['RemainingVolume','expirationDate'],['extravolunme','exntedagei'],['helpbtn','support'],['Responseuser','requestagent'],['iduser','username']];
-    if ($mKey === 'invoice_copy_buttons') return [['copy_wallet','copy_amount'],['copy_memo','paid_submit'],['invoice_back']];
-    if ($mKey === 'admin_lists')    return [['panel_list'],['user_list'],['product_list'],['user_services_list'],['discount_list'],['inbound_list'],['help_list'],['channel_list'],['card_list']];
-    if ($mKey === 'misc_buttons')   return [['adm_backmenu','adm_backadmin'],['hide_mini_app','backproductadmin'],['backadmin','backlistuser'],['buyback','cancel_gift'],['cancel_hash_input','cancel_sendmessage'],['close_listusers','close_stat'],['cronjobs_back_settings'],['resetbot_cancel','resetbot_confirm'],['broadcast_status_refresh'],['reject','accept'],['acceptrule','confirmpaid'],['confirmandgetservice','confirmandgetserviceDiscount'],['confirmchannel','confirmserdiscount','confirmserivce']];
-    if ($mKey === 'admin_gateways')return [['cart_title'],['cart_setnum','cart_delnum'],['cart_autoconfirm','cart_cashback'],['cart_min','cart_max'],['cart_back'],['trnado_name'],['trnado_apikey'],['trnado_back'],['zpal_name','zpal_merchant'],['zpal_back'],['zpey_name','zpey_token'],['zpey_back'],['aqaye_name'],['aqaye_back'],['plisio_name','plisio_api'],['plisio_back']];
-    
-    return array_map(function($b) { return [$b]; }, $btns);
+    return $rows;
 }
 ?>
 <!DOCTYPE html>
-<html lang="fa" dir="rtl" data-theme="dark" data-color="blue">
+<html lang="fa" dir="rtl" data-color="blue">
 <head>
+    <script>
+    (function(){try{var t=localStorage.getItem('faoxima_theme');
+    if(t!=='light'&&t!=='dark')t='dark';
+    document.documentElement.setAttribute('data-theme',t);
+    var c=localStorage.getItem('faoxima_color');
+    if(c)document.documentElement.setAttribute('data-color',c);}catch(e){}})();
+    </script>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>رنگ‌بندی دکمه‌ها — پنل فاکسیما</title>
-    <link rel="preload" href="fonts/Arad-BoldDots2.ttf" as="font" type="font/ttf" crossorigin>
-    <link rel="stylesheet" href="css/theme.css">
-    <script src="js/theme.js" defer></script>
+    <link rel="stylesheet" href="css/theme.css?v=flat47">
+    <script src="js/theme.js?v=flat5" defer></script>
     <style>
         body { padding-top: 0 !important; }
         /* ── Topbar ── */
         .skb-top {
             position: fixed; top:0; left:0; right:0; z-index:1000;
-            display:flex; align-items:center; gap:10px; padding:12px 20px;
-            background:rgba(13,16,22,.94); backdrop-filter:blur(10px);
-            -webkit-backdrop-filter:blur(10px);
-            border-bottom:1px solid var(--border-soft); flex-wrap:wrap;
+            display:flex; align-items:center; gap:10px 14px; padding:11px 22px;
+            background: var(--surface-1);
+            border-bottom: 1px solid var(--border-soft);
+            box-shadow: var(--shadow-1); flex-wrap:nowrap; justify-content:space-between;
         }
-        .skb-brand { display:flex; align-items:center; gap:9px; font-weight:700; color:var(--accent); font-size:14px; }
-        .skb-brand .lm { width:28px; height:28px; display:grid; place-items:center; background:var(--accent-soft); color:var(--accent); border-radius:6px; font-family:monospace; font-weight:800; border:1px solid var(--accent-mid); }
+        .skb-actions { display:flex; align-items:center; gap:8px; flex-wrap:nowrap; justify-content:flex-start; flex:0 1 auto; min-width:0; overflow-x:auto; scrollbar-width:none; }
+        .skb-actions::-webkit-scrollbar { display:none; }
+        .skb-actions > * { flex:0 0 auto; }
+        .skb-brand { display:flex; align-items:center; gap:10px; font-weight:800; color:var(--accent); font-size:16px; letter-spacing:-.2px; }
+        .skb-brand .lm { width:30px; height:30px; display:grid; place-items:center; background:#fff; border-radius:50%; overflow:hidden; flex-shrink:0; box-shadow:0 1px 3px rgba(20,20,30,.18), 0 3px 8px rgba(20,20,30,.14); }
+        [data-theme="dark"] .skb-brand .lm,
+        :root:not([data-theme="light"]) .skb-brand .lm { box-shadow:none; }
+        .skb-brand .lm img { width:100%; height:100%; object-fit:contain; object-position:center; transform:scale(1.35); display:block; }
         .skb-grow { flex:1 1 auto; }
         .sv-badge { display:flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); transition:color .2s; }
         .sv-badge.saving { color:#f59e0b; }
@@ -1483,28 +499,28 @@ function phoneRows(string $mKey, array $btns): array {
         .sv-toggle-defaults:hover { background:var(--surface-2); color:var(--text-main); }
         .sv-toggle-defaults input { accent-color:var(--accent, #6366f1); width:14px; height:14px; cursor:pointer; }
         .sv-toggle-defaults:has(input:checked) { color:var(--text-main); border-color:var(--accent-mid); background:var(--accent-soft); }
-        @media(max-width:600px){ .skb-top{padding:10px 12px;} .skb-brand span:not(.lm){display:none;} .sv-counter-text small { display:none; } .sv-toggle-defaults span { display:none; } }
+        @media(max-width:600px){ .skb-top{padding:10px 12px; gap:8px 10px;} .skb-actions{gap:7px; flex-wrap:wrap; overflow:visible; justify-content:flex-end;} .sv-pill-back span { display:none; } .sv-counter-text small { display:none; } .sv-reset-btn, .sv-toggle-defaults, .sv-pill-keyboard { display:none; } .sv-more { display:block; } }
 
         /* Page */
         .skb-page { max-width:1000px; margin:0 auto; padding:82px 18px 60px; }
 
         /* Group tabs */
-        .g-tabs { display:flex; gap:3px; background:var(--surface-1); border:1px solid var(--border-soft); border-radius:12px 12px 0 0; padding:8px 12px 0; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; backdrop-filter:blur(18px) saturate(135%); -webkit-backdrop-filter:blur(18px) saturate(135%); }
+        .g-tabs { display:flex; gap:3px; background:var(--surface-1); border:1px solid var(--border-soft); border-radius:12px 12px 0 0; padding:8px 12px 0; overflow-x:auto; -webkit-overflow-scrolling:touch; scrollbar-width:none; }
         .g-tabs::-webkit-scrollbar { display:none; }
-        .g-tab { padding:8px 20px 10px; border:none; background:none; cursor:pointer; font-family:'Arad',sans-serif; font-size:13px; font-weight:700; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; border-radius:6px 6px 0 0; transition:all .15s; white-space:nowrap; flex-shrink:0; }
+        .g-tab { padding:8px 20px 10px; border:none; background:none; cursor:pointer; font-family:'Vazirmatn',sans-serif; font-size:13px; font-weight:700; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; border-radius:6px 6px 0 0; transition:all .15s; white-space:nowrap; flex-shrink:0; }
         .g-tab:hover { color:var(--text-main); background:var(--surface-2); }
         .g-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
 
         /* Sub-tabs */
-        .s-tabs-outer { position:relative; display:flex; align-items:stretch; background:var(--surface-1); border:1px solid var(--border-soft); border-top:none; border-bottom:1px solid var(--border-mid); backdrop-filter:blur(18px) saturate(135%); -webkit-backdrop-filter:blur(18px) saturate(135%); }
-        .s-tabs-wrap { flex:1 1 auto; min-width:0; overflow-x:auto; -webkit-overflow-scrolling:touch; scroll-behavior:smooth; padding:0 6px; }
+        .s-tabs-outer { position:relative; display:flex; align-items:stretch; background:var(--surface-1); border:1px solid var(--border-soft); border-top:none; border-bottom:1px solid var(--border-mid); }
+        .s-tabs-wrap { flex:1 1 auto; min-width:0; overflow-x:auto; -webkit-overflow-scrolling:touch; padding:0 14px; }
         .s-tabs-wrap::-webkit-scrollbar { height:4px; }
         .s-tabs-wrap::-webkit-scrollbar-track { background:transparent; }
         .s-tabs-wrap::-webkit-scrollbar-thumb { background:var(--border-mid); border-radius:2px; }
         .s-tabs-wrap::-webkit-scrollbar-thumb:hover { background:var(--accent); }
         .s-tabs-wrap { scrollbar-width:thin; scrollbar-color:var(--border-mid) transparent; }
         .s-tabs { display:flex; gap:3px; min-width:max-content; }
-        .s-tab { display:flex; align-items:center; gap:6px; padding:8px 13px 9px; border:none; background:none; cursor:pointer; font-family:'Arad',sans-serif; font-size:12px; font-weight:600; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; border-radius:4px 4px 0 0; transition:all .15s; white-space:nowrap; flex-shrink:0; }
+        .s-tab { display:flex; align-items:center; gap:6px; padding:8px 13px 9px; border:none; background:none; cursor:pointer; font-family:'Vazirmatn',sans-serif; font-size:12px; font-weight:600; color:var(--text-muted); border-bottom:2px solid transparent; margin-bottom:-1px; border-radius:4px 4px 0 0; transition:all .15s; white-space:nowrap; flex-shrink:0; }
         .s-tab:hover { color:var(--text-main); }
         .s-tab.active { color:var(--accent); border-bottom-color:var(--accent); }
         .s-tab .svg-icon { width:13px; height:13px; flex-shrink:0; }
@@ -1533,19 +549,20 @@ function phoneRows(string $mKey, array $btns): array {
         .g-panel.active { display:block; }
         .m-panel { display:none; }
         .m-panel.active { display:block; }
-        .m-body { background:var(--surface-1); border:1px solid var(--border-soft); border-top:none; border-radius:0 0 14px 14px; padding:22px 18px 28px; backdrop-filter:blur(18px) saturate(135%); -webkit-backdrop-filter:blur(18px) saturate(135%); }
+        .m-body { background:var(--surface-1); border:1px solid var(--border-soft); border-top:none; border-radius:0 0 14px 14px; padding:22px 18px 28px; }
         .m-desc { font-size:12px; color:var(--text-muted); margin:0 0 20px; padding:10px 14px; background:var(--surface-2); border-radius:8px; border:1px solid var(--border-soft); line-height:1.8; }
 
         /* Layout */
         .m-layout { display:grid; grid-template-columns:1fr 215px; gap:20px; align-items:start; }
 
         /* Button cards */
-        .btn-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(195px,1fr)); gap:10px; align-items:stretch; }
+        .btn-grid { display:grid; grid-template-columns:repeat(2, 1fr); gap:10px; align-items:stretch; }
+        .btn-card.span2 { grid-column:1 / -1; }
         .btn-card { background:var(--surface-2); border:1px solid var(--border-soft); border-radius:12px; padding:10px 11px 10px; transition:border-color .15s,transform .12s; display:flex; flex-direction:column; gap:8px; min-height:108px; }
         .btn-card:hover { border-color:var(--border-mid); transform:translateY(-1px); }
         .btn-key { font-size:10px; color:var(--text-muted); font-family:monospace; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; flex-shrink:0; }
-        .btn-prev { display:flex; align-items:center; justify-content:center; padding:8px 10px; border-radius:9px; border:1px solid var(--border-mid); background:var(--surface-3); color:var(--text-main); font-size:12px; font-weight:600; font-family:'Arad',sans-serif; min-height:42px; text-align:center; line-height:1.35; transition:all .2s; cursor:default; flex:1 1 auto; word-break:break-word; }
-        .btn-prev[data-style="primary"] { background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 75%,#000)); color:var(--accent-fg,#fff); border-color:var(--accent); }
+        .btn-prev { display:flex; align-items:center; justify-content:center; padding:8px 10px; border-radius:9px; border:1px solid var(--border-mid); background:var(--surface-3); color:var(--text-main); font-size:12px; font-weight:600; font-family:'Vazirmatn',sans-serif; min-height:42px; text-align:center; line-height:1.35; transition:all .2s; cursor:default; flex:1 1 auto; word-break:break-word; }
+        .btn-prev[data-style="primary"] { background:linear-gradient(135deg,#3b82f6,#2563eb); color:#fff; border-color:#2563eb; }
         .btn-prev[data-style="success"] { background:linear-gradient(135deg,#22c55e,#16a34a); color:#fff; border-color:#16a34a; }
         .btn-prev[data-style="danger"]  { background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; border-color:#dc2626; }
 
@@ -1558,12 +575,12 @@ function phoneRows(string $mKey, array $btns): array {
             border-radius:4px; vertical-align:middle;
             background:linear-gradient(135deg, color-mix(in srgb,var(--accent) 22%,transparent), color-mix(in srgb,var(--accent) 8%,transparent));
             color:var(--accent); border:1px solid color-mix(in srgb,var(--accent) 35%,transparent);
-            font-family:'Arad',sans-serif;
+            font-family:'Vazirmatn',sans-serif;
         }
 
         /* Pagination */
         .pagination { display:flex; justify-content:center; align-items:center; gap:6px; margin-top:18px; padding:10px 0; }
-        .pg-btn { background:var(--surface-2); border:1px solid var(--border-soft); color:var(--text-main); padding:8px 14px; border-radius:8px; cursor:pointer; font-family:'Arad',sans-serif; font-size:12px; font-weight:600; transition:all .15s; min-width:42px; display:inline-flex; align-items:center; justify-content:center; gap:4px; }
+        .pg-btn { background:var(--surface-2); border:1px solid var(--border-soft); color:var(--text-main); padding:8px 14px; border-radius:8px; cursor:pointer; font-family:'Vazirmatn',sans-serif; font-size:12px; font-weight:600; transition:all .15s; min-width:42px; display:inline-flex; align-items:center; justify-content:center; gap:4px; }
         .pg-btn:hover:not(:disabled) { border-color:var(--accent); color:var(--accent); }
         .pg-btn:disabled { opacity:.4; cursor:not-allowed; }
         .pg-btn.active { background:var(--accent); border-color:var(--accent); color:var(--accent-fg,#fff); }
@@ -1575,21 +592,23 @@ function phoneRows(string $mKey, array $btns): array {
         .sw { width:28px; height:28px; border-radius:7px; border:2px solid transparent; cursor:pointer; transition:transform .12s,border-color .12s; position:relative; flex-shrink:0; touch-action:manipulation; flex:1 1 auto; max-width:42px; }
         .sw:hover { transform:scale(1.2); }
         .sw.sel { border-color:#fff!important; transform:scale(1.1); }
-        .sw[data-style="default"] { background:var(--surface-3); border-color:var(--border-mid); }
-        .sw[data-style="primary"] { background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 75%,#000)); }
+        .sw[data-style="default"] { background:var(--surface-3); border-color:color-mix(in srgb, var(--text-main) 24%, transparent); }
+        [data-theme="light"] .sw { border-color:#6b7280; border-width:3px; }
+        [data-theme="light"] .sw.sel { border-color:#1f2937 !important; }
+        .sw[data-style="primary"] { background:linear-gradient(135deg,#3b82f6,#2563eb); }
         .sw[data-style="success"] { background:linear-gradient(135deg,#22c55e,#16a34a); }
         .sw[data-style="danger"]  { background:linear-gradient(135deg,#ef4444,#dc2626); }
-        .sw-tip { position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); background:var(--surface-4,#1e2330); color:var(--text-main); font-size:10px; white-space:nowrap; padding:2px 6px; border-radius:4px; border:1px solid var(--border-soft); pointer-events:none; opacity:0; transition:opacity .12s; z-index:10; }
+        .sw-tip { position:absolute; bottom:calc(100% + 5px); left:50%; transform:translateX(-50%); background:#1f2430; color:#fff; font-size:10px; white-space:nowrap; padding:2px 6px; border-radius:4px; border:1px solid rgba(255,255,255,.14); box-shadow:0 4px 12px -4px rgba(0,0,0,.5); pointer-events:none; opacity:0; transition:opacity .12s; z-index:10; }
         .sw:hover .sw-tip { opacity:1; }
 
         /* Phone preview */
         .phone-sticky { position:sticky; top:82px; }
-        .phone { background:#17212b; border:2px solid var(--border-mid); border-radius:15px; padding:13px 9px; box-shadow:0 8px 32px rgba(0,0,0,.5); }
+        .phone { background:var(--surface-1); border:1px solid var(--border-soft); border-radius:15px; padding:13px 9px; box-shadow:none; }
         .ph-head { text-align:center; font-size:10px; color:rgba(255,255,255,.32); margin-bottom:9px; }
         .ph-btns { display:flex; flex-direction:column; gap:4px; }
         .ph-row { display:flex; gap:4px; }
-        .ph-btn { flex:1; text-align:center; padding:7px 5px; border-radius:7px; font-size:11px; font-weight:600; font-family:'Arad',sans-serif; line-height:1.3; background:rgba(255,255,255,.07); color:rgba(255,255,255,.8); border:1px solid rgba(255,255,255,.1); transition:all .2s; }
-        .ph-btn[data-style="primary"] { background:linear-gradient(135deg,var(--accent),color-mix(in srgb,var(--accent) 75%,#000)); color:var(--accent-fg,#fff); border-color:var(--accent); }
+        .ph-btn { flex:1; text-align:center; padding:7px 5px; border-radius:7px; font-size:11px; font-weight:600; font-family:'Vazirmatn',sans-serif; line-height:1.3; background:var(--surface-3); color:var(--text-main); border:1px solid var(--border-soft); transition:all .2s; }
+        .ph-btn[data-style="primary"] { background:linear-gradient(135deg,#3b82f6,#2563eb); color:#fff; border-color:#2563eb; }
         .ph-btn[data-style="success"] { background:linear-gradient(135deg,#22c55e,#16a34a); color:#fff; border-color:#16a34a; }
         .ph-btn[data-style="danger"]  { background:linear-gradient(135deg,#ef4444,#dc2626); color:#fff; border-color:#dc2626; }
 
@@ -1644,13 +663,12 @@ function phoneRows(string $mKey, array $btns): array {
             .s-tabs-arrow svg { width:20px; height:20px; }
             /* Two-column cards on mobile */
             .btn-grid { grid-template-columns: 1fr 1fr; gap:8px; }
-            .btn-card { padding:9px 9px 8px; border-radius:10px; }
+            .btn-card { padding:9px 9px 8px; border-radius:10px; min-height:auto; }
             .btn-key { font-size:9px; margin-bottom:5px; }
             .btn-prev { font-size:11px; padding:6px 6px; min-height:34px; border-radius:7px; }
-            /* Bigger touch-friendly swatches */
-            .sw { width:34px; height:34px; border-radius:9px; border-width:2.5px; }
-            .swatches { gap:7px; margin-top:9px; flex-wrap:wrap; }
-            .sw-tip { display:none; } /* hide tooltips on touch */
+            .sw { width:auto; height:32px; border-radius:9px; flex:1 1 0; min-width:0; max-width:none; }
+            .swatches { gap:6px; margin-top:9px; flex-wrap:nowrap; }
+            .sw-tip { display:none; }
             /* Hide badge and text from topbar buttons on mobile */
             .sv-badge { display:none; }
             .skb-top .btn span { display:none; }
@@ -1664,24 +682,71 @@ function phoneRows(string $mKey, array $btns): array {
         @media (max-width: 400px) {
             .btn-grid { grid-template-columns: 1fr; }
             .g-tab { padding:6px 11px 8px; font-size:11px; }
-            .sw { width:38px; height:38px; }
-            .swatches { gap:9px; }
+            .sw { height:34px; }
+            .swatches { gap:7px; }
         }
             .s-tabs-outer,
         .g-tabs,
         .m-desc,
         .btn-card {
-            backdrop-filter:blur(16px) saturate(200%) brightness(1.14);
-            -webkit-backdrop-filter:blur(16px) saturate(200%) brightness(1.14);
         }
         .m-desc,
         .btn-card {
-            background:linear-gradient(180deg,rgba(255,255,255,.14),rgba(255,255,255,.04) 45%,rgba(255,255,255,.02) 100%),var(--surface-2);
-            border:1px solid rgba(255,255,255,.42);
-            box-shadow:0 14px 34px rgba(0,0,0,.4),inset 0 1px 0 rgba(255,255,255,.6),inset 0 -1px 0 rgba(255,255,255,.16);
+            background:var(--surface-2);
+            border:1px solid var(--border-soft);
+            box-shadow:none;
         }
         .s-tabs-outer,
         .g-tabs { border-color:rgba(255,255,255,.34); }
+        /* ── Light-mode compatibility ── */
+        [data-theme="light"] .skb-top { background: var(--surface-1); }
+        [data-theme="light"] .phone { background: var(--surface-1); border-color: var(--border-soft); box-shadow: none; }
+        [data-theme="light"] .ph-head { color: var(--text-muted); }
+        [data-theme="light"] .m-desc,
+        [data-theme="light"] .btn-card { border-color: var(--border-soft); box-shadow: none; }
+        [data-theme="light"] .s-tabs-outer,
+        [data-theme="light"] .g-tabs { border-color: var(--border-soft); }
+
+        /* ── upgraded topbar pills ── */
+        .skb-top .btn { border-radius:100px; gap:7px; }
+        .skb-top .btn:hover { border-color:color-mix(in srgb,var(--accent) 55%,transparent); transform:none; }
+        .sv-reset-btn { color:#f87171 !important; border-color:rgba(248,113,113,.4) !important; background:rgba(248,113,113,.07) !important; }
+        .sv-reset-btn:hover { background:rgba(248,113,113,.14) !important; border-color:rgba(248,113,113,.75) !important; }
+        .sv-counter { border-radius:100px; }
+        .sv-toggle-defaults { border-radius:100px; }
+        [data-theme="light"] .skb-top { background: var(--surface-1) !important; border-bottom-color: var(--border-soft); }
+
+        /* mobile "more" menu */
+        .sv-more { display:none; position:relative; }
+        @media (max-width:600px) { .sv-more { display:block; } }
+        .sv-more-btn { display:flex; align-items:center; justify-content:center; width:38px; height:38px; border-radius:100px; border:1px solid var(--border-mid); background:rgba(255,255,255,.03); color:var(--text-main); cursor:pointer; }
+        .sv-more-btn:hover { background:rgba(255,255,255,.06); }
+        .sv-more-btn .svg-icon { width:18px; height:18px; }
+        .sv-more.open .sv-more-btn { border-color:var(--accent); color:var(--accent); }
+        .sv-more-menu { position:absolute; top:calc(100% + 8px); inset-inline-end:0; min-width:235px; background:var(--surface-2); border:1px solid var(--border-mid); border-radius:13px; box-shadow:0 16px 44px -14px rgba(0,0,0,.7); padding:6px; display:none; flex-direction:column; gap:2px; z-index:1100; }
+        .sv-more.open .sv-more-menu { display:flex; }
+        .sv-more-item { display:flex; align-items:center; gap:10px; padding:11px 12px; border-radius:9px; font-size:13px; font-weight:600; color:var(--text-main); background:none; border:none; cursor:pointer; text-decoration:none; font-family:'Vazirmatn',sans-serif; width:100%; text-align:start; }
+        .sv-more-item:hover { background:var(--surface-3); }
+        .sv-more-item .svg-icon { width:17px; height:17px; color:var(--text-muted); flex-shrink:0; }
+        .sv-more-danger { color:#f87171; }
+        .sv-more-danger .svg-icon { color:#f87171; }
+        .sv-more-chk { margin-inline-start:auto; color:var(--accent); font-weight:800; font-size:14px; }
+        .sv-more-item[aria-checked="false"] .sv-more-chk { visibility:hidden; }
+
+        /* ── mobile dropdown nav ── */
+        .s-mselect-wrap { display:none; background:var(--surface-1); border:1px solid var(--border-soft); border-top:none; padding:10px 12px; position:relative; }
+        .s-mselect-wrap::after { content:''; position:absolute; left:24px; top:50%; width:8px; height:8px; border-right:2px solid var(--text-muted); border-bottom:2px solid var(--text-muted); transform:translateY(-65%) rotate(45deg); pointer-events:none; }
+        .s-mselect { width:100%; appearance:none; -webkit-appearance:none; background:var(--surface-2); border:1px solid var(--border-mid); color:var(--text-main); font-family:'Vazirmatn',sans-serif; font-size:13px; font-weight:700; padding:11px 14px; border-radius:10px; cursor:pointer; direction:rtl; }
+        .s-mselect:focus { outline:none; border-color:var(--accent); }
+
+        /* ── landscape phones: 3-col grid ── */
+        @media (max-width:760px) and (min-width:521px) { .btn-grid { grid-template-columns:repeat(2,1fr); } }
+        /* ── mobile: tabs become dropdown ── */
+        @media (max-width:640px) {
+            .s-tabs-outer { display:none; }
+            .s-mselect-wrap { display:block; }
+            .btn-grid { grid-template-columns:repeat(2,1fr) !important; }
+        }
     </style>
 </head>
 <body>
@@ -1709,10 +774,9 @@ echo json_encode([
 
 <div class="skb-top">
     <div class="skb-brand">
-        <span class="lm">F</span>
-        <span>رنگ‌بندی دکمه‌های ربات</span>
+        <span class="lm"><img src="logo/faoxima.jpg" alt="faoxima" loading="lazy" width="30" height="30"></span>
     </div>
-    <div class="skb-grow"></div>
+    <div class="skb-actions">
 
 
 
@@ -1726,19 +790,31 @@ echo json_encode([
     </div>
 
     <button type="button" class="btn btn-outline btn-sm sv-reset-btn" id="sv-reset-all" title="غیرفعال‌سازی همگانی رنگ‌ها — همه دکمه‌ها به حالت پیش‌فرض (بدون رنگ) برمی‌گردن">
-        <?php echo icon('trash','svg-icon svg-sm'); ?>
+        <svg class="svg-icon svg-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/><line x1="10" y1="11" x2="10" y2="17"/><line x1="14" y1="11" x2="14" y2="17"/></svg>
         <span>غیرفعال‌سازی رنگ‌ها</span>
     </button>
 
 
-    <label class="sv-toggle-defaults" title="اگه خاموش باشه، فقط رنگ‌هایی که خودت اینجا انتخاب کردی روی ربات اعمال می‌شه. اگه روشن باشه، رنگ‌های پیش‌فرض کارخانه‌ای هم اعمال می‌شن.">
+    <label class="sv-toggle-defaults" title="اگه خاموش باشه، همه رنگ‌ها (خودکار و دستی) غیرفعال می‌شن. اگه روشن باشه، رنگ‌های پیش‌فرض کارخانه‌ای هم اعمال می‌شن.">
         <input type="checkbox" id="sv-toggle-defaults" <?php echo $useBuiltinDefaults ? 'checked' : ''; ?> />
         <span>اعمال پیش‌فرض‌های کارخانه‌ای</span>
     </label>
 
     <div class="sv-badge" id="sv-badge"><span class="sv-dot"></span><span id="sv-txt">ذخیره خودکار</span></div>
-    <a class="btn btn-outline btn-sm" href="keyboard.php"><?php echo icon('keyboard','svg-icon svg-sm'); ?> <span>کیبورد اصلی</span></a>
-    <a class="btn btn-outline btn-sm" href="index.php"><?php echo icon('arrow-right','svg-icon svg-sm'); ?> <span>بازگشت</span></a>
+
+    <div class="sv-more" id="sv-more">
+        <button type="button" class="sv-more-btn" id="sv-more-btn" aria-label="منوی بیشتر" aria-haspopup="true" aria-expanded="false">
+            <svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="5" r="1.4"/><circle cx="12" cy="12" r="1.4"/><circle cx="12" cy="19" r="1.4"/></svg>
+        </button>
+        <div class="sv-more-menu" id="sv-more-menu" role="menu">
+            <a class="sv-more-item" href="keyboard.php" role="menuitem"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2.4"/><line x1="7" y1="17" x2="17" y2="17"/></svg><span>کیبورد اصلی</span></a>
+            <button type="button" class="sv-more-item sv-more-danger" id="sv-more-reset" role="menuitem"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg><span>غیرفعال‌سازی رنگ‌ها</span></button>
+            <button type="button" class="sv-more-item" id="sv-more-defaults" role="menuitemcheckbox" aria-checked="true"><svg class="svg-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l1.9 5.8a2 2 0 0 0 1.3 1.3L21 12l-5.8 1.9a2 2 0 0 0-1.3 1.3L12 21l-1.9-5.8a2 2 0 0 0-1.3-1.3L3 12l5.8-1.9a2 2 0 0 0 1.3-1.3L12 3z"/></svg><span>اعمال پیش‌فرض‌های کارخانه‌ای</span><span class="sv-more-chk" id="sv-more-chk">✓</span></button>
+        </div>
+    </div>
+    <a class="btn btn-outline btn-sm sv-pill-keyboard" href="keyboard.php"><svg class="svg-icon svg-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="16" rx="2.4"/><line x1="6" y1="9" x2="6.01" y2="9"/><line x1="10" y1="9" x2="10.01" y2="9"/><line x1="14" y1="9" x2="14.01" y2="9"/><line x1="18" y1="9" x2="18.01" y2="9"/><line x1="6" y1="13" x2="6.01" y2="13"/><line x1="10" y1="13" x2="10.01" y2="13"/><line x1="14" y1="13" x2="14.01" y2="13"/><line x1="18" y1="13" x2="18.01" y2="13"/><line x1="7" y1="17" x2="17" y2="17"/></svg> <span>کیبورد اصلی</span></a>
+    <a class="btn btn-outline btn-sm sv-pill-back" href="index.php"><?php echo icon('arrow-right','svg-icon svg-sm'); ?> <span>بازگشت</span></a>
+    </div>
 </div>
 
 <div class="skb-page">
@@ -1773,6 +849,14 @@ echo json_encode([
             <button class="s-tabs-arrow left" data-scroll="left" data-group="<?php echo $gk; ?>" aria-label="قبلی" type="button">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
             </button>
+        </div>
+
+        <div class="s-mselect-wrap">
+            <select class="s-mselect" data-group="<?php echo $gk; ?>" aria-label="انتخاب بخش">
+            <?php foreach ($gd['menus'] as $i => $mk): $md=$MENUS[$mk]; ?>
+                <option value="<?php echo $mk; ?>" <?php echo $i===0?'selected':''; ?>><?php echo htmlspecialchars($md['title']); ?></option>
+            <?php endforeach; ?>
+            </select>
         </div>
 
         
@@ -1852,6 +936,9 @@ echo json_encode([
     var factoryDefaults = _skbData.factoryDefaults || {};
     var isSaving = false;
     var pendingSave = false;
+    var saveTimer = null;
+
+    var _tdfEl = document.getElementById('sv-toggle-defaults');
 
     function effectiveStyleFor(menu, key) {
         var m = styles[menu];
@@ -1859,8 +946,7 @@ echo json_encode([
             var v = m[key];
             if (typeof v === 'string' && v !== '') return v;
         }
-        var tdf = document.getElementById('sv-toggle-defaults');
-        var useDefaults = tdf ? !!tdf.checked : true;
+        var useDefaults = _tdfEl ? !!_tdfEl.checked : true;
         if (useDefaults) {
             var f = factoryDefaults[menu];
             if (f && !Array.isArray(f) && Object.prototype.hasOwnProperty.call(f, key)) {
@@ -1889,9 +975,9 @@ echo json_encode([
             if (prev) prev.dataset.style = effective;
             var ph = document.getElementById('phb-' + menu + '-' + key);
             if (ph) ph.dataset.style = effective;
-            document.querySelectorAll('.sw[data-menu="' + menu + '"][data-key="' + key + '"]').forEach(function(s){
-                var userPick = (styles[menu] && !Array.isArray(styles[menu])) ? styles[menu][key] : undefined;
-                var selStyle = (typeof userPick === 'string' && userPick !== '') ? userPick : 'default';
+            var userPick = (styles[menu] && !Array.isArray(styles[menu])) ? styles[menu][key] : undefined;
+            var selStyle = (typeof userPick === 'string' && userPick !== '') ? userPick : 'default';
+            card.querySelectorAll('.sw').forEach(function(s){
                 s.classList.toggle('sel', s.dataset.style === selStyle);
             });
         });
@@ -1915,17 +1001,38 @@ echo json_encode([
 
     // ── Sub-tabs ──
     document.querySelectorAll('.s-tab').forEach(function(t){
+        t.addEventListener('mousedown', function(e){ e.preventDefault(); });
         t.addEventListener('click', function(){
+            var _keepY = window.scrollY;
             var g = this.dataset.group, m = this.dataset.menu;
             document.querySelectorAll('.s-tab[data-group="' + g + '"]').forEach(function(x){ x.classList.remove('active'); });
             document.querySelectorAll('.m-panel[data-group="' + g + '"]').forEach(function(x){ x.classList.remove('active'); });
             this.classList.add('active');
             var p = document.getElementById('mp-' + m);
             if (p) p.classList.add('active');
-            // Auto-scroll active tab into view
-            try {
-                this.scrollIntoView({ behavior:'smooth', block:'nearest', inline:'center' });
-            } catch(e) {}
+            var _sel = document.querySelector('.s-mselect[data-group="' + g + '"]');
+            if (_sel && _sel.value !== m) _sel.value = m;
+            var _wrap = this.closest('.s-tabs-wrap');
+            if (_wrap) {
+                var _tb = this.getBoundingClientRect(), _wb = _wrap.getBoundingClientRect(), _pad = 14;
+                if (_tb.left < _wb.left + _pad) {
+                    _wrap.scrollLeft -= (_wb.left + _pad) - _tb.left;
+                } else if (_tb.right > _wb.right - _pad) {
+                    _wrap.scrollLeft += _tb.right - (_wb.right - _pad);
+                }
+            }
+            requestAnimationFrame(function(){
+                var _max = Math.max(0, document.documentElement.scrollHeight - window.innerHeight);
+                var _target = Math.min(_keepY, _max);
+                if (window.scrollY !== _target) window.scrollTo(0, _target);
+            });
+        });
+    });
+
+    document.querySelectorAll('.s-mselect').forEach(function(sel){
+        sel.addEventListener('change', function(){
+            var t = document.querySelector('.s-tab[data-group="' + this.dataset.group + '"][data-menu="' + this.value + '"]');
+            if (t) t.click();
         });
     });
 
@@ -2001,7 +1108,7 @@ echo json_encode([
         var sw = ev.target.closest('.sw');
         if (!sw) return;
         applyStyle(sw.dataset.menu, sw.dataset.key, sw.dataset.style);
-        doSave(); // immediate save
+        scheduleSave();
     });
     document.addEventListener('keydown', function(ev){
         if (ev.key !== 'Enter' && ev.key !== ' ') return;
@@ -2009,7 +1116,7 @@ echo json_encode([
         if (!sw) return;
         ev.preventDefault();
         applyStyle(sw.dataset.menu, sw.dataset.key, sw.dataset.style);
-        doSave();
+        scheduleSave();
     });
 
     // ── Sanitise styles: convert any Array values back to plain objects ──
@@ -2022,8 +1129,7 @@ echo json_encode([
                 out[menu] = s[menu] || {};
             }
         });
-        var tdf = document.getElementById('sv-toggle-defaults');
-        if (tdf) { out._use_defaults = !!tdf.checked; }
+        if (_tdfEl) { out._use_defaults = !!_tdfEl.checked; }
         return out;
     }
 
@@ -2032,13 +1138,18 @@ echo json_encode([
         var t = document.getElementById('sv-toggle-defaults');
         if (!t) return;
         t.addEventListener('change', function(){
+            if (!t.checked) {
+                Object.keys(styles).forEach(function(menu){
+                    styles[menu] = {};
+                });
+            }
             rerenderAllSwatches();
             if (typeof updateDefaultCounter === 'function') { updateDefaultCounter(); }
-            if (typeof doSave === 'function') { doSave(); }
+            scheduleSave();
             showToast(
                 t.checked
                     ? 'پیش‌فرض‌های کارخانه‌ای فعال شدن.'
-                    : 'پیش‌فرض‌ها خاموش شدن — فقط رنگ‌های انتخابی خودت روی ربات اعمال می‌شن.',
+                    : 'همه رنگ‌ها (خودکار و دستی) غیرفعال شدن.',
                 'success'
             );
         });
@@ -2056,39 +1167,51 @@ echo json_encode([
     var cntTotalEl   = document.getElementById('sv-cnt-total');
     var cntWrapEl    = document.getElementById('sv-counter');
 
-    function updateDefaultCounter(){
-        if (!cntDefaultEl || !cntTotalEl || !cntWrapEl) return;
-        var total = 0, defaults = 0;
+    var cardIndex   = null;
+    var totalCards  = 0;
+    var defaultsCount = 0;
+
+    function buildCardIndex(){
+        cardIndex = [];
         document.querySelectorAll('.btn-card[id^="card-"]').forEach(function(card){
             var id = card.id.substring('card-'.length);
             var sepIdx = id.indexOf('-');
             if (sepIdx < 0) return;
-            var menu = id.substring(0, sepIdx);
-            var key  = id.substring(sepIdx + 1);
-            total++;
-            if (effectiveStyleFor(menu, key) === 'default') defaults++;
+            cardIndex.push({ menu: id.substring(0, sepIdx), key: id.substring(sepIdx + 1) });
         });
-        cntDefaultEl.textContent = defaults;
-        cntTotalEl.textContent   = total;
+        totalCards = cardIndex.length;
+    }
+
+    function paintCounter(){
+        if (!cntDefaultEl || !cntTotalEl || !cntWrapEl) return;
+        cntDefaultEl.textContent = defaultsCount;
+        cntTotalEl.textContent   = totalCards;
         cntWrapEl.classList.remove('all-default','no-default');
-        if (total > 0) {
-            if (defaults === total)     cntWrapEl.classList.add('all-default');
-            else if (defaults === 0)    cntWrapEl.classList.add('no-default');
+        if (totalCards > 0) {
+            if (defaultsCount === totalCards) cntWrapEl.classList.add('all-default');
+            else if (defaultsCount === 0)     cntWrapEl.classList.add('no-default');
         }
+    }
+
+    function updateDefaultCounter(){
+        if (!cardIndex) buildCardIndex();
+        var d = 0;
+        for (var i = 0; i < cardIndex.length; i++) {
+            if (effectiveStyleFor(cardIndex[i].menu, cardIndex[i].key) === 'default') d++;
+        }
+        defaultsCount = d;
+        paintCounter();
     }
 
 
     var resetBtn = document.getElementById('sv-reset-all');
     if (resetBtn) {
         resetBtn.addEventListener('click', function(){
+            if (!cardIndex) buildCardIndex();
             var coloredCount = 0;
-            Object.keys(styles).forEach(function(menu){
-                var m = styles[menu];
-                if (!m || Array.isArray(m)) return;
-                Object.keys(m).forEach(function(btn){
-                    if (m[btn] && m[btn] !== 'default') coloredCount++;
-                });
-            });
+            for (var i = 0; i < cardIndex.length; i++) {
+                if (effectiveStyleFor(cardIndex[i].menu, cardIndex[i].key) !== 'default') coloredCount++;
+            }
             if (coloredCount === 0) {
                 showToast('همه دکمه‌ها از قبل پیش‌فرض هستن ✓', 'success');
                 return;
@@ -2101,23 +1224,31 @@ echo json_encode([
             Object.keys(styles).forEach(function(menu){
                 styles[menu] = {};
             });
+            if (_tdfEl) { _tdfEl.checked = false; }
 
             rerenderAllSwatches();
             updateDefaultCounter();
             showToast('در حال ذخیره ' + coloredCount + ' تغییر...', 'success');
-            doSave();
+            scheduleSave();
         });
     }
 
     // ── Pagination ──
-    var PAGE_SIZE = 9; // cards per page
+    var PAGE_SIZE = 10;
     var pageState = {}; // menuKey → currentPage
+
+    function balanceGrid(grid) {
+        if (!grid) return;
+        grid.querySelectorAll('.btn-card.span2').forEach(function(c){ c.classList.remove('span2'); });
+        var vis = [].slice.call(grid.querySelectorAll('.btn-card')).filter(function(c){ return c.style.display !== 'none'; });
+        if (vis.length % 2 === 1) vis[vis.length - 1].classList.add('span2');
+    }
 
     function initPagination() {
         document.querySelectorAll('.btn-grid[data-menu]').forEach(function(grid) {
             var mk = grid.dataset.menu;
             var cards = grid.querySelectorAll('.btn-card');
-            if (cards.length <= PAGE_SIZE) return; // no pagination needed
+            if (cards.length <= PAGE_SIZE) { balanceGrid(grid); return; }
             pageState[mk] = 0;
             renderPagination(mk);
             applyPagination(mk);
@@ -2133,6 +1264,7 @@ echo json_encode([
             var cardPage = Math.floor(idx / PAGE_SIZE);
             c.style.display = (cardPage === curPage) ? '' : 'none';
         });
+        balanceGrid(grid);
     }
 
     function renderPagination(mk) {
@@ -2227,6 +1359,7 @@ echo json_encode([
         /* Guard: if PHP sent [] (JSON array) instead of {} (JSON object),
            JS parsed it as an Array. Array named-props are dropped by JSON.stringify. */
         if (!styles[menu] || Array.isArray(styles[menu])) styles[menu] = {};
+        var beforeEff = effectiveStyleFor(menu, key);
         if (style === 'default') {
             delete styles[menu][key];
         } else {
@@ -2250,20 +1383,34 @@ echo json_encode([
         var ph = document.getElementById('phb-' + menu + '-' + key);
         if (ph) ph.dataset.style = displayStyle;
 
-        document.querySelectorAll('.sw[data-menu="' + menu + '"][data-key="' + key + '"]').forEach(function(s){
-            s.classList.toggle('sel', s.dataset.style === style);
-        });
+        if (card) {
+            card.querySelectorAll('.sw').forEach(function(s){
+                s.classList.toggle('sel', s.dataset.style === style);
+            });
+        } else {
+            document.querySelectorAll('.sw[data-menu="' + menu + '"][data-key="' + key + '"]').forEach(function(s){
+                s.classList.toggle('sel', s.dataset.style === style);
+            });
+        }
 
-        if (typeof updateDefaultCounter === 'function') { updateDefaultCounter(); }
+        if (beforeEff === 'default' && effective !== 'default') defaultsCount--;
+        else if (beforeEff !== 'default' && effective === 'default') defaultsCount++;
+        paintCounter();
+    }
+
+    function scheduleSave(){
+        setBadge('saving', 'در حال ذخیره...');
+        if (saveTimer) clearTimeout(saveTimer);
+        saveTimer = setTimeout(function(){ saveTimer = null; doSave(); }, 550);
     }
 
     // ── Immediate save ──
     function doSave(){
+        if (saveTimer) { clearTimeout(saveTimer); saveTimer = null; }
         if (isSaving) { pendingSave = true; return; }
         isSaving = true;
         setBadge('saving', 'در حال ذخیره...');
         var payload = sanitiseStyles(styles);
-        console.log('[SKB] saving payload:', payload);
         fetch('service_keyboard.php', {
             method: 'POST',
             headers: {'Content-Type': 'application/json'},
@@ -2273,7 +1420,6 @@ echo json_encode([
         .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
         .then(function(d){
             isSaving = false;
-            console.log('[SKB] save response:', d);
             if (d && d.ok) {
                 setBadge('saved', 'ذخیره شد ✓');
                 showToast('ذخیره شد', 'success');
@@ -2304,6 +1450,27 @@ echo json_encode([
         if (toastT) clearTimeout(toastT);
         toastT = setTimeout(function(){ toastEl.classList.remove('show'); }, 2200);
     }
+
+    (function moreMenu() {
+        var more = document.getElementById('sv-more');
+        if (!more) return;
+        var btn = document.getElementById('sv-more-btn');
+        var resetItem = document.getElementById('sv-more-reset');
+        var defItem = document.getElementById('sv-more-defaults');
+        var tgl = document.getElementById('sv-toggle-defaults');
+        function syncChk() { defItem.setAttribute('aria-checked', tgl.checked ? 'true' : 'false'); }
+        syncChk();
+        function closeMenu() { more.classList.remove('open'); btn.setAttribute('aria-expanded', 'false'); }
+        btn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            if (more.classList.contains('open')) { closeMenu(); }
+            else { syncChk(); more.classList.add('open'); btn.setAttribute('aria-expanded', 'true'); }
+        });
+        document.addEventListener('click', function (e) { if (more.classList.contains('open') && !more.contains(e.target)) closeMenu(); });
+        resetItem.addEventListener('click', function () { closeMenu(); document.getElementById('sv-reset-all').click(); });
+        defItem.addEventListener('click', function () { tgl.checked = !tgl.checked; tgl.dispatchEvent(new Event('change')); syncChk(); });
+        tgl.addEventListener('change', syncChk);
+    })();
 })();
 </script>
 </body>
