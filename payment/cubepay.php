@@ -86,7 +86,7 @@ function cubepay_finalize_paid_order($orderId, $Payment_report, $methodLabel)
     $cashbackEligible = !function_exists('rx_cashbackEligibleForKey')
         || rx_cashbackEligibleForKey("chashbackcubepay", $Balance_id['register'] ?? null, $Payment_report['id_invoice'] ?? null, $Balance_id['id'] ?? null, $Payment_report['id_order'] ?? null);
     if ($cashbackEligible && $pricecashback != "0") {
-        $result = ($Payment_report['price'] * $pricecashback) / 100;
+        $result = round(($Payment_report['price'] * $pricecashback) / 100);
         $Balance_confrim = intval($Balance_id['Balance']) + $result;
         update("user", "Balance", $Balance_confrim, "id", $Balance_id['id']);
         $pricecashback = number_format($pricecashback);

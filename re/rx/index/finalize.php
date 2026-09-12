@@ -27,7 +27,7 @@ if (isset($update['pre_checkout_query'])) {
     $cashbackEligible = !function_exists('rx_cashbackEligibleForKey')
         || rx_cashbackEligibleForKey("chashbackstar", $Balance_id['register'] ?? null, $Payment_report['id_invoice'] ?? null, $Balance_id['id'] ?? null, $Payment_report['id_order'] ?? null);
     if ($cashbackEligible && $pricecashback != "0") {
-        $result = ($Payment_report['price'] * $pricecashback) / 100;
+        $result = round(($Payment_report['price'] * $pricecashback) / 100);
         if (function_exists('balance_atomic_credit')) {
             balance_atomic_credit($Balance_id['id'], $result);
         } else {
