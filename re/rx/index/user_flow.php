@@ -4426,6 +4426,23 @@ $textonebuy
         }
         $message_id = sendmessage($from_id, $textnowpayments, $paymentkeyboard, 'HTML');
         updatePaymentMessageId($message_id, $randomString);
+
+        // 🤖 اگر فروشنده در پنل کیوب‌پی گزینه‌ی «نمایش کارت در ربات» را روشن کرده
+        // باشد، شماره‌کارت را همین‌جا داخل چت هم می‌فرستیم تا مشتری لازم نباشد از
+        // تلگرام بیرون برود. این پیام «کنارِ» پیامِ بالا می‌نشیند، نه جای آن.
+        if (!empty($payment['show_card_in_bot']) && !empty($payment['card']['number'])) {
+            $cubepayCard = $payment['card'];
+            $cubepayAmount = (int) ($payment['pay_amount_toman'] ?? 0);
+            $cubepayMinutes = (int) ($payment['expires_in_minutes'] ?? 30);
+            $cubepayCardText = "💳 <b>پرداخت کارت‌به‌کارت</b>\n"
+                . "━━━━━━━━━━━━━━━\n\n"
+                . "🔢 شماره کارت:\n<code>" . htmlspecialchars((string) $cubepayCard['number'], ENT_QUOTES, 'UTF-8') . "</code>\n"
+                . (!empty($cubepayCard['holder']) ? "👤 به نام: " . htmlspecialchars((string) $cubepayCard['holder'], ENT_QUOTES, 'UTF-8') . "\n" : '')
+                . "\n💰 مبلغ دقیق: <b>" . number_format($cubepayAmount) . "</b> تومان\n"
+                . "⏳ مهلت پرداخت: " . $cubepayMinutes . " دقیقه\n\n"
+                . "⚠️ مبلغ باید رقم‌به‌رقم دقیق باشد — تاییدِ خودکار فقط با همین عدد انجام می‌شود.";
+            sendmessage($from_id, $cubepayCardText, null, 'HTML');
+        }
     } elseif ($datain == "digitaltron") {
 
         $mainbalancedigitaltron = select("PaySetting", "ValuePay", "NamePay", "minbalancedigitaltron", "select")['ValuePay'];
