@@ -67,6 +67,10 @@ function cubepay_finalize_paid_order($orderId, $Payment_report, $methodLabel)
         }
     }
     $GLOBALS['textbotlang'] = languagechange('../text.json');
+    // DirectPayment() این آرایه را با global می‌خواند، پس باید در دامنه‌ی
+    // سراسری باشد؛ اینجا داخل تابع ساخته می‌شود و بدون این خط، متنِ
+    // «سرویس با موفقیت ایجاد شد» خالی می‌ماند و تلگرام پیام را رد می‌کند.
+    $GLOBALS['datatextbot'] = $datatextbot;
 
     DirectPayment($orderId, "../images.jpg");
 
