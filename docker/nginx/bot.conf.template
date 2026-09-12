@@ -1,4 +1,17 @@
-location ^~ /${URL_PATH}/installer/  { deny all; return 403; }
+location ~* ^/${URL_PATH}/(?:\..*|.*/\..*) {
+    deny all;
+    return 404;
+}
+
+location ~* ^/${URL_PATH}/.*\.(?:env|ya?ml|sql|log|sh|json|bak|lock|md|conf|ini)$ {
+    deny all;
+    return 404;
+}
+
+location ^~ /${URL_PATH}/installer/    { deny all; return 403; }
+location ^~ /${URL_PATH}/storage/      { deny all; return 403; }
+location ^~ /${URL_PATH}/logs/         { deny all; return 403; }
+location ^~ /${URL_PATH}/api/handlers/ { deny all; return 403; }
 
 location ~* ^/${URL_PATH}/app/.*\.(?:js|mjs)$ {
     root ${DOC_ROOT};
@@ -41,3 +54,6 @@ location /${URL_PATH}/ {
     root ${DOC_ROOT};
     try_files $uri $uri/ =404;
 }
+
+
+

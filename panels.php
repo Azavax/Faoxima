@@ -29,6 +29,15 @@ class ManagePanel
         self::$panelRowCache[$cacheKey] = $value;
         return $value;
     }
+
+    public function isPasarGuardDialect(?array $panel): bool
+    {
+        if (!is_array($panel) || empty($panel['type'])) {
+            return false;
+        }
+        return ($panel['type'] === 'pasarguard')
+            || ($panel['type'] === 'marzban' && (string)($panel['version_panel'] ?? '0') === '1');
+    }
     function createUser($name_panel, $code_product, $usernameC, array $Data_Config)
     {
         $Output = [];
@@ -563,7 +572,9 @@ class ManagePanel
                     'sub_updated_at' => $UsernameData['sub_updated_at'],
                     'sub_last_user_agent' => $UsernameData['sub_last_user_agent'],
                     'uuid' => $UsernameData['proxies'],
-                    'data_limit_reset' => $UsernameData['data_limit_reset_strategy']
+                    'data_limit_reset' => $UsernameData['data_limit_reset_strategy'],
+                    'group_ids' => $UsernameData['group_ids'] ?? null,
+                    'inbounds' => $UsernameData['inbounds'] ?? null
                 );
             }
         } elseif ($Get_Data_Panel['type'] == "pasarguard") {
@@ -614,7 +625,8 @@ class ManagePanel
                     'sub_last_user_agent' => $UsernameData['sub_last_user_agent'] ?? null,
                     'uuid' => $UsernameData['proxies'] ?? null,
                     'data_limit_reset' => $UsernameData['data_limit_reset_strategy'],
-                    'hwid_limit' => $UsernameData['hwid_limit'] ?? null
+                    'hwid_limit' => $UsernameData['hwid_limit'] ?? null,
+                    'group_ids' => $UsernameData['group_ids'] ?? null
                 );
             }
         } elseif ($Get_Data_Panel['type'] == "guard") {
@@ -1234,52 +1246,46 @@ class ManagePanel
         $Get_Data_Panel = $this->loadPanel($name_panel, "name_panel");
         if ($Get_Data_Panel['type'] == "marzban") {
             $UsernameData = removeuser($Get_Data_Panel['name_panel'], $username);
-            if (!empty($UsernameData['status']) && $UsernameData['status'] != 200) {
-                return array(
-                    'status' => 'Unsuccessful',
-                    'msg' => $UsernameData['status']
-                );
-            } elseif (!empty($UsernameData['error'])) {
+            if (!empty($UsernameData['error'])) {
                 return array(
                     'status' => 'Unsuccessful',
                     'msg' => $UsernameData['error']
                 );
             }
-            $UsernameData = json_decode($UsernameData['body'], true);
-            if ($UsernameData['detail'] != "User successfully deleted") {
-                $Output = array(
-                    'status' => 'Unsuccessful',
-                    'msg' => $UsernameData['detail']
-                );
-            } else {
+            $httpStatus = isset($UsernameData['status']) ? (int)$UsernameData['status'] : 0;
+            if (in_array($httpStatus, [200, 201, 202, 204, 404], true)) {
                 $Output = array(
                     'status' => 'successful',
                     'username' => $username,
+                );
+            } else {
+                $bodyDecoded = (!empty($UsernameData['body']) && is_string($UsernameData['body'])) ? json_decode($UsernameData['body'], true) : null;
+                $msg = is_array($bodyDecoded) ? ($bodyDecoded['detail'] ?? ($bodyDecoded['message'] ?? $httpStatus)) : ($httpStatus ?: 'remove failed');
+                $Output = array(
+                    'status' => 'Unsuccessful',
+                    'msg' => $msg
                 );
             }
         } elseif ($Get_Data_Panel['type'] == "pasarguard") {
             $UsernameData = pasarguardRemoveUser($Get_Data_Panel['name_panel'], $username);
-            if (!empty($UsernameData['status']) && $UsernameData['status'] != 200) {
-                return array(
-                    'status' => 'Unsuccessful',
-                    'msg' => $UsernameData['status']
-                );
-            } elseif (!empty($UsernameData['error'])) {
+            if (!empty($UsernameData['error'])) {
                 return array(
                     'status' => 'Unsuccessful',
                     'msg' => $UsernameData['error']
                 );
             }
-            $UsernameData = json_decode($UsernameData['body'], true);
-            if ($UsernameData['detail'] != "User successfully deleted") {
-                $Output = array(
-                    'status' => 'Unsuccessful',
-                    'msg' => $UsernameData['detail']
-                );
-            } else {
+            $httpStatus = isset($UsernameData['status']) ? (int)$UsernameData['status'] : 0;
+            if (in_array($httpStatus, [200, 201, 202, 204, 404], true)) {
                 $Output = array(
                     'status' => 'successful',
                     'username' => $username,
+                );
+            } else {
+                $bodyDecoded = (!empty($UsernameData['body']) && is_string($UsernameData['body'])) ? json_decode($UsernameData['body'], true) : null;
+                $msg = is_array($bodyDecoded) ? ($bodyDecoded['detail'] ?? ($bodyDecoded['message'] ?? $httpStatus)) : ($httpStatus ?: 'remove failed');
+                $Output = array(
+                    'status' => 'Unsuccessful',
+                    'msg' => $msg
                 );
             }
         } elseif ($Get_Data_Panel['type'] == "x-ui_single") {
@@ -2081,23 +2087,42 @@ class ManagePanel
             }
             return array('status' => true);
         }
-        if ($panel['type'] == "marzban") {
+        if ($this->isPasarGuardDialect($panel)) {
+            $configuredGroups = is_array($inbounds) ? $inbounds : (is_string($inbounds) ? json_decode($inbounds, true) : []);
+            $existingGroups = (!empty($data_user['group_ids']) && is_array($data_user['group_ids'])) ? $data_user['group_ids'] : [];
+            $mergedGroups = array_values(array_unique(array_merge($existingGroups, is_array($configuredGroups) ? $configuredGroups : [])));
+            $targetGroups = !empty($mergedGroups) ? $mergedGroups : (!empty($configuredGroups) ? $configuredGroups : null);
+
+            $data = array(
+                'data_limit' => $data_limit_new,
+                'expire' => ($time_new == 0 ? 0 : date('c', $time_new)),
+            );
+            if ($targetGroups !== null) {
+                $data['group_ids'] = $targetGroups;
+            }
+            if ($invoice != false && $invoice['uuid'] != null) {
+                $data['proxy_settings'] = json_decode($invoice['uuid']);
+            }
+        } elseif ($panel['type'] == "marzban") {
+            $configuredInbounds = is_array($inbounds) ? $inbounds : (is_string($inbounds) ? json_decode($inbounds, true) : []);
+            $existingInbounds = (!empty($data_user['inbounds']) && is_array($data_user['inbounds'])) ? $data_user['inbounds'] : [];
+            $mergedInbounds = is_array($configuredInbounds) ? $configuredInbounds : [];
+            if (is_array($existingInbounds)) {
+                foreach ($existingInbounds as $protocol => $tags) {
+                    if (is_array($tags)) {
+                        $currentTags = isset($mergedInbounds[$protocol]) && is_array($mergedInbounds[$protocol]) ? $mergedInbounds[$protocol] : [];
+                        $mergedInbounds[$protocol] = array_values(array_unique(array_merge($currentTags, $tags)));
+                    }
+                }
+            }
+            $targetInbounds = !empty($mergedInbounds) ? $mergedInbounds : $inbounds;
             $data = array(
                 'data_limit' => $data_limit_new,
                 'expire' => $time_new,
-                'inbounds' => $inbounds,
+                'inbounds' => $targetInbounds,
             );
             if ($invoice != false && $invoice['uuid'] != null) {
                 $data['proxies'] = json_decode($invoice['uuid'], true);
-            }
-        } elseif ($panel['type'] == "pasarguard") {
-            $data = array(
-                'data_limit' => $data_limit_new,
-                'expire' => $time_new,
-                'group_ids' => $inbounds,
-            );
-            if ($invoice != false && $invoice['uuid'] != null) {
-                $data['proxy_settings'] = json_decode($invoice['uuid']);
             }
         } elseif ($panel['type'] == "x-ui_single") {
             $data = array(
@@ -2270,21 +2295,40 @@ class ManagePanel
             $res = $mgr->addVolume($local['panel_user_id'], (int) $new_limit, $pdo);
             return array('status' => !empty($res['ok']));
         }
-        if ($panel['type'] == "marzban") {
+        if ($this->isPasarGuardDialect($panel)) {
+            $configuredGroups = is_array($inbounds) ? $inbounds : (is_string($inbounds) ? json_decode($inbounds, true) : []);
+            $existingGroups = (!empty($user_info['group_ids']) && is_array($user_info['group_ids'])) ? $user_info['group_ids'] : [];
+            $mergedGroups = array_values(array_unique(array_merge($existingGroups, is_array($configuredGroups) ? $configuredGroups : [])));
+            $targetGroups = !empty($mergedGroups) ? $mergedGroups : (!empty($configuredGroups) ? $configuredGroups : null);
+
             $data = array(
                 'data_limit' => $new_limit,
-                'inbounds' => $inbounds,
+            );
+            if ($targetGroups !== null) {
+                $data['group_ids'] = $targetGroups;
+            }
+            if ($invoice != false && $invoice['uuid'] != null) {
+                $data['proxy_settings'] = json_decode($invoice['uuid']);
+            }
+        } elseif ($panel['type'] == "marzban") {
+            $configuredInbounds = is_array($inbounds) ? $inbounds : (is_string($inbounds) ? json_decode($inbounds, true) : []);
+            $existingInbounds = (!empty($user_info['inbounds']) && is_array($user_info['inbounds'])) ? $user_info['inbounds'] : [];
+            $mergedInbounds = is_array($configuredInbounds) ? $configuredInbounds : [];
+            if (is_array($existingInbounds)) {
+                foreach ($existingInbounds as $protocol => $tags) {
+                    if (is_array($tags)) {
+                        $currentTags = isset($mergedInbounds[$protocol]) && is_array($mergedInbounds[$protocol]) ? $mergedInbounds[$protocol] : [];
+                        $mergedInbounds[$protocol] = array_values(array_unique(array_merge($currentTags, $tags)));
+                    }
+                }
+            }
+            $targetInbounds = !empty($mergedInbounds) ? $mergedInbounds : $inbounds;
+            $data = array(
+                'data_limit' => $new_limit,
+                'inbounds' => $targetInbounds,
             );
             if ($invoice != false && $invoice['uuid'] != null) {
                 $data['proxies'] = json_decode($invoice['uuid'], true);
-            }
-        } elseif ($panel['type'] == "pasarguard") {
-            $data = array(
-                'data_limit' => $new_limit,
-                'group_ids' => $inbounds,
-            );
-            if ($invoice != false && $invoice['uuid'] != null) {
-                $data['proxy_settings'] = json_decode($invoice['uuid']);
             }
         } elseif ($panel['type'] == "x-ui_single") {
             $data = array(
@@ -2424,21 +2468,40 @@ class ManagePanel
             $res = $mgr->extendUser($local['panel_user_id'], remnawave_iso_from_timestamp($new_limit), $pdo);
             return array('status' => !empty($res['ok']));
         }
-        if ($panel['type'] == "marzban") {
+        if ($this->isPasarGuardDialect($panel)) {
+            $configuredGroups = is_array($inbounds) ? $inbounds : (is_string($inbounds) ? json_decode($inbounds, true) : []);
+            $existingGroups = (!empty($user_info['group_ids']) && is_array($user_info['group_ids'])) ? $user_info['group_ids'] : [];
+            $mergedGroups = array_values(array_unique(array_merge($existingGroups, is_array($configuredGroups) ? $configuredGroups : [])));
+            $targetGroups = !empty($mergedGroups) ? $mergedGroups : (!empty($configuredGroups) ? $configuredGroups : null);
+
+            $data = array(
+                'expire' => ($new_limit == 0 ? 0 : date('c', $new_limit)),
+            );
+            if ($targetGroups !== null) {
+                $data['group_ids'] = $targetGroups;
+            }
+            if ($invoice != false && $invoice['uuid'] != null) {
+                $data['proxy_settings'] = json_decode($invoice['uuid']);
+            }
+        } elseif ($panel['type'] == "marzban") {
+            $configuredInbounds = is_array($inbounds) ? $inbounds : (is_string($inbounds) ? json_decode($inbounds, true) : []);
+            $existingInbounds = (!empty($user_info['inbounds']) && is_array($user_info['inbounds'])) ? $user_info['inbounds'] : [];
+            $mergedInbounds = is_array($configuredInbounds) ? $configuredInbounds : [];
+            if (is_array($existingInbounds)) {
+                foreach ($existingInbounds as $protocol => $tags) {
+                    if (is_array($tags)) {
+                        $currentTags = isset($mergedInbounds[$protocol]) && is_array($mergedInbounds[$protocol]) ? $mergedInbounds[$protocol] : [];
+                        $mergedInbounds[$protocol] = array_values(array_unique(array_merge($currentTags, $tags)));
+                    }
+                }
+            }
+            $targetInbounds = !empty($mergedInbounds) ? $mergedInbounds : $inbounds;
             $data = array(
                 'expire' => $new_limit,
-                'inbounds' => $inbounds,
+                'inbounds' => $targetInbounds,
             );
             if ($invoice != false && $invoice['uuid'] != null) {
                 $data['proxies'] = json_decode($invoice['uuid'], true);
-            }
-        } elseif ($panel['type'] == "pasarguard") {
-            $data = array(
-                'expire' => $new_limit,
-                'group_ids' => $inbounds,
-            );
-            if ($invoice != false && $invoice['uuid'] != null) {
-                $data['proxy_settings'] = json_decode($invoice['uuid']);
             }
         } elseif ($panel['type'] == "x-ui_single") {
             $new_limit = $new_limit * 1000;

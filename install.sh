@@ -939,6 +939,18 @@ grant_file_permissions() {
         ui_warn "${service} container is not running — cannot apply in-container permissions right now."
         return 0
     fi
+
+    local wait_tries=0
+    while [ "$wait_tries" -lt 15 ]; do
+        local c_status
+        c_status=$(docker inspect -f '{{.State.Status}}' "$(dc ps -q "$service")" 2>/dev/null)
+        [ "$c_status" = "running" ] && break
+        sleep 1
+        wait_tries=$((wait_tries + 1))
+    done
+
+    dc exec -T "$service" sh -c "killall crond 2>/dev/null || true; rm -f /var/run/crond.pid" 2>/dev/null || true
+
     ui_action "Re-applying file permissions inside the ${service} container..."
     local output
     if output=$(dc exec -T "$service" /usr/local/bin/entrypoint.sh true 2>&1); then
@@ -1238,7 +1250,10 @@ install_bot() {
     ui_ok "Database tables initialised."
 
     ui_action "Registering Telegram webhook..."
+    local secret_token
+    secret_token=$(printf '%s' "${YOUR_BOT_TOKEN}_faoxima_webhook_secret" | sha256sum | awk '{print $1}')
     curl -s -F "url=https://${domainname}/faoxima/index.php" \
+        -F "secret_token=${secret_token}" \
         "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook" || {
         ui_warn "Failed to set webhook — you can retry later via 'Change Domain'."
     }
@@ -1466,7 +1481,10 @@ EOF
     ui_ok "Database tables initialised for '${botname}'."
 
     ui_action "Registering Telegram webhook for '${botname}'..."
+    local secret_token
+    secret_token=$(printf '%s' "${YOUR_BOT_TOKEN}_faoxima_webhook_secret" | sha256sum | awk '{print $1}')
     curl -s -F "url=https://${domainname}/${botname}/index.php" \
+        -F "secret_token=${secret_token}" \
         "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/setWebhook" || ui_warn "Failed to set webhook."
     curl -s -X POST "https://api.telegram.org/bot${YOUR_BOT_TOKEN}/sendMessage" \
         -d chat_id="${YOUR_CHAT_ID}" -d text="✅ Faoxima bot '${botname}' is installed! Send /start to begin." \
@@ -1870,7 +1888,7 @@ update_bot_source() {
     fi
 
     dc restart "$app_service" || { ui_err "Failed to restart the '${app_service}' container after the update."; return 1; }
-
+    sleep 2
     grant_file_permissions "$app_service"
 
     ui_ok "'${label}' updated successfully."
@@ -2754,7 +2772,9 @@ change_domain() {
     local bot_token webhook_url webhook_response
     bot_token=$(env_get TELEGRAM_BOT_TOKEN)
     webhook_url="https://${new_domain}/faoxima/index.php"
-    webhook_response=$(curl -s -X POST "https://api.telegram.org/bot${bot_token}/setWebhook" -F "url=${webhook_url}")
+    local secret_token
+    secret_token=$(printf '%s' "${bot_token}_faoxima_webhook_secret" | sha256sum | awk '{print $1}')
+    webhook_response=$(curl -s -X POST "https://api.telegram.org/bot${bot_token}/setWebhook" -F "url=${webhook_url}" -F "secret_token=${secret_token}")
     if echo "$webhook_response" | grep -q '"ok":true'; then
         log_info "Telegram webhook updated successfully for ${new_domain}."
     else

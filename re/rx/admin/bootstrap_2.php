@@ -3512,14 +3512,19 @@ $caption";
     $time = date('Y/m/d H:i:s');
     $mediaToken = $photo ? "\n[[photo:$photoid]]" : ($video ? "\n[[video:$videoid]]" : "");
     $bodytext = trim(((string)$text !== '' ? (string)$text : (string)$caption) . $mediaToken);
+    $userKb = json_encode(['inline_keyboard' => [[['text' => '💬 پاسخ', 'callback_data' => 'ticketreply_' . $T]]]], JSON_UNESCAPED_UNICODE);
+    $userMsgText = (string)$text !== '' ? (string)$text : (string)$caption;
+    $toUser = "📩 پاسخ پشتیبانی به تیکت <code>$T</code> :" . ($userMsgText !== '' ? "\n\n" . $userMsgText : ($photo ? "\n\n(تصویر پیوست ارسال شد)" : ($video ? "\n\n(ویدیو پیوست ارسال شد)" : "")));
+    $sendRes = sendmessage($ttk['iduser'], $toUser, $userKb, 'HTML');
+    if (empty($sendRes['ok'])) {
+        nm_adminInstantReply($from_id, "❌ ارسال پاسخ به کاربر ناموفق بود (ممکن است کاربر ربات را بلاک کرده باشد یا خطای تلگرام رخ داده باشد).\nتیکت همچنان در صف پاسخگویی باقی ماند.", null, 'HTML');
+        return;
+    }
+    if ($photo) { sendphoto($ttk['iduser'], $photoid, null); }
+    if ($video) { sendvideo($ttk['iduser'], $videoid, null); }
     $stmt = $pdo->prepare("INSERT IGNORE INTO support_message (Tracking,idsupport,iduser,name_departman,text,result,time,status) VALUES (?,?,?,?,?,?,?,?)");
     $stmt->execute([$T, $ttk['idsupport'], $ttk['iduser'], $ttk['name_departman'], $bodytext, 'admin', $time, 'Answered']);
     update("support_message", "status", "Answered", "Tracking", $T);
-    $userKb = json_encode(['inline_keyboard' => [[['text' => '💬 پاسخ', 'callback_data' => 'ticketreply_' . $T]]]], JSON_UNESCAPED_UNICODE);
-    $toUser = "📩 پاسخ پشتیبانی به تیکت <code>$T</code> :\n\n" . ((string)$text !== '' ? $text : $caption);
-    sendmessage($ttk['iduser'], $toUser, $userKb, 'HTML');
-    if ($photo) { sendphoto($ttk['iduser'], $photoid, null); }
-    if ($video) { sendvideo($ttk['iduser'], $videoid, null); }
     nm_adminInstantReply($from_id, "✅ پاسخ شما ثبت و برای کاربر ارسال شد.", null, 'HTML');
     step('home', $from_id);
 } elseif ($user['step'] == "ticketadminreplyWait") {

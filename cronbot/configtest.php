@@ -42,18 +42,20 @@ foreach ($datatxtbot as $item) {
         $user = select("user","*","id",$result['id_user'],"select");
         $get_username_Check = $ManagePanel->DataUser($result['Service_location'],$result['username']);
     if (!in_array($get_username_Check['status'],['active','on_hold',"Unsuccessful","disabled"])) {
-            $ManagePanel->RemoveUser($result['Service_location'],$resultt);
-        update("invoice","status","disabled","username",$resultt);
-        if(intval($user['status_cron']) != 0){
-         $Response = json_encode([
-        'inline_keyboard' => [
-            [
-                rx_cron_btn('cron_buy_service', ['text' => "🛍 خرید سرویس", 'callback_data' => 'buy']),
-            ],
-        ]
-    ]);
-        $textexpire = str_replace('{username}', $resultt, $datatextbot['crontest']);
-        sendmessage($result['id_user'], $textexpire, $Response, 'HTML');
+        $removeRes = $ManagePanel->RemoveUser($result['Service_location'],$resultt);
+        if (!empty($removeRes['status']) && $removeRes['status'] === 'successful') {
+            update("invoice","status","disabled","username",$resultt);
+            if(intval($user['status_cron']) != 0){
+                $Response = json_encode([
+                    'inline_keyboard' => [
+                        [
+                            rx_cron_btn('cron_buy_service', ['text' => "🛍 خرید سرویس", 'callback_data' => 'buy']),
+                        ],
+                    ]
+                ]);
+                $textexpire = str_replace('{username}', $resultt, $datatextbot['crontest']);
+                sendmessage($result['id_user'], $textexpire, $Response, 'HTML');
+            }
         }
     }
 }

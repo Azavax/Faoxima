@@ -177,20 +177,26 @@ class ServiceMonitor
         ][$userData['status']];
         $remainingVolume = formatBytes($userData['data_limit'] - $userData['used_traffic']);
         if ($result) {
-            update("invoice", "status", "removeTime", "id_invoice", $invoice['id_invoice']);
-            $this->Panel->RemoveUser($invoice['Service_location'], $username);
-            $message = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_notice_tpl', "📌 کاربر گرامی بدلیل عدم تمدید، سرویس {username} از لیست سرویس های شما حذف گردید\n\n🌟 جهت تهیه سرویس جدید از بخش خرید سرویس اقدام فرمایید"), [
-                'username' => $invoice['username'],
-            ]);
-            $reportMessage = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_report_tpl', "📌 اطلاعیه کرون حذف\n\n<blockquote>نام کاربری سرویس :‌ <code>{username}</code></blockquote>\n<blockquote>وضعیت سرویس : {status}</blockquote>\n<blockquote>تعداد روز باقی مانده ‌:‌{days}</blockquote>\n<blockquote>حجم باقی مانده : {volume}</blockquote>"), [
-                'username' => $invoice['username'],
-                'status' => $statusText,
-                'days' => $daysRemaining,
-                'volume' => $remainingVolume,
-            ]);
-            $shouldNotify = !empty($user['status_cron'] ?? null);
-            $this->send_notifactions($invoice, $shouldNotify, $message, false, $invoice['bottype']);
-            $this->sendReportNotification($reportMessage);
+            $removeRes = $this->Panel->RemoveUser($invoice['Service_location'], $username);
+            if (!empty($removeRes['status']) && $removeRes['status'] === 'successful') {
+                update("invoice", "status", "removeTime", "id_invoice", $invoice['id_invoice']);
+                $message = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_notice_tpl', "📌 کاربر گرامی بدلیل عدم تمدید، سرویس {username} از لیست سرویس های شما حذف گردید\n\n🌟 جهت تهیه سرویس جدید از بخش خرید سرویس اقدام فرمایید"), [
+                    'username' => $invoice['username'],
+                ]);
+                $reportMessage = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_report_tpl', "📌 اطلاعیه کرون حذف\n\n<blockquote>نام کاربری سرویس :‌ <code>{username}</code></blockquote>\n<blockquote>وضعیت سرویس : {status}</blockquote>\n<blockquote>تعداد روز باقی مانده ‌:‌{days}</blockquote>\n<blockquote>حجم باقی مانده : {volume}</blockquote>"), [
+                    'username' => $invoice['username'],
+                    'status' => $statusText,
+                    'days' => $daysRemaining,
+                    'volume' => $remainingVolume,
+                ]);
+                $shouldNotify = !empty($user['status_cron'] ?? null);
+                $this->send_notifactions($invoice, $shouldNotify, $message, false, $invoice['bottype']);
+                $this->sendReportNotification($reportMessage);
+            } else {
+                $errMsg = is_array($removeRes['msg'] ?? null) ? json_encode($removeRes['msg']) : ($removeRes['msg'] ?? 'unknown');
+                $errReport = "⚠️ خطای حذف سرویس در کرون زمان\n<blockquote>نام کاربری: <code>{$username}</code></blockquote>\n<blockquote>لوکیشن: {$invoice['Service_location']}</blockquote>\n<blockquote>خطا: {$errMsg}</blockquote>";
+                $this->sendReportNotification($errReport);
+            }
         }
     }
     private function shouldRemoveServiceـvolume($invoice, $user, $userData, $username)
@@ -223,21 +229,27 @@ class ServiceMonitor
         ][$userData['status']];
         $remainingVolume = formatBytes($userData['data_limit'] - $userData['used_traffic']);
         if ($result) {
-            update("invoice", "status", "removevolume", "id_invoice", $invoice['id_invoice']);
-            $this->Panel->RemoveUser($invoice['Service_location'], $username);
-            $message = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_volume_notice_tpl', "📌 کاربر گرامی بدلیل عدم تمدید، سرویس {username} از لیست سرویس های شما حذف گردید\n\n🌟 جهت تهیه سرویس جدید از بخش خرید سرویس اقدام فرمایید"), [
-                'username' => $username,
-            ]);
-            $reportMessage = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_volume_report_tpl', "📌  اطلاعیه کرون حذف حجم \n<blockquote>نام کاربری سرویس : {username} </blockquote>\n<blockquote> وضعیت سرویس : {status} </blockquote>\n<blockquote>تعداد روز باقی مانده :{days} </blockquote>\n<blockquote> حجم باقی مانده : {volume}</blockquote>\n<blockquote>آخرین اتصال کاربر : {last_online}</blockquote>"), [
-                'username' => $username,
-                'status' => $statusText,
-                'days' => $daysRemaining,
-                'volume' => $remainingVolume,
-                'last_online' => $userData['online_at'],
-            ]);
-            $shouldNotify = !empty($user['status_cron'] ?? null);
-            $this->send_notifactions($invoice, $shouldNotify, $message, false, $invoice['bottype']);
-            $this->sendReportNotification($reportMessage);
+            $removeRes = $this->Panel->RemoveUser($invoice['Service_location'], $username);
+            if (!empty($removeRes['status']) && $removeRes['status'] === 'successful') {
+                update("invoice", "status", "removevolume", "id_invoice", $invoice['id_invoice']);
+                $message = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_volume_notice_tpl', "📌 کاربر گرامی بدلیل عدم تمدید، سرویس {username} از لیست سرویس های شما حذف گردید\n\n🌟 جهت تهیه سرویس جدید از بخش خرید سرویس اقدام فرمایید"), [
+                    'username' => $username,
+                ]);
+                $reportMessage = faoxima_render_text(faoxima_textbot_get('dyn_cron_removal_volume_report_tpl', "📌  اطلاعیه کرون حذف حجم \n<blockquote>نام کاربری سرویس : {username} </blockquote>\n<blockquote> وضعیت سرویس : {status} </blockquote>\n<blockquote>تعداد روز باقی مانده :{days} </blockquote>\n<blockquote> حجم باقی مانده : {volume}</blockquote>\n<blockquote>آخرین اتصال کاربر : {last_online}</blockquote>"), [
+                    'username' => $username,
+                    'status' => $statusText,
+                    'days' => $daysRemaining,
+                    'volume' => $remainingVolume,
+                    'last_online' => $userData['online_at'],
+                ]);
+                $shouldNotify = !empty($user['status_cron'] ?? null);
+                $this->send_notifactions($invoice, $shouldNotify, $message, false, $invoice['bottype']);
+                $this->sendReportNotification($reportMessage);
+            } else {
+                $errMsg = is_array($removeRes['msg'] ?? null) ? json_encode($removeRes['msg']) : ($removeRes['msg'] ?? 'unknown');
+                $errReport = "⚠️ خطای حذف سرویس در کرون حجم\n<blockquote>نام کاربری: <code>{$username}</code></blockquote>\n<blockquote>لوکیشن: {$invoice['Service_location']}</blockquote>\n<blockquote>خطا: {$errMsg}</blockquote>";
+                $this->sendReportNotification($errReport);
+            }
         }
     }
     private function active_inbound_expire($invoice, $userData, $panel_info)

@@ -3294,11 +3294,39 @@ $nameconfig";
             update('invoice', 'price_before_discount', (string)($prodcut['price_product'] ?? 0), 'id_invoice', $nameloc['id_invoice']);
         }
     }
+    if ($user['agent'] == "f") {
+        $valurcashbackextend = select("shopSetting", "*", "Namevalue", "chashbackextend", "select")['value'];
+    } else {
+        $valurcashbackextend = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent", "select")['value'], true)[$user['agent']];
+    }
+    $renewCashbackEligible = !function_exists('rx_shopCashbackEligible')
+        || rx_shopCashbackEligible("chashbackextend", $user['register'] ?? null, "getextenduser");
+    $rxCashbackDiscount = 0;
+    if ($renewCashbackEligible && intval($valurcashbackextend) != 0 and intval($pricelastextend) != 0) {
+        $rxCashbackDiscount = ($prodcut['price_product'] * $valurcashbackextend) / 100;
+        $pricelastextend = $pricelastextend - $rxCashbackDiscount;
+        if ($pricelastextend < 0) {
+            $pricelastextend = 0;
+        }
+    }
     if (intval($user['maxbuyagent']) != 0 and $user['agent'] == "n2") {
         if (($user['Balance'] - $pricelastextend) < intval("-" . $user['maxbuyagent'])) {
             sendmessage($from_id, $textbotlang['users']['Balance']['maxpurchasereached'], null, 'HTML');
             return;
         }
+    }
+    $__allowNegEx = ($user['agent'] === 'n2') ? (int)($user['maxbuyagent'] ?? 0) : 0;
+    $__chargedExUser = false;
+    if (intval($pricelastextend) > 0) {
+        $__chargeEx = function_exists('balance_atomic_charge') ? balance_atomic_charge($from_id, $pricelastextend, $__allowNegEx) : ['ok' => false];
+        if (empty($__chargeEx['ok'])) {
+            sendmessage($from_id, $datatextbot['dyn_errors_concurrency_insufficient_stock'] ?? "❌ موجودی کافی نیست (تلاش هم‌زمان شناسایی شد). یک بار دیگر تلاش کنید.", null, 'HTML');
+            return;
+        }
+        $Balance_Low_user = $__chargeEx['new_balance'];
+        $__chargedExUser = true;
+    } else {
+        $Balance_Low_user = $user['Balance'];
     }
     if ($nameloc['name_product'] == "سرویس تست") {
         update("invoice", "name_product", $prodcut['name_product'], "id_invoice", $nameloc['id_invoice']);
@@ -3306,6 +3334,9 @@ $nameconfig";
     }
     $extend = $ManagePanel->extend($marzban_list_get['Methodextend'], $prodcut['Volume_constraint'], $prodcut['Service_time'], $nameloc['username'], $prodcut['code_product'], $marzban_list_get['code_panel']);
     if ($extend['status'] == false) {
+        if ($__chargedExUser && function_exists('balance_atomic_credit')) {
+            balance_atomic_credit($from_id, $pricelastextend);
+        }
         $rxStockEmpty = ($extend['code'] ?? '') === 'manual_stock_empty';
         $rxQueuedExists = ($extend['code'] ?? '') === 'queued_renewal_exists';
         $extend['msg'] = json_encode($extend['msg']);
@@ -3330,41 +3361,9 @@ $nameconfig";
         }
         return;
     }
-    if ($user['agent'] == "f") {
-        $valurcashbackextend = select("shopSetting", "*", "Namevalue", "chashbackextend", "select")['value'];
-    } else {
-        $valurcashbackextend = json_decode(select("shopSetting", "*", "Namevalue", "chashbackextend_agent", "select")['value'], true)[$user['agent']];
-    }
-    $renewCashbackEligible = !function_exists('rx_shopCashbackEligible')
-        || rx_shopCashbackEligible("chashbackextend", $user['register'] ?? null, "getextenduser");
-    if ($renewCashbackEligible && intval($valurcashbackextend) != 0 and intval($pricelastextend) != 0) {
-        $result = ($prodcut['price_product'] * $valurcashbackextend) / 100;
-        $pricelastextend = $pricelastextend - $result;
+    if ($rxCashbackDiscount > 0) {
         $rxCashbackGiftTpl = $datatextbot['dyn_rewards_cashback_gift'] ?? "تبریک 🎉\n📌 به عنوان هدیه تمدید مبلغ %s تومان حساب شما شارژ گردید";
-        sendmessage($from_id, sprintf($rxCashbackGiftTpl, $result), null, 'HTML');
-    }
-    $Balance_Low_user = $user['Balance'] - $pricelastextend;
-
-    if (intval($pricelastextend) > 0) {
-        if (($user['agent'] ?? '') === 'n2') {
-            $stmtExtendDeduct = $pdo->prepare("UPDATE user SET Balance = Balance - :delta WHERE id = :uid");
-        } else {
-            $stmtExtendDeduct = $pdo->prepare("UPDATE user SET Balance = Balance - :delta WHERE id = :uid AND Balance >= :check_delta");
-            $stmtExtendDeduct->bindValue(':check_delta', (int) $pricelastextend, PDO::PARAM_INT);
-        }
-        $stmtExtendDeduct->bindValue(':delta', (int) $pricelastextend, PDO::PARAM_INT);
-        $stmtExtendDeduct->bindValue(':uid', $from_id, PDO::PARAM_STR);
-        $stmtExtendDeduct->execute();
-        if ($stmtExtendDeduct->rowCount() === 0 && function_exists('rx_log_event')) {
-            rx_log_event('EXTEND_DOUBLE_SPEND_OR_INSUFFICIENT', 'Atomic extend-deduct affected 0 rows after panel extend already succeeded', [
-                'from_id' => $from_id,
-                'invoice' => $id_invoice ?? null,
-                'price'   => $pricelastextend,
-                'agent'   => $user['agent'] ?? null,
-            ]);
-        }
-    } else {
-
+        sendmessage($from_id, sprintf($rxCashbackGiftTpl, $rxCashbackDiscount), null, 'HTML');
     }
     $stmt = $connect->prepare("INSERT IGNORE INTO service_other (id_user, username,value,type,time,price,output,status) VALUES (?, ?, ?, ?,?,?,?,?)");
     $dateacc = date('Y/m/d H:i:s');

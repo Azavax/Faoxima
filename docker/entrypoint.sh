@@ -23,6 +23,9 @@ if [ -f "$APP_DIR/config.php" ]; then
     chown www-data:www-data "$APP_DIR/config.php" 2>/dev/null || true
     chmod 666 "$APP_DIR/config.php" 2>/dev/null || true
 fi
+if [ -f "$APP_DIR/.env" ]; then
+    chmod 600 "$APP_DIR/.env" 2>/dev/null || true
+fi
 
 if command -v cron >/dev/null 2>&1; then
     mkdir -p /var/spool/cron/crontabs 2>/dev/null || true

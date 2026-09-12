@@ -501,9 +501,116 @@ function addBackgroundImage($urlimage, $qrCodeResult, $backgroundPath)
 
     return $result !== false;
 }
+function getTelegramExpectedSecretToken()
+{
+    global $APIKEY;
+
+    $configured = getenv('TELEGRAM_WEBHOOK_SECRET') ?: ($_ENV['TELEGRAM_WEBHOOK_SECRET'] ?? '');
+    if ($configured !== '') {
+        return (string) $configured;
+    }
+    if (defined('TELEGRAM_WEBHOOK_SECRET') && TELEGRAM_WEBHOOK_SECRET !== '') {
+        return (string) TELEGRAM_WEBHOOK_SECRET;
+    }
+
+    if (!empty($APIKEY)) {
+        return substr(hash('sha256', $APIKEY . '_faoxima_webhook_secret'), 0, 64);
+    }
+
+    return '';
+}
+
+function verifyTelegramWebhookSecretToken()
+{
+    $expected = getTelegramExpectedSecretToken();
+    if ($expected === '') {
+        return null;
+    }
+
+    $provided = '';
+    if (!empty($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'])) {
+        $provided = (string) $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'];
+    } elseif (function_exists('getallheaders')) {
+        $headers = getallheaders();
+        if (is_array($headers)) {
+            foreach ($headers as $key => $val) {
+                if (strcasecmp($key, 'X-Telegram-Bot-Api-Secret-Token') === 0) {
+                    $provided = (string) $val;
+                    break;
+                }
+            }
+        }
+    }
+
+    if ($provided === '') {
+        return false;
+    }
+
+    return hash_equals($expected, $provided);
+}
+
+function isTrustedReverseProxy($ip)
+{
+    if (!is_string($ip) || $ip === '') {
+        return false;
+    }
+
+    if ($ip === '127.0.0.1' || $ip === '::1') {
+        return true;
+    }
+
+    $cloudflareRanges = [
+        ['lower' => '173.245.48.0', 'upper' => '173.245.63.255'],
+        ['lower' => '103.21.244.0', 'upper' => '103.21.247.255'],
+        ['lower' => '103.22.200.0', 'upper' => '103.22.203.255'],
+        ['lower' => '103.31.4.0',   'upper' => '103.31.7.255'],
+        ['lower' => '141.101.64.0', 'upper' => '141.101.127.255'],
+        ['lower' => '108.162.192.0','upper' => '108.162.255.255'],
+        ['lower' => '190.93.240.0', 'upper' => '190.93.255.255'],
+        ['lower' => '188.114.96.0', 'upper' => '188.114.111.255'],
+        ['lower' => '197.234.240.0','upper' => '197.234.243.255'],
+        ['lower' => '198.41.128.0', 'upper' => '198.41.255.255'],
+        ['lower' => '162.158.0.0',  'upper' => '162.159.255.255'],
+        ['lower' => '104.16.0.0',   'upper' => '104.31.255.255'],
+        ['lower' => '172.64.0.0',   'upper' => '172.71.255.255'],
+        ['lower' => '131.0.72.0',   'upper' => '131.0.75.255'],
+        ['lower' => '2400:cb00::',  'upper' => '2400:cb00:ffff:ffff:ffff:ffff:ffff:ffff'],
+        ['lower' => '2606:4700::',  'upper' => '2606:4700:ffff:ffff:ffff:ffff:ffff:ffff'],
+        ['lower' => '2803:f800::',  'upper' => '2803:f800:ffff:ffff:ffff:ffff:ffff:ffff'],
+        ['lower' => '2405:b500::',  'upper' => '2405:b500:ffff:ffff:ffff:ffff:ffff:ffff'],
+        ['lower' => '2405:8100::',  'upper' => '2405:8100:ffff:ffff:ffff:ffff:ffff:ffff'],
+        ['lower' => '2a06:98c0::',  'upper' => '2a06:98c7:ffff:ffff:ffff:ffff:ffff:ffff'],
+        ['lower' => '2c0f:f248::',  'upper' => '2c0f:f24f:ffff:ffff:ffff:ffff:ffff:ffff'],
+    ];
+
+    foreach ($cloudflareRanges as $range) {
+        if (isClientIpInRange($ip, $range['lower'], $range['upper'])) {
+            return true;
+        }
+    }
+
+    $extraProxies = getenv('TRUSTED_PROXIES') ?: ($_ENV['TRUSTED_PROXIES'] ?? '');
+    if ($extraProxies !== '') {
+        $allowedList = array_map('trim', explode(',', $extraProxies));
+        if (in_array($ip, $allowedList, true)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
 function checktelegramip()
 {
     global $telegramStrictIpValidation;
+
+    $secretStatus = verifyTelegramWebhookSecretToken();
+    if ($secretStatus === true) {
+        return true;
+    }
+    if ($secretStatus === false && !empty($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'])) {
+        return false;
+    }
 
     $strictValidation = $telegramStrictIpValidation;
     if (!is_bool($strictValidation)) {
@@ -536,6 +643,19 @@ function checktelegramip()
 
 function getClientIpConsideringProxies()
 {
+    $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? null;
+    if (is_string($remoteAddr)) {
+        $remoteAddr = trim($remoteAddr);
+    }
+
+    if (empty($remoteAddr) || !filter_var($remoteAddr, FILTER_VALIDATE_IP)) {
+        return null;
+    }
+
+    if (!isTrustedReverseProxy($remoteAddr)) {
+        return $remoteAddr;
+    }
+
     $headers = [
         'HTTP_CF_CONNECTING_IP',
         'HTTP_TRUE_CLIENT_IP',
@@ -574,15 +694,7 @@ function getClientIpConsideringProxies()
         }
     }
 
-    $remoteAddr = $_SERVER['REMOTE_ADDR'] ?? null;
-    if (is_string($remoteAddr)) {
-        $remoteAddr = trim($remoteAddr);
-        if ($remoteAddr !== '' && filter_var($remoteAddr, FILTER_VALIDATE_IP)) {
-            return $remoteAddr;
-        }
-    }
-
-    return null;
+    return $remoteAddr;
 }
 
 function extractClientIpsFromHeader($value, $header)
