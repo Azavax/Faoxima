@@ -460,8 +460,16 @@ dc() {
     docker compose "${files[@]}" --env-file "$ENV_FILE" "$@"
 }
 
+normalize_domain() {
+    local domain="${1:-}"
+    domain=$(printf '%s' "$domain" | tr '[:upper:]' '[:lower:]')
+    domain="${domain%.}"
+    printf '%s' "$domain"
+}
+
 get_cert_enddate() {
-    local domain="$1"
+    local domain
+    domain=$(normalize_domain "$1")
     local project volume_name mountpoint cert_path
     project=$(env_get COMPOSE_PROJECT_NAME)
     [ -z "$project" ] && project="faoxima"
@@ -496,7 +504,8 @@ ensure_envsubst() {
 }
 
 render_vhost() {
-    local domain="$1" outfile="$2"
+    local domain outfile="$2"
+    domain=$(normalize_domain "$1")
     ensure_envsubst || { ui_err "envsubst is not available and could not be installed."; return 1; }
     mkdir -p "$(dirname "$outfile")" || { ui_err "Failed to create directory for ${outfile}."; return 1; }
     if [ ! -f "$NGINX_TEMPLATE" ]; then
@@ -522,7 +531,8 @@ render_bot_location() {
 }
 
 ensure_dummy_cert() {
-    local domain="$1"
+    local domain
+    domain=$(normalize_domain "$1")
     dc run --rm --no-deps --entrypoint sh certbot -c "
         set -e
         dir=/etc/letsencrypt/live/${domain}
@@ -536,7 +546,8 @@ ensure_dummy_cert() {
 }
 
 discard_dummy_cert() {
-    local domain="$1"
+    local domain
+    domain=$(normalize_domain "$1")
     dc run --rm --no-deps --entrypoint sh certbot -c "
         set -e
         renewal_conf=/etc/letsencrypt/renewal/${domain}.conf
@@ -546,7 +557,8 @@ discard_dummy_cert() {
 }
 
 issue_certificate() {
-    local domain="$1"
+    local domain
+    domain=$(normalize_domain "$1")
     if dc run --rm --entrypoint certbot certbot certonly --webroot -w /var/www/certbot --agree-tos --non-interactive \
             -m "admin@${domain}" -d "$domain"; then
         dc exec nginx nginx -s reload 2>/dev/null || true
@@ -574,6 +586,7 @@ env_get() {
 
 env_set() {
     local key="$1" value="$2"
+    [ "$key" = "DOMAIN" ] && value=$(normalize_domain "$value")
     if [ ! -f "$ENV_FILE" ]; then
         touch "$ENV_FILE" || { ui_err "Failed to create ${ENV_FILE}."; exit 1; }
     fi
@@ -651,19 +664,17 @@ check_ssl_status() {
         return 0
     fi
     local domain
-    domain=$(env_get DOMAIN)
+    domain=$(normalize_domain "$(env_get DOMAIN)")
     if [ -z "$domain" ]; then
         ui_warn "DOMAIN could not be read from .env."
         return 0
     fi
-    local cert
-    cert="$(dc exec -T nginx sh -c "test -f /etc/letsencrypt/live/${domain}/cert.pem && echo yes" 2>/dev/null | tr -d '\r')"
-    if [ "$cert" != "yes" ]; then
-        ui_warn "SSL certificate not found for domain ${domain}."
+    local expiry_date expiry_ts current_date days_remaining
+    expiry_date=$(get_cert_enddate "$domain")
+    if [ -z "$expiry_date" ]; then
+        ui_warn "SSL certificate not found or could not be read for domain ${domain}."
         return 0
     fi
-    local expiry_date expiry_ts current_date days_remaining
-    expiry_date=$(dc exec -T nginx sh -c "openssl x509 -enddate -noout -in /etc/letsencrypt/live/${domain}/cert.pem" 2>/dev/null | cut -d= -f2 | tr -d '\r')
     current_date=$(date +%s)
     expiry_ts=$(date -d "$expiry_date" +%s 2>/dev/null || echo 0)
     days_remaining=$(( (expiry_ts - current_date) / 86400 ))
@@ -782,7 +793,8 @@ reset_db_volume() {
 }
 
 diagnose_ssl_failure() {
-    local domain="$1"
+    local domain
+    domain=$(normalize_domain "$1")
     ui_warn "Diagnosing why the SSL certificate could not be issued for ${domain}..."
     printf '\n'
 
@@ -1175,6 +1187,11 @@ install_bot() {
         printf '  %s❯%s Enter the domain: ' "$C_YELLOW" "$C_RESET"
         read -r domainname
     done
+    local entered_domain="$domainname"
+    domainname=$(normalize_domain "$domainname")
+    if [ "$entered_domain" != "$domainname" ]; then
+        ui_info "Domain normalized to lowercase: ${domainname}"
+    fi
 
     local YOUR_BOT_TOKEN
     printf '  %s❯%s Bot Token: ' "$C_YELLOW" "$C_RESET"
@@ -1390,7 +1407,7 @@ install_additional_bot() {
     fi
 
     local domainname
-    domainname=$(env_get DOMAIN)
+    domainname=$(normalize_domain "$(env_get DOMAIN)")
     if [ -z "$domainname" ]; then
         ui_err "Could not read DOMAIN from ${ENV_FILE}. Is the main bot installed correctly?"
         return 1
@@ -2782,7 +2799,7 @@ ssl_auto_renew_check() {
     fi
 
     local domain
-    domain=$(env_get DOMAIN)
+    domain=$(normalize_domain "$(env_get DOMAIN)")
     [ -z "$domain" ] && exit 0
 
     local cert_enddate
@@ -2847,9 +2864,14 @@ change_domain() {
         read -r new_domain
         [[ ! "$new_domain" =~ ^[a-zA-Z0-9.-]+$ ]] && ui_err "Invalid domain format"
     done
+    local entered_domain="$new_domain"
+    new_domain=$(normalize_domain "$new_domain")
+    if [ "$entered_domain" != "$new_domain" ]; then
+        ui_info "Domain normalized to lowercase: ${new_domain}"
+    fi
 
     local old_domain
-    old_domain=$(env_get DOMAIN)
+    old_domain=$(normalize_domain "$(env_get DOMAIN)")
     env_set "DOMAIN" "$new_domain"
 
     if [ -f "${PROJECT_DIR}/config.php" ]; then
@@ -3287,6 +3309,7 @@ file_env_get() {
 
 file_env_set() {
     local file="$1" key="$2" value="$3"
+    [ "$key" = "DOMAIN" ] && value=$(normalize_domain "$value")
     local escaped_value
     escaped_value=${value//\\/\\\\}
     escaped_value=${escaped_value//&/\\&}
@@ -3325,7 +3348,7 @@ select_bot_for_credentials() {
         SELECTED_DB_PASS="$DB_PASS"
         SELECTED_ENV_FILE="$ENV_FILE"
         SELECTED_CONFIG_PHP="${PROJECT_DIR}/config.php"
-        SELECTED_DOMAIN=$(env_get DOMAIN)
+        SELECTED_DOMAIN=$(normalize_domain "$(env_get DOMAIN)")
         SELECTED_CONTAINER="app"
     else
         local bot_dir="${BOTS_DIR}/${SELECTED_BOT}"
@@ -3769,7 +3792,7 @@ show_menu() {
     local bot_state domain pma_state
         if [ "$installed" -eq 1 ]; then
             bot_state="${C_GREEN}● installed${C_RESET}"
-            domain=$(env_get DOMAIN)
+            domain=$(normalize_domain "$(env_get DOMAIN)")
             pma_state="${C_DIM}not enabled${C_RESET}"
             local pma_running
             pma_running=$(cache_get "pma_running" 30)
