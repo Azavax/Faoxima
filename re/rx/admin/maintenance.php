@@ -1141,13 +1141,16 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     step("home", $from_id);
 } elseif ($user['step'] == "getpanelhidebotsaz") {
     if (!isset($update['message']) && empty($text)) { return; }
+    $panelRow = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : null;
+    $panelNameSave = is_array($panelRow) && !empty($panelRow['name_panel']) ? $panelRow['name_panel'] : $text;
     $userdata = json_decode($user['Processing_value'], true);
     $list_panel = json_decode(select("botsaz", "hide_panel", "id_user", $userdata['id_user'], "select")['hide_panel'], true);
-    if (in_array($text, $list_panel)) {
+    if (!is_array($list_panel)) { $list_panel = []; }
+    if (in_array($panelNameSave, $list_panel)) {
         nm_adminInstantReply($from_id, "❌ پنل از قبل اضافه شده است", null, 'HTML');
         return;
     }
-    $list_panel[] = $text;
+    $list_panel[] = $panelNameSave;
     update("botsaz", "hide_panel", json_encode($list_panel), "id_user", $userdata['id_user']);
     nm_adminInstantReply($from_id, "✅ پنل انتخاب شد  پس از اتمام دستور /finish را ارسال نمایید تا ذخیره نهایی شود.", null, 'HTML');
 } elseif (preg_match('/removehide_(\w+)/', $datain, $datagetr)) {
@@ -1208,12 +1211,12 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     step("getpanelgift", $from_id);
 } elseif ($user['step'] == "getpanelgift") {
     if (!isset($update['message']) && empty($text)) { return; }
-    $panel = select("marzban_panel", "*", "name_panel", $text, "count");
-    if ($panel == 0) {
+    $panelRow = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : select("marzban_panel", "*", "name_panel", $text, "select");
+    if (!$panelRow || !is_array($panelRow) || empty($panelRow['name_panel'])) {
         nm_adminInstantReply($from_id, "❌ پنل وجود ندارد", null, "html");
         return;
     }
-    savedata("clear", "name_panel", $text);
+    savedata("clear", "name_panel", $panelRow['name_panel']);
     $keyboardstatistics = json_encode([
         'inline_keyboard' => [
             [
@@ -1504,12 +1507,15 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     step("home", $from_id);
 } elseif ($user['step'] == "getlistpanel") {
     if (!isset($update['message']) && empty($text)) { return; }
+    $panelRow = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : null;
+    $panelNameSave = is_array($panelRow) && !empty($panelRow['name_panel']) ? $panelRow['name_panel'] : $text;
     $list_panel = json_decode(select("product", "hide_panel", "id", $user['Processing_value'], "select")['hide_panel'], true);
-    if (in_array($text, $list_panel)) {
+    if (!is_array($list_panel)) { $list_panel = []; }
+    if (in_array($panelNameSave, $list_panel)) {
         nm_adminInstantReply($from_id, "❌ پنل از قبل اضافه شده است", null, 'HTML');
         return;
     }
-    $list_panel[] = $text;
+    $list_panel[] = $panelNameSave;
     update("product", "hide_panel", json_encode($list_panel), "id", $user['Processing_value']);
     nm_adminInstantReply($from_id, "✅ پنل انتخاب شد  پس از اتمام دستور /end_hide را ارسال نمایید تا ذخیره نهایی شود.", null, 'HTML');
 } elseif ($text == "حذف کلی پنل های مخفی" && $adminrulecheck['rule'] == "administrator") {
@@ -1523,7 +1529,7 @@ if ($datain == "settimecornday" && $adminrulecheck['rule'] == "administrator") {
     }
     nm_adminInstantReply($from_id, "📌 در انجام وبهوک ...", null, 'HTML');
     foreach ($bots_agent as $bot) {
-        file_get_contents("https://api.telegram.org/bot{$bot['bot_token']}/setwebhook?url=https://$domainhosts/vpnbot/{$bot['id_user']}{$bot['username']}/index.php");
+        telegram('setWebhook', ['url' => "https://$domainhosts/vpnbot/{$bot['id_user']}{$bot['username']}/index.php"], $bot['bot_token']);
     }
     nm_adminInstantReply($from_id, "✅ وبهوک با موفقیت انجام شد.", null, 'HTML');
 } elseif (preg_match('/statuscronuser-(.*)/', $datain, $dataget)) {

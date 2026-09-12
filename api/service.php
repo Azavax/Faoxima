@@ -12,15 +12,9 @@ $headrs = getallheaders();
 $setting = select("setting", "*");
 
 
-$token = is_file('hash.txt') ? trim((string) file_get_contents('hash.txt')) : '';
-$headerToken = isset($headrs['Token']) ? (string) $headrs['Token'] : '';
-$validTokens = array_values(array_filter([$token, isset($APIKEY) ? (string) $APIKEY : ''], 'strlen'));
-$tokenOk = false;
-if ($headerToken !== '') {
-    foreach ($validTokens as $candidate) {
-        if (hash_equals($candidate, $headerToken)) { $tokenOk = true; break; }
-    }
-}
+require_once __DIR__ . '/../lib/ApiCredential.php';
+$headrs = array_change_key_case($headrs, CASE_LOWER);
+$tokenOk = FaoximaApiCredential::valid($headrs['token'] ?? null, (string) ($APIKEY ?? ''));
 if (!$tokenOk){
     http_response_code(403);
     echo json_encode(array(

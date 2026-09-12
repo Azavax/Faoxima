@@ -162,7 +162,8 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "<code>$secret_key</code>", null, 'HTML');
 } elseif ($text == "/token2") {
     $token = bin2hex(random_bytes(16));
-    file_put_contents('api/hash.txt', $token);
+    require_once REFACTORED_LEGACY_ROOT . '/lib/ApiCredential.php';
+    FaoximaApiCredential::write($token);
     nm_adminInstantReply($from_id, "توکن api شما : <code>$token</code>", null, 'HTML');
     sendDocument($from_id, 'api/documents.txt', "📌 داکیومنت api ربات
 نکات :
@@ -210,7 +211,9 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['Admin']['addorder']['threestep'], $json_list_marzban_panel, 'HTML');
     step('getnamepanelconfig', $from_id);
 } elseif ($user['step'] == "getnamepanelconfig") {
-    update("user", "Processing_value_tow", $text, "id", $from_id);
+    $panelRow = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : null;
+    $canonicalLoc = is_array($panelRow) && !empty($panelRow['name_panel']) ? $panelRow['name_panel'] : $text;
+    update("user", "Processing_value_tow", $canonicalLoc, "id", $from_id);
     nm_adminInstantReply($from_id, $textbotlang['Admin']['addorder']['fourstep'], $json_list_product_list_admin, 'HTML');
     step('stependforaddorder', $from_id);
 } elseif ($user['step'] == "stependforaddorder") {
@@ -1604,18 +1607,28 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, "🪚 برای استفاده از این قابلیت یکی از پنل های زیر را انتخاب نمایید", $json_list_marzban_panel, 'HTML');
     step('getlocoption', $from_id);
 } elseif ($user['step'] == "getlocoption") {
-    update("user", "Processing_value", $text, "id", $from_id);
-    $typepanel = select("marzban_panel", "*", "name_panel", $text, "select")['type'];
-    if ($typepanel == "marzban") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathmarzban, 'HTML');
-    } elseif ($typepanel == "x-ui_single") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
-    } elseif ($typepanel == "WGDashboard") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
-    } elseif ($typepanel == "remnawave") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $option_remnawave, 'HTML');
-    } elseif ($typepanel == "rebecca") {
-        nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionRebecca, 'HTML');
+    $panelRow = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : select("marzban_panel", "*", "name_panel", $text, "select");
+    if (is_array($panelRow) && !empty($panelRow)) {
+        $canonicalName = $panelRow['name_panel'];
+        update("user", "Processing_value", $canonicalName, "id", $from_id);
+        $typepanel = $panelRow['type'] ?? '';
+        if ($typepanel == "marzban") {
+            nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathmarzban, 'HTML');
+        } elseif ($typepanel == "x-ui_single") {
+            nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
+        } elseif ($typepanel == "WGDashboard") {
+            nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionathx_ui, 'HTML');
+        } elseif ($typepanel == "remnawave") {
+            nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $option_remnawave, 'HTML');
+        } elseif ($typepanel == "rebecca") {
+            nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionRebecca, 'HTML');
+        } elseif ($typepanel == "guard") {
+            nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionGuard, 'HTML');
+        } elseif ($typepanel == "pasarguard") {
+            nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionPasarGuard, 'HTML');
+        } elseif ($typepanel == "Manualsale") {
+            nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $optionManualsale, 'HTML');
+        }
     }
     step("home", $from_id);
 } elseif ($text == "🖥 مدیریت نود ها" || $datain == "bakcnode") {

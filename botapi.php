@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/config.php';
+require_once __DIR__ . '/lib/WebhookAuth.php';
 
 if (!function_exists('rx_releaseWebhookConnection')) {
     function rx_releaseWebhookConnection()
@@ -107,6 +108,10 @@ function telegram($method, $datas = [], $token = null)
 
     if (!is_array($datas)) {
         $datas = [];
+    }
+
+    if (strtolower((string) $method) === 'setwebhook') {
+        $datas['secret_token'] = FaoximaWebhookAuth::secret((string) $token, $token === $APIKEY);
     }
 
     if (isset($datas['message_thread_id']) && intval($datas['message_thread_id']) <= 0) {
@@ -1428,41 +1433,57 @@ function applyPremiumEmojiToKeyboard($keyboard) {
         unset($row);
         
         if (!empty($rxReplyEntries)) {
-            $rxRbmFile = (defined('REFACTORED_LEGACY_ROOT') ? REFACTORED_LEGACY_ROOT : __DIR__)
-                       . '/rx_reply_button_map.json';
+            if (!isset($GLOBALS['rx_reply_button_map']) || !is_array($GLOBALS['rx_reply_button_map'])) {
+                $GLOBALS['rx_reply_button_map'] = [];
+            }
+            foreach ($rxReplyEntries as $k => $v) {
+                $GLOBALS['rx_reply_button_map'][$k] = $v;
+            }
+            $base = defined('REFACTORED_LEGACY_ROOT') ? REFACTORED_LEGACY_ROOT : __DIR__;
+            $paths = [
+                rtrim($base, '/\\') . '/rx_reply_button_map.json',
+                rtrim(sys_get_temp_dir(), '/\\') . '/rx_reply_button_map_' . md5($base) . '.json',
+            ];
             $rxRbmExisting = [];
-            if (is_file($rxRbmFile)) {
-                $rxRbmRaw = json_decode((string)@file_get_contents($rxRbmFile), true);
-                if (is_array($rxRbmRaw)) { $rxRbmExisting = $rxRbmRaw; }
-            }
-            // rx_reply_button_map.json is a single global file shared by every
-            $rxRbmMerged = $rxRbmExisting;
-            foreach ($rxReplyEntries as $rxRbmKey => $rxRbmValue) {
-                if (isset($rxRbmMerged[$rxRbmKey]) && $rxRbmMerged[$rxRbmKey] !== $rxRbmValue) {
-                    continue;
+            foreach ($paths as $p) {
+                if (is_file($p)) {
+                    $raw = json_decode((string)@file_get_contents($p), true);
+                    if (is_array($raw)) {
+                        $rxRbmExisting = array_merge($rxRbmExisting, $raw);
+                    }
                 }
-                $rxRbmMerged[$rxRbmKey] = $rxRbmValue;
             }
-            @file_put_contents(
-                $rxRbmFile,
-                json_encode($rxRbmMerged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES),
-                LOCK_EX
-            );
+            $rxRbmMerged = array_merge($rxRbmExisting, $rxReplyEntries);
+            $jsonMap = json_encode($rxRbmMerged, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+            foreach ($paths as $p) {
+                @file_put_contents($p, $jsonMap, LOCK_EX);
+            }
         }
     }
 
     return $wasString ? json_encode($kb, JSON_UNESCAPED_UNICODE) : $kb;
 }
 
-
 function rx_restorePremiumReplyText(string $text): string {
     if ($text === '') { return $text; }
-    $rxRbmFile = (defined('REFACTORED_LEGACY_ROOT') ? REFACTORED_LEGACY_ROOT : __DIR__)
-               . '/rx_reply_button_map.json';
-    if (!is_file($rxRbmFile)) { return $text; }
-    $rxRbmMap = json_decode((string)@file_get_contents($rxRbmFile), true);
-    if (!is_array($rxRbmMap)) { return $text; }
-    return isset($rxRbmMap[$text]) ? (string)$rxRbmMap[$text] : $text;
+    if (isset($GLOBALS['rx_reply_button_map'][$text]) && is_string($GLOBALS['rx_reply_button_map'][$text])) {
+        return (string)$GLOBALS['rx_reply_button_map'][$text];
+    }
+    $base = defined('REFACTORED_LEGACY_ROOT') ? REFACTORED_LEGACY_ROOT : __DIR__;
+    $paths = [
+        rtrim($base, '/\\') . '/rx_reply_button_map.json',
+        rtrim(sys_get_temp_dir(), '/\\') . '/rx_reply_button_map_' . md5($base) . '.json',
+    ];
+    foreach ($paths as $p) {
+        if (is_file($p)) {
+            $map = json_decode((string)@file_get_contents($p), true);
+            if (is_array($map) && isset($map[$text])) {
+                $GLOBALS['rx_reply_button_map'][$text] = (string)$map[$text];
+                return (string)$map[$text];
+            }
+        }
+    }
+    return $text;
 }
 
 if (!function_exists('rx_getKeyboardDefaultStyles')) {
@@ -2812,6 +2833,8 @@ if (!isset($rx_update_probe['update_id'])) {
     return;
 }
 
+
+FaoximaWebhookAuth::enforce((string) ($APIKEY ?? ''));
 
 $update = $rx_update_probe;
 $update_id = $update['update_id'] ?? 0;

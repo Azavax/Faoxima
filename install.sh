@@ -935,25 +935,50 @@ describe_port_occupant() {
 
 grant_file_permissions() {
     local service="${1:-app}"
-    if ! dc ps -q "$service" >/dev/null 2>&1; then
-        ui_warn "${service} container is not running — cannot apply in-container permissions right now."
-        return 0
+    local cid
+    cid=$(dc ps -q "$service" 2>/dev/null)
+    if [ -z "$cid" ]; then
+        ui_err "${service} container is not running — cannot apply in-container permissions."
+        return 1
     fi
 
     local wait_tries=0
     while [ "$wait_tries" -lt 15 ]; do
         local c_status
-        c_status=$(docker inspect -f '{{.State.Status}}' "$(dc ps -q "$service")" 2>/dev/null)
+        c_status=$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null)
         [ "$c_status" = "running" ] && break
         sleep 1
         wait_tries=$((wait_tries + 1))
     done
-
-    dc exec -T "$service" sh -c "killall crond 2>/dev/null || true; rm -f /var/run/crond.pid" 2>/dev/null || true
+    if [ "$c_status" != "running" ]; then
+        ui_err "${service} container did not reach the running state."
+        return 1
+    fi
 
     ui_action "Re-applying file permissions inside the ${service} container..."
     local output
-    if output=$(dc exec -T "$service" /usr/local/bin/entrypoint.sh true 2>&1); then
+    if output=$(dc exec -T "$service" sh -c '
+        set -e
+        app_dir=/var/www/faoxima
+        chown -R www-data:www-data "$app_dir" 2>/dev/null || true
+        find "$app_dir" -path "$app_dir/installer" -prune -o -type d -exec chmod 775 {} \; 2>/dev/null || true
+        find "$app_dir" -path "$app_dir/installer" -prune -o -type f -exec chmod 664 {} \; 2>/dev/null || true
+        if [ -d "$app_dir/installer" ]; then
+            chmod 555 "$app_dir/installer"
+            find "$app_dir/installer" -type f -exec chmod 444 {} \;
+        fi
+        if [ -f "$app_dir/config.php" ]; then
+            chown www-data:www-data "$app_dir/config.php"
+            chmod 600 "$app_dir/config.php"
+        fi
+        if [ -f "$app_dir/.env" ]; then
+            chmod 600 "$app_dir/.env"
+        fi
+        if [ -d "$app_dir/storage/private" ]; then
+            chmod 700 "$app_dir/storage/private"
+            find "$app_dir/storage/private" -type f -exec chmod 600 {} \;
+        fi
+    ' 2>&1); then
         ui_ok "File permissions re-applied."
     else
         ui_err "Failed to re-apply file permissions inside the ${service} container."
@@ -1277,7 +1302,10 @@ install_bot() {
         exit 1
     fi
 
-    grant_file_permissions
+    if ! grant_file_permissions; then
+        ui_err "Installation completed, but file permissions could not be applied."
+        exit 1
+    fi
 
     clear
     show_logo
@@ -1889,7 +1917,9 @@ update_bot_source() {
 
     dc restart "$app_service" || { ui_err "Failed to restart the '${app_service}' container after the update."; return 1; }
     sleep 2
-    grant_file_permissions "$app_service"
+    if ! grant_file_permissions "$app_service"; then
+        return 1
+    fi
 
     ui_ok "'${label}' updated successfully."
     return 0
@@ -1920,9 +1950,10 @@ update_bot() {
     fi
 
     local db_name db_user db_pass
-    db_name=$(env_get MYSQL_DATABASE)
-    db_user=$(env_get MYSQL_USER)
-    db_pass=$(env_get MYSQL_PASSWORD)
+    require_env_db_creds || exit 1
+    db_name="$DB_NAME"
+    db_user="$DB_USER"
+    db_pass="$DB_PASS"
 
     if ! update_bot_source "$PROJECT_DIR" "app" "Faoxima Bot" "$mode" "" "" "$zip_path" "$db_name" "$db_user" "$db_pass"; then
         exit 1
@@ -1964,9 +1995,10 @@ install_beta_bot() {
     fi
 
     local db_name db_user db_pass
-    db_name=$(env_get MYSQL_DATABASE)
-    db_user=$(env_get MYSQL_USER)
-    db_pass=$(env_get MYSQL_PASSWORD)
+    require_env_db_creds || return 1
+    db_name="$DB_NAME"
+    db_user="$DB_USER"
+    db_pass="$DB_PASS"
 
     if ! update_bot_source "$PROJECT_DIR" "app" "Faoxima Bot" "github" "-beta" "" "" "$db_name" "$db_user" "$db_pass"; then
         return 1
@@ -2042,10 +2074,17 @@ require_env_db_creds() {
     DB_USER=$(env_get MYSQL_USER)
     DB_PASS=$(env_get MYSQL_PASSWORD)
     DB_NAME=$(env_get MYSQL_DATABASE)
+    local config_user config_pass
+    config_user=$(read_config_credential "app" "usernamedb")
+    config_pass=$(read_config_credential "app" "passworddb")
+    [ -n "$config_user" ] && DB_USER="$config_user"
+    [ -n "$config_pass" ] && DB_PASS="$config_pass"
     if [ -z "$DB_USER" ] || [ -z "$DB_PASS" ] || [ -z "$DB_NAME" ]; then
         ui_err "Failed to read database credentials from ${ENV_FILE}."
         return 1
     fi
+    file_env_set "$ENV_FILE" "MYSQL_USER" "$DB_USER" || return 1
+    file_env_set "$ENV_FILE" "MYSQL_PASSWORD" "$DB_PASS" || return 1
     return 0
 }
 
@@ -2795,7 +2834,7 @@ change_domain() {
 
         if [ -d "$BOTS_DIR" ]; then
             local bot_ok=() bot_failed=()
-            local d name bot_token_extra bot_webhook_url bot_webhook_response bot_status
+            local d name bot_token_extra bot_webhook_url bot_webhook_response bot_status bot_secret_token
             for d in "${BOTS_DIR}"/*/; do
                 [ -f "${d}.env" ] || continue
                 name=$(basename "$d")
@@ -2812,7 +2851,8 @@ change_domain() {
                 bot_token_extra=$(grep -E '^TELEGRAM_BOT_TOKEN=' "${d}.env" | tail -1 | cut -d'=' -f2-)
                 bot_webhook_url="https://${new_domain}/${name}/index.php"
                 if [ -n "$bot_token_extra" ]; then
-                    bot_webhook_response=$(curl -s -F "url=${bot_webhook_url}" "https://api.telegram.org/bot${bot_token_extra}/setWebhook")
+                    bot_secret_token=$(printf '%s' "${bot_token_extra}_faoxima_webhook_secret" | sha256sum | awk '{print $1}')
+                    bot_webhook_response=$(curl -s -F "url=${bot_webhook_url}" -F "secret_token=${bot_secret_token}" "https://api.telegram.org/bot${bot_token_extra}/setWebhook")
                     if ! echo "$bot_webhook_response" | grep -q '"ok":true'; then
                         ui_warn "Failed to update webhook for additional bot '${name}': ${bot_webhook_response}"
                         bot_failed+=("$name")
@@ -3160,11 +3200,20 @@ file_env_get() {
 
 file_env_set() {
     local file="$1" key="$2" value="$3"
+    local escaped_value
+    escaped_value=${value//\\/\\\\}
+    escaped_value=${escaped_value//&/\\&}
+    escaped_value=${escaped_value//|/\\|}
     if grep -qE "^${key}=" "$file"; then
-        sed -i "s|^${key}=.*|${key}=${value}|" "$file" || return 1
+        sed -i "s|^${key}=.*|${key}=${escaped_value}|" "$file" || return 1
     else
         printf '%s=%s\n' "$key" "$value" >> "$file" || return 1
     fi
+}
+
+read_config_credential() {
+    local container="$1" variable="$2"
+    dc exec -T "$container" php /var/www/faoxima/docker/php-update-credential.php read "$variable" 2>/dev/null | tr -d '\r'
 }
 
 select_bot_for_credentials() {
@@ -3209,6 +3258,19 @@ select_bot_for_credentials() {
             return 1
         fi
     fi
+
+    local config_user config_pass
+    config_user=$(read_config_credential "$SELECTED_CONTAINER" "usernamedb")
+    config_pass=$(read_config_credential "$SELECTED_CONTAINER" "passworddb")
+    [ -n "$config_user" ] && SELECTED_DB_USER="$config_user"
+    [ -n "$config_pass" ] && SELECTED_DB_PASS="$config_pass"
+    if [ "$SELECTED_BOT" = "main" ]; then
+        file_env_set "$SELECTED_ENV_FILE" "MYSQL_USER" "$SELECTED_DB_USER" || return 1
+        file_env_set "$SELECTED_ENV_FILE" "MYSQL_PASSWORD" "$SELECTED_DB_PASS" || return 1
+    else
+        file_env_set "$SELECTED_ENV_FILE" "DB_USER" "$SELECTED_DB_USER" || return 1
+        file_env_set "$SELECTED_ENV_FILE" "DB_PASS" "$SELECTED_DB_PASS" || return 1
+    fi
 }
 
 show_db_credentials() {
@@ -3221,21 +3283,41 @@ show_db_credentials() {
 
 rotate_bot_db_credentials() {
     local field="$1" new_value="$2"
-    local mysql_root_pass
+    local mysql_root_pass env_key old_value escaped_new escaped_old
     mysql_root_pass=$(env_get MYSQL_ROOT_PASSWORD)
 
     if [ "$field" = "passworddb" ]; then
+        env_key="DB_PASS"
+        old_value="$SELECTED_DB_PASS"
+    else
+        env_key="DB_USER"
+        old_value="$SELECTED_DB_USER"
+    fi
+    if [ "$SELECTED_BOT" = "main" ]; then
+        if [ "$field" = "passworddb" ]; then
+            env_key="MYSQL_PASSWORD"
+        else
+            env_key="MYSQL_USER"
+        fi
+    fi
+
+    escaped_new=${new_value//\\/\\\\}
+    escaped_new=${escaped_new//\'/\'\'}
+    escaped_old=${old_value//\\/\\\\}
+    escaped_old=${escaped_old//\'/\'\'}
+
+    if [ "$field" = "passworddb" ]; then
         ui_action "Updating the MySQL password for '${SELECTED_DB_USER}'..."
-        if ! dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
-            "ALTER USER '${SELECTED_DB_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${new_value}'; FLUSH PRIVILEGES;" 2>&1; then
+        if ! dc exec -T -e MYSQL_PWD="${mysql_root_pass}" db mysql -uroot -e \
+            "ALTER USER '${SELECTED_DB_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${escaped_new}'; FLUSH PRIVILEGES;" 2>&1; then
             ui_err "Failed to update the MySQL password — no changes were made to config.php."
             return 1
         fi
     else
-        ui_action "Creating the new MySQL user '${new_value}'..."
-        if ! dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
-            "CREATE USER '${new_value}'@'%' IDENTIFIED WITH mysql_native_password BY '${SELECTED_DB_PASS}'; GRANT ALL PRIVILEGES ON \`${SELECTED_DB_NAME}\`.* TO '${new_value}'@'%'; FLUSH PRIVILEGES;" 2>&1; then
-            ui_err "Failed to create the new MySQL user — no changes were made to config.php."
+        ui_action "Renaming the MySQL user '${SELECTED_DB_USER}' to '${new_value}'..."
+        if ! dc exec -T -e MYSQL_PWD="${mysql_root_pass}" db mysql -uroot -e \
+            "RENAME USER '${SELECTED_DB_USER}'@'%' TO '${new_value}'@'%'; FLUSH PRIVILEGES;" 2>&1; then
+            ui_err "Failed to rename the MySQL user — no changes were made to config.php."
             return 1
         fi
     fi
@@ -3244,37 +3326,62 @@ rotate_bot_db_credentials() {
     if ! dc exec -T "$SELECTED_CONTAINER" php /var/www/faoxima/docker/php-update-credential.php "$field" "$new_value" 2>&1; then
         ui_err "Failed to update config.php — reverting the MySQL change."
         if [ "$field" = "passworddb" ]; then
-            dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
-                "ALTER USER '${SELECTED_DB_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${SELECTED_DB_PASS}'; FLUSH PRIVILEGES;" >/dev/null 2>&1
+            dc exec -T -e MYSQL_PWD="${mysql_root_pass}" db mysql -uroot -e \
+                "ALTER USER '${SELECTED_DB_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${escaped_old}'; FLUSH PRIVILEGES;" >/dev/null 2>&1
         else
-            dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
-                "DROP USER IF EXISTS '${new_value}'@'%'; FLUSH PRIVILEGES;" >/dev/null 2>&1
+            dc exec -T -e MYSQL_PWD="${mysql_root_pass}" db mysql -uroot -e \
+                "RENAME USER '${new_value}'@'%' TO '${SELECTED_DB_USER}'@'%'; FLUSH PRIVILEGES;" >/dev/null 2>&1
         fi
         return 1
     fi
 
-    if [ "$field" = "usernamedb" ]; then
-        ui_action "Removing the old MySQL user '${SELECTED_DB_USER}'..."
-        dc exec -T db mysql -uroot -p"${mysql_root_pass}" -e \
-            "DROP USER IF EXISTS '${SELECTED_DB_USER}'@'%'; FLUSH PRIVILEGES;" 2>&1 \
-            || ui_warn "Failed to drop the old MySQL user '${SELECTED_DB_USER}' — it can be removed manually."
-        file_env_set "$SELECTED_ENV_FILE" "DB_USER" "$new_value"
-        SELECTED_DB_USER="$new_value"
-    else
-        file_env_set "$SELECTED_ENV_FILE" "DB_PASS" "$new_value"
-        SELECTED_DB_PASS="$new_value"
+    if ! file_env_set "$SELECTED_ENV_FILE" "$env_key" "$new_value"; then
+        ui_err "Failed to update ${SELECTED_ENV_FILE} — reverting the credential change."
+        dc exec -T "$SELECTED_CONTAINER" php /var/www/faoxima/docker/php-update-credential.php "$field" "$old_value" >/dev/null 2>&1 || true
+        if [ "$field" = "passworddb" ]; then
+            dc exec -T -e MYSQL_PWD="${mysql_root_pass}" db mysql -uroot -e \
+                "ALTER USER '${SELECTED_DB_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${escaped_old}'; FLUSH PRIVILEGES;" >/dev/null 2>&1
+        else
+            dc exec -T -e MYSQL_PWD="${mysql_root_pass}" db mysql -uroot -e \
+                "RENAME USER '${new_value}'@'%' TO '${SELECTED_DB_USER}'@'%'; FLUSH PRIVILEGES;" >/dev/null 2>&1
+        fi
+        return 1
     fi
 
-    ui_ok "Credentials updated successfully for '${SELECTED_BOT}'. No restart needed — PHP re-reads config.php on the next request."
+    local verify_user="$SELECTED_DB_USER" verify_pass="$SELECTED_DB_PASS"
+    [ "$field" = "usernamedb" ] && verify_user="$new_value"
+    [ "$field" = "passworddb" ] && verify_pass="$new_value"
+    if ! db_ready_check "$SELECTED_CONTAINER" "db" "$SELECTED_DB_NAME" "$verify_user" "$verify_pass" >/dev/null 2>&1; then
+        ui_err "The new credentials could not connect — reverting all changes."
+        file_env_set "$SELECTED_ENV_FILE" "$env_key" "$old_value" >/dev/null 2>&1 || true
+        dc exec -T "$SELECTED_CONTAINER" php /var/www/faoxima/docker/php-update-credential.php "$field" "$old_value" >/dev/null 2>&1 || true
+        if [ "$field" = "passworddb" ]; then
+            dc exec -T -e MYSQL_PWD="${mysql_root_pass}" db mysql -uroot -e \
+                "ALTER USER '${SELECTED_DB_USER}'@'%' IDENTIFIED WITH mysql_native_password BY '${escaped_old}'; FLUSH PRIVILEGES;" >/dev/null 2>&1
+        else
+            dc exec -T -e MYSQL_PWD="${mysql_root_pass}" db mysql -uroot -e \
+                "RENAME USER '${new_value}'@'%' TO '${SELECTED_DB_USER}'@'%'; FLUSH PRIVILEGES;" >/dev/null 2>&1
+        fi
+        return 1
+    fi
+
+    SELECTED_DB_USER="$verify_user"
+    SELECTED_DB_PASS="$verify_pass"
+    ui_ok "Credentials updated successfully for '${SELECTED_BOT}'."
+    show_db_credentials
 }
 
 change_db_username() {
     printf '\n  %s❯%s New database username (letters, numbers, underscore only): ' "$C_YELLOW" "$C_RESET"
     local new_user
     read -r new_user
-    if [[ ! "$new_user" =~ ^[a-zA-Z0-9_]+$ ]]; then
+    if [[ ! "$new_user" =~ ^[a-zA-Z0-9_]+$ ]] || [ "${#new_user}" -gt 32 ]; then
         ui_err "Invalid username format."
         return 1
+    fi
+    if [ "$new_user" = "$SELECTED_DB_USER" ]; then
+        ui_info "The database username is already '${new_user}'."
+        return 0
     fi
     printf '  %s❯%s Change username from '"'"'%s'"'"' to '"'"'%s'"'"'? (y/N): ' "$C_YELLOW" "$C_RESET" "$SELECTED_DB_USER" "$new_user"
     local confirm
@@ -3292,6 +3399,10 @@ change_db_password() {
     read -r new_pass
     if [ -z "$new_pass" ]; then
         new_pass=$(openssl rand -base64 24 | tr -dc 'a-zA-Z0-9')
+    fi
+    if [[ ! "$new_pass" =~ ^[a-zA-Z0-9_@%+=:,./?-]+$ ]]; then
+        ui_err "Password contains unsupported characters."
+        return 1
     fi
     printf '  %s❯%s Change the database password for '"'"'%s'"'"'? (y/N): ' "$C_YELLOW" "$C_RESET" "$SELECTED_DB_USER"
     local confirm

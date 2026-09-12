@@ -626,6 +626,11 @@ if (!function_exists('buildCronInstructionDetails')) {
         foreach (getCronJobDefinitions() as $key => $definition) {
             $description = describeCronSchedule($schedules[$key] ?? $definition['default']);
             $title = sprintf($definition['instruction'], $description);
+            if ($key === 'backupbot') {
+                $command = 'php ' . escapeshellarg(REFACTORED_LEGACY_ROOT . '/cronbot/backupbot.php');
+                $parts[] = "<b>{$title}</b>\n<code>" . htmlspecialchars($command, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</code>';
+                continue;
+            }
             $endpoint = buildCronScriptUrlByHost($domainHost, $definition['script']);
             $parts[] = "<b>{$title}</b>\n<code>curl " . htmlspecialchars($endpoint, ENT_QUOTES | ENT_SUBSTITUTE, 'UTF-8') . '</code>';
         }

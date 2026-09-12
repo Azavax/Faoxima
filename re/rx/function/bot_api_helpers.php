@@ -503,50 +503,17 @@ function addBackgroundImage($urlimage, $qrCodeResult, $backgroundPath)
 }
 function getTelegramExpectedSecretToken()
 {
-    global $APIKEY;
-
-    $configured = getenv('TELEGRAM_WEBHOOK_SECRET') ?: ($_ENV['TELEGRAM_WEBHOOK_SECRET'] ?? '');
-    if ($configured !== '') {
-        return (string) $configured;
-    }
-    if (defined('TELEGRAM_WEBHOOK_SECRET') && TELEGRAM_WEBHOOK_SECRET !== '') {
-        return (string) TELEGRAM_WEBHOOK_SECRET;
-    }
-
-    if (!empty($APIKEY)) {
-        return substr(hash('sha256', $APIKEY . '_faoxima_webhook_secret'), 0, 64);
-    }
-
-    return '';
+    global $APIKEY, $ApiToken;
+    require_once REFACTORED_LEGACY_ROOT . '/lib/WebhookAuth.php';
+    $child = isset($ApiToken) && $ApiToken !== '';
+    return FaoximaWebhookAuth::secret((string) ($child ? $ApiToken : ($APIKEY ?? '')), !$child);
 }
 
 function verifyTelegramWebhookSecretToken()
 {
     $expected = getTelegramExpectedSecretToken();
-    if ($expected === '') {
-        return null;
-    }
-
-    $provided = '';
-    if (!empty($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'])) {
-        $provided = (string) $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'];
-    } elseif (function_exists('getallheaders')) {
-        $headers = getallheaders();
-        if (is_array($headers)) {
-            foreach ($headers as $key => $val) {
-                if (strcasecmp($key, 'X-Telegram-Bot-Api-Secret-Token') === 0) {
-                    $provided = (string) $val;
-                    break;
-                }
-            }
-        }
-    }
-
-    if ($provided === '') {
-        return false;
-    }
-
-    return hash_equals($expected, $provided);
+    $provided = $_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'] ?? '';
+    return $expected !== '' && is_string($provided) && $provided !== '' && hash_equals($expected, $provided);
 }
 
 function isTrustedReverseProxy($ip)
@@ -602,43 +569,7 @@ function isTrustedReverseProxy($ip)
 
 function checktelegramip()
 {
-    global $telegramStrictIpValidation;
-
-    $secretStatus = verifyTelegramWebhookSecretToken();
-    if ($secretStatus === true) {
-        return true;
-    }
-    if ($secretStatus === false && !empty($_SERVER['HTTP_X_TELEGRAM_BOT_API_SECRET_TOKEN'])) {
-        return false;
-    }
-
-    $strictValidation = $telegramStrictIpValidation;
-    if (!is_bool($strictValidation)) {
-        $strictValidation = true;
-    }
-
-    if ($strictValidation === false) {
-        return true;
-    }
-
-    $clientIp = getClientIpConsideringProxies();
-    if ($clientIp === null) {
-        return false;
-    }
-
-    $telegramIpRanges = [
-        ['lower' => '149.154.160.0', 'upper' => '149.154.175.255'],
-        ['lower' => '91.108.4.0', 'upper' => '91.108.7.255'],
-        ['lower' => '2001:67c:4e8::', 'upper' => '2001:67c:4e8:ffff:ffff:ffff:ffff:ffff'],
-    ];
-
-    foreach ($telegramIpRanges as $range) {
-        if (isClientIpInRange($clientIp, $range['lower'], $range['upper'])) {
-            return true;
-        }
-    }
-
-    return false;
+    return verifyTelegramWebhookSecretToken() === true;
 }
 
 function getClientIpConsideringProxies()

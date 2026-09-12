@@ -28,6 +28,9 @@ if (
     && is_string($text)
     && $text !== ''
 ) {
+    if (empty($callback_query_id) && empty($datain) && function_exists('rx_normalizeAdminButtonText')) {
+        $text = rx_normalizeAdminButtonText($text);
+    }
     $rx_back_admin_canonical = $textbotlang['Admin']['backadmin'] ?? '🏠 بازگشت به منوی مدیریت';
     $rx_back_menu_canonical  = $textbotlang['Admin']['backmenu'] ?? '▶️ بازگشت به منوی قبل';
 

@@ -1,4 +1,8 @@
 <?php
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    exit('Backup must run from the command line');
+}
 date_default_timezone_set('Asia/Tehran');
 if (function_exists('putenv') && !preg_match('/(^|,)\s*putenv\s*(,|$)/', strtolower((string) ini_get('disable_functions')))) {
     @putenv('TZ=Asia/Tehran');
@@ -293,8 +297,19 @@ try {
     $destination = __DIR__;
     $setting = select("setting", "*");
     $sourcefir = dirname($destination);
-    $backup_file_name = 'backup_' . date("Y-m-d") . '.sql';
-    $zip_file_name = 'backup_' . date("Y-m-d") . '.zip';
+    $privateBackupDir = rtrim(sys_get_temp_dir(), '/\\') . '/faoxima-backup-' . bin2hex(random_bytes(16));
+    if (!mkdir($privateBackupDir, 0700)) {
+        throw new RuntimeException('Cannot create private backup directory');
+    }
+    $backup_file_name = $privateBackupDir . '/backup.sql';
+    $zip_file_name = $privateBackupDir . '/backup.zip';
+    register_shutdown_function(static function () use ($privateBackupDir) {
+        foreach (['backup.sql', 'backup.zip', 'backup.sql.tmp', 'backup.sql.tmp.err'] as $name) {
+            $path = $privateBackupDir . '/' . $name;
+            if (is_file($path)) @unlink($path);
+        }
+        @rmdir($privateBackupDir);
+    });
     $dumpCreated = false;
     $tmpDump = $backup_file_name . '.tmp';
     $tmpDumpErr = $tmpDump . '.err';

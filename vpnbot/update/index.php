@@ -1,4 +1,7 @@
 <?php
+require_once __DIR__ . '/config.php';
+require_once dirname(__DIR__, 2) . '/lib/WebhookAuth.php';
+FaoximaWebhookAuth::enforce((string) ($ApiToken ?? ''), false);
 $version = file_get_contents('version');
 date_default_timezone_set('Asia/Tehran');
 ini_set('default_charset', 'UTF-8');
@@ -8,7 +11,6 @@ $rootPath = filter_input(INPUT_SERVER, 'DOCUMENT_ROOT');
 $PHP_SELF = filter_input(INPUT_SERVER, 'PHP_SELF');
 $Pathfile = dirname(dirname($PHP_SELF, 2));
 $Pathfiles = rtrim($rootPath . $Pathfile, '/\\') . '/';
-require_once 'config.php';
 require_once $Pathfiles . 'function.php';
 require_once $Pathfiles . 'config.php';
 require_once $Pathfiles . 'jdf.php';

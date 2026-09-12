@@ -319,6 +319,9 @@ if ($bootstrapLoaded && function_exists('getCronJobDefinitions')) {
     $schedules   = function_exists('loadCronSchedules') ? loadCronSchedules() : [];
 
     foreach ($definitions as $key => $definition) {
+        if ($key === 'backupbot' && !$rxIsCli) {
+            continue;
+        }
         if (empty($definition['script'])) {
             continue;
         }

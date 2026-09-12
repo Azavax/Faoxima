@@ -21,10 +21,15 @@ if [ -d "$APP_DIR/installer" ]; then
 fi
 if [ -f "$APP_DIR/config.php" ]; then
     chown www-data:www-data "$APP_DIR/config.php" 2>/dev/null || true
-    chmod 666 "$APP_DIR/config.php" 2>/dev/null || true
+    chmod 600 "$APP_DIR/config.php" 2>/dev/null || true
 fi
 if [ -f "$APP_DIR/.env" ]; then
     chmod 600 "$APP_DIR/.env" 2>/dev/null || true
+fi
+
+if [ -d "$APP_DIR/storage/private" ]; then
+    chmod 700 "$APP_DIR/storage/private"
+    find "$APP_DIR/storage/private" -type f -exec chmod 600 {} \;
 fi
 
 if command -v cron >/dev/null 2>&1; then

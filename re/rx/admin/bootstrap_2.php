@@ -4541,18 +4541,18 @@ $caption";
     nm_adminInstantReply($from_id, $textbotlang['Admin']['Product']['Service_location'], $json_list_marzban_panel, 'HTML');
     step('get_location', $from_id);
 } elseif ($user['step'] == "get_location") {
-    $marzban_list[] = '/all';
-    if (!in_array($text, $marzban_list)) {
+    $panel = ($text === '/all') ? null : (function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : select("marzban_panel", "*", "name_panel", $text, "select"));
+    if ($text !== '/all' && (!is_array($panel) || empty($panel))) {
         nm_adminInstantReply($from_id, "❌ پنل انتخابی اشتباه است", null, 'HTML');
         return;
     }
-    savedata("save", "Location", $text);
-    if (panel_feature_enabled($text, 'categorygeneral')) {
+    $locCanonical = ($text === '/all') ? '/all' : $panel['name_panel'];
+    savedata("save", "Location", $locCanonical);
+    if ($text !== '/all' && panel_feature_enabled($locCanonical, 'categorygeneral')) {
         nm_adminInstantReply($from_id, "📌 نام دسته بندی خود را ارسال نمایید.", KeyboardCategoryadmin(), 'HTML');
         step("getcategory", $from_id);
         return;
     }
-    $panel = $text === '/all' ? null : select("marzban_panel", "*", "name_panel", $text, "select");
     if ($text !== '/all' && !is_array($panel)) {
         nm_adminInstantReply($from_id, "❌ پنل انتخابی در دسترس نیست", $backadmin, 'HTML');
         step('home', $from_id);
@@ -5231,7 +5231,9 @@ $caption";
     nm_adminInstantReply($from_id, $textbotlang['Admin']['Product']['Rmove_location'], $json_list_marzban_panel, 'HTML');
     step('selectloc', $from_id);
 } elseif ($user['step'] == "selectloc") {
-    update("user", "Processing_value", $text, "id", $from_id);
+    $panelResolved = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : null;
+    $locValue = is_array($panelResolved) && !empty($panelResolved['name_panel']) ? $panelResolved['name_panel'] : $text;
+    update("user", "Processing_value", $locValue, "id", $from_id);
     step('remove-product', $from_id);
     nm_adminInstantReply($from_id, $textbotlang['Admin']['Product']['selectRemoveProduct'], $json_list_product_list_admin, 'HTML');
 } elseif ($user['step'] == "remove-product") {
@@ -5438,16 +5440,18 @@ $caption";
         nm_adminInstantReply($from_id, "❌ نمی توانید محصول تعریف شده را به نام موقعیت /all تغییر دهید.", $shopkeyboard, 'HTML');
         return;
     }
+    $panelResolved = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : null;
+    $targetLocation = is_array($panelResolved) && !empty($panelResolved['name_panel']) ? $panelResolved['name_panel'] : $text;
     $product = select("product", "*", "name_product", $user['Processing_value']);
     $panel = select("marzban_panel", "*", "code_panel", $user['Processing_value_one'], "select");
     $stmt = $pdo->prepare("UPDATE product SET Location = :Location2 WHERE id = :name_product AND (Location = :Location OR Location = '/all') AND agent = :agent");
-    $stmt->bindParam(':Location2', $text);
+    $stmt->bindParam(':Location2', $targetLocation);
     $stmt->bindParam(':name_product', $user['Processing_value']);
     $stmt->bindParam(':Location', $panel['name_panel']);
     $stmt->bindParam(':agent', $user['Processing_value_tow']);
     $stmt->execute();
     $stmt = $pdo->prepare("UPDATE invoice SET Service_location = :Service_location WHERE name_product = :name_product AND Service_location = :Location ");
-    $stmt->bindParam(':Service_location', $text);
+    $stmt->bindParam(':Service_location', $targetLocation);
     $stmt->bindParam(':name_product', $product['name_product']);
     $stmt->bindParam(':Location', $panel['name_panel']);
     $stmt->execute();
@@ -6398,18 +6402,20 @@ $text_expie_agent
     nm_adminInstantReply($from_id, $textbotlang['Admin']['managepanel']['getloc'], $json_list_marzban_panel, 'HTML');
     step('GetLocationEdit', $from_id);
 } elseif ($user['step'] == "GetLocationEdit") {
-    $marzban_list_get = select("marzban_panel", "*", "name_panel", $text, "select");
+    $marzban_list_get = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : select("marzban_panel", "*", "name_panel", $text, "select");
     if (!is_array($marzban_list_get) || empty($marzban_list_get)) {
         $notFoundMessage = $textbotlang['Admin']['managepanel']['nullpanel'] ?? "❌ پنل مورد نظر یافت نشد.";
         nm_adminInstantReply($from_id, $notFoundMessage, $json_list_marzban_panel, 'HTML');
         return;
     }
-    update("user", "Processing_value", $text, "id", $from_id);
+    $panelCanonicalName = $marzban_list_get['name_panel'];
+    $text = $panelCanonicalName;
+    update("user", "Processing_value", $panelCanonicalName, "id", $from_id);
     step('PanelMenu', $from_id);
     if ($marzban_list_get['type'] == "marzban") {
         $Check_token = token_panel($marzban_list_get['code_panel'], false);
         if (isset($Check_token['access_token'])) {
-            $System_Stats = Get_System_Stats($text);
+            $System_Stats = Get_System_Stats($panelCanonicalName);
             if ((string)($marzban_list_get['version_panel'] ?? '0') === '1') {
                 $active_users = $System_Stats['active_users']
                     ?? $System_Stats['users_active']

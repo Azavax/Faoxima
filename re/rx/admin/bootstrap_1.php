@@ -967,3 +967,7 @@ if (!empty($datain) && in_array($from_id, $admin_ids ?? [])) {
 
     unset($_rx_adm_cb_map);
 }
+
+if (empty($datain) && in_array($from_id, $admin_ids ?? []) && isset($text) && is_string($text) && function_exists('rx_normalizeAdminButtonText')) {
+    $text = rx_normalizeAdminButtonText($text);
+}

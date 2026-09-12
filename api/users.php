@@ -46,23 +46,9 @@ function sendReport($text, $groupid, $topic_id, $reply_markup = null)
 function validateToken($headers)
 {
     global $APIKEY;
-    if (!isset($headers['Token'])) {
-        return false;
-    }
-
-
-    $headerToken = (string) $headers['Token'];
-    if ($headerToken === '') return false;
-    if (is_file('hash.txt')) {
-        $token = trim((string) file_get_contents('hash.txt'));
-    } else {
-        $token = "";
-    }
-    $validTokens = array_values(array_filter([$token, (string) ($APIKEY ?? '')], 'strlen'));
-    foreach ($validTokens as $candidate) {
-        if (hash_equals($candidate, $headerToken)) return true;
-    }
-    return false;
+    require_once __DIR__ . '/../lib/ApiCredential.php';
+    $headers = array_change_key_case($headers, CASE_LOWER);
+    return FaoximaApiCredential::valid($headers['token'] ?? null, (string) ($APIKEY ?? ''));
 }
 
 function sanitizeRecursive($data)
@@ -791,7 +777,7 @@ switch ($data['actions'] ?? '') {
         $contentconfig = file_get_contents($configFile);
         $new_code = str_replace('BotTokenNew', $data['token'], $contentconfig);
         file_put_contents($configFile, $new_code);
-        @file_get_contents("https://api.telegram.org/bot{$data['token']}/setwebhook?url=https://$domainhosts/vpnbot/{$data['chat_id']}{$getInfoToken['result']['username']}/index.php");
+        telegram('setWebhook', ['url' => "https://$domainhosts/vpnbot/{$data['chat_id']}{$getInfoToken['result']['username']}/index.php"], $data['token']);
         @file_get_contents("https://api.telegram.org/bot{$data['token']}/sendmessage?chat_id={$data['chat_id']}&text=✅ کاربر عزیز ربات شما با موفقیت نصب گردید.");
         $datasetting = json_encode(array(
             "minpricetime" => 4000,

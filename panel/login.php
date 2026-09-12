@@ -59,6 +59,10 @@ $check_ip = $_iplogin_unlimited || (!empty($_ip_list) && in_array($user_ip, $_ip
 $texterrr = "";
 
 if (isset($_POST['login'])) {
+    if (!$check_ip) {
+        http_response_code(403);
+        exit('Access denied');
+    }
 
 
     $username = isset($_POST['username']) ? trim((string)$_POST['username']) : '';

@@ -1628,14 +1628,14 @@ $iduser  در ربات  رفع مسدود گردید
     step('getlocdiscount', $from_id);
 } elseif ($user['step'] == "getlocdiscount") {
     if ($text == "/all") {
-        $panel['code_panel'] = "/all";
+        $panel = ['code_panel' => "/all", 'name_panel' => '/all'];
     } else {
-        $panel = select("marzban_panel", "*", "name_panel", $text, "select");
+        $panel = function_exists('rx_resolvePanelFromInput') ? rx_resolvePanelFromInput($text, $pdo) : select("marzban_panel", "*", "name_panel", $text, "select");
     }
-    if ($panel == false)
+    if ($panel == false || empty($panel))
         return;
     savedata("save", "code_panel", $panel['code_panel']);
-    savedata("save", "name_panel", $text);
+    savedata("save", "name_panel", $panel['name_panel']);
     nm_adminInstantReply($from_id, "📌  میخواهید کد تخفیف برای کدام محصول باشد. توجه داشتید درصورتی که میخواهید کد تخفیف برای تمامی محصولات باشد کلمه all را ارسال کنید", $json_list_product_list_admin, 'HTML');
     step('getproductdiscount', $from_id);
 } elseif ($user['step'] == "getproductdiscount") {

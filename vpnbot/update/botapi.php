@@ -1,10 +1,14 @@
 <?php
-require_once 'config.php';
+require_once __DIR__ . '/config.php';
 function telegram($method, $datas = [],$botToken = null)
 {
     global $ApiToken;
     if($botToken != null){
         $ApiToken = $botToken;
+    }
+    require_once dirname(__DIR__, 2) . '/lib/WebhookAuth.php';
+    if (strtolower((string) $method) === 'setwebhook') {
+        $datas['secret_token'] = FaoximaWebhookAuth::secret((string) $ApiToken, false);
     }
     $url = "https://api.telegram.org/bot" . $ApiToken . "/" . $method;
     $ch = curl_init();
@@ -140,6 +144,8 @@ function pinmessage($from_id,$message_id){
     return str_replace($persian_numbers, $english_numbers, $string);
 }
 
+require_once dirname(__DIR__, 2) . '/lib/WebhookAuth.php';
+FaoximaWebhookAuth::enforce((string) ($ApiToken ?? ''), false);
 $update = json_decode(file_get_contents("php://input"), true);
 $from_id = $update['message']['from']['id'] ?? $update['callback_query']['from']['id'] ?? $update["inline_query"]['from']['id'] ?? 0;
 

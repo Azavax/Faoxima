@@ -3,16 +3,17 @@
 $rootDirectory   = dirname(__DIR__) . '/';
 $configDirectory = $rootDirectory . 'config.php';
 
-$variable = $argv[1] ?? '';
-$value    = $argv[2] ?? '';
-
-if (!in_array($variable, ['usernamedb', 'passworddb'], true)) {
-    fwrite(STDERR, "[php-update-credential] invalid target variable: {$variable}\n");
+if (!is_file($configDirectory)) {
+    fwrite(STDERR, "[php-update-credential] config.php not found at {$configDirectory}\n");
     exit(1);
 }
 
-if (!is_file($configDirectory)) {
-    fwrite(STDERR, "[php-update-credential] config.php not found at {$configDirectory}\n");
+$operation = $argv[1] ?? '';
+$variable  = $operation === 'read' ? ($argv[2] ?? '') : $operation;
+$value     = $operation === 'read' ? '' : ($argv[2] ?? '');
+
+if (!in_array($variable, ['usernamedb', 'passworddb'], true)) {
+    fwrite(STDERR, "[php-update-credential] invalid target variable: {$variable}\n");
     exit(1);
 }
 
@@ -30,6 +31,14 @@ $rawConfigData    = file_get_contents($configDirectory);
 $replacementCount = 0;
 
 $pattern = '/(\$' . preg_quote($variable, '/') . '\s*=\s*)([\'\"])(.*?)(\2)(\s*;)([^\n]*)(\n?)/u';
+if ($operation === 'read') {
+    if (!preg_match($pattern, $rawConfigData, $matches)) {
+        exit(1);
+    }
+    echo stripcslashes($matches[3]);
+    exit(0);
+}
+
 $updatedConfig = preg_replace_callback(
     $pattern,
     function ($matches) use ($value, &$replacementCount) {

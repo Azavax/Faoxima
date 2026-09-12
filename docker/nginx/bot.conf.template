@@ -3,10 +3,12 @@ location ~* ^/${URL_PATH}/(?:\..*|.*/\..*) {
     return 404;
 }
 
-location ~* ^/${URL_PATH}/.*\.(?:env|ya?ml|sql|log|sh|json|bak|lock|md|conf|ini)$ {
+location ~* ^/${URL_PATH}/.*\.(?:env|ya?ml|sql|log|sh|json|bak|lock|md|conf|ini|zip|tmp|err|swp|orig)$ {
     deny all;
     return 404;
 }
+
+location ~* ^/${URL_PATH}/(?:.*/)?(?:error_log|hash\.txt)$ { deny all; return 404; }
 
 location ^~ /${URL_PATH}/installer/    { deny all; return 403; }
 location ^~ /${URL_PATH}/storage/      { deny all; return 403; }

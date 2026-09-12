@@ -26,23 +26,9 @@ function sendJsonResponse($status, $message, $data = [], $httpCode = 200)
 function validateToken($headers)
 {
     global $APIKEY;
-    if (!isset($headers['Token'])) {
-        return false;
-    }
-
-
-    $headerToken = (string) $headers['Token'];
-    if ($headerToken === '') return false;
-    if (is_file('hash.txt')) {
-        $token = trim((string) file_get_contents('hash.txt'));
-    } else {
-        $token = "";
-    }
-    $validTokens = array_values(array_filter([$token, (string) ($APIKEY ?? '')], 'strlen'));
-    foreach ($validTokens as $candidate) {
-        if (hash_equals($candidate, $headerToken)) return true;
-    }
-    return false;
+    require_once __DIR__ . '/../lib/ApiCredential.php';
+    $headers = array_change_key_case($headers, CASE_LOWER);
+    return FaoximaApiCredential::valid($headers['token'] ?? null, (string) ($APIKEY ?? ''));
 }
 
 function sanitizeRecursive($data)

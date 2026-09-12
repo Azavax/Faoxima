@@ -7,6 +7,8 @@ ini_set('default_charset', 'UTF-8');
 ini_set('error_log', 'error_log');
 ini_set('memory_limit', '-1');
 require_once 'config.php';
+require_once REFACTORED_LEGACY_ROOT . '/lib/WebhookAuth.php';
+FaoximaWebhookAuth::enforce((string) ($APIKEY ?? ''));
 require_once 'botapi.php';
 require_once 'jdf.php';
 require_once 'function.php';
