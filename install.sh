@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# shellcheck shell=bash
-# shellcheck disable=SC2155,SC2034,SC2317
 
 set -o pipefail
 
@@ -504,7 +502,7 @@ ensure_envsubst() {
 }
 
 render_vhost() {
-    local domain outfile="$2"
+    local domain outfile="$2" pma_allowed_ips ip
     domain=$(normalize_domain "$1")
     ensure_envsubst || { ui_err "envsubst is not available and could not be installed."; return 1; }
     mkdir -p "$(dirname "$outfile")" || { ui_err "Failed to create directory for ${outfile}."; return 1; }
@@ -515,6 +513,20 @@ render_vhost() {
     DOMAIN="$domain" \
         envsubst '${DOMAIN}' < "$NGINX_TEMPLATE" > "$outfile" \
         || { ui_err "Failed to render nginx config to ${outfile}."; return 1; }
+    pma_allowed_ips=$(get_phpmyadmin_allowed_ips)
+    if [ -n "$pma_allowed_ips" ]; then
+        while IFS= read -r ip; do
+            [ -z "$ip" ] && continue
+            if ! valid_ipv4_or_cidr "$ip"; then
+                ui_err "Invalid phpMyAdmin allowed IP in ${ENV_FILE}: ${ip}"
+                return 1
+            fi
+            sed -i "/location \/phpmyadmin\//,/^[[:space:]]*}/ { /^[[:space:]]*deny all;/i\        allow ${ip};
+            }" "$outfile" || { ui_err "Failed to apply phpMyAdmin IP allowlist to ${outfile}."; return 1; }
+        done <<EOF
+$(printf '%s' "$pma_allowed_ips" | tr ',' '\n')
+EOF
+    fi
 }
 
 render_bot_location() {
@@ -2532,15 +2544,6 @@ write_redis_conf() {
     local file="${dir}/redis.conf"
     mkdir -p "$dir" || return 1
     cat > "$file" <<EOF
-# maxmemory-policy trade-offs for this deployment:
-#   allkeys-lru  (current) - may evict cron-lock/dedupe keys early under
-#                 memory pressure; the app already tolerates this safely
-#                 via its file-lock and MySQL fallbacks.
-#   volatile-lru - nearly identical here since every key already has a TTL.
-#   noeviction   - safest for lock/dedupe correctness, but Redis writes
-#                 (including cache writes) fail outright once full instead
-#                 of evicting; the app's existing fallback still applies.
-# Change this only as a deliberate operational decision.
 maxmemory ${maxmemory_mb}mb
 maxmemory-policy allkeys-lru
 save ""
@@ -3391,6 +3394,185 @@ show_db_credentials() {
         "Password|${C_WHITE}${SELECTED_DB_PASS}${C_RESET}"
 }
 
+valid_ipv4_or_cidr() {
+    local input="$1" ip prefix o1 o2 o3 o4 extra o
+    ip="${input%%/*}"
+    if [[ "$input" == */* ]]; then
+        prefix="${input#*/}"
+        [[ "$prefix" =~ ^[0-9]+$ ]] || return 1
+        [ "$prefix" -ge 0 ] && [ "$prefix" -le 32 ] || return 1
+    fi
+    IFS=. read -r o1 o2 o3 o4 extra <<< "$ip"
+    [ -z "$extra" ] || return 1
+    for o in "$o1" "$o2" "$o3" "$o4"; do
+        [[ "$o" =~ ^[0-9]+$ ]] || return 1
+        [ "$o" -ge 0 ] && [ "$o" -le 255 ] || return 1
+    done
+    return 0
+}
+
+get_phpmyadmin_allowed_ips() {
+    local ips legacy
+    ips=$(env_get PMA_ALLOWED_IPS 2>/dev/null)
+    if [ -z "$ips" ]; then
+        legacy=$(env_get PMA_ALLOWED_IP 2>/dev/null)
+        [ -n "$legacy" ] && ips="$legacy"
+    fi
+    printf '%s' "$ips" | tr -d '[:space:]'
+}
+
+save_phpmyadmin_allowed_ips() {
+    local ips="$1"
+    env_set "PMA_ALLOWED_IPS" "$ips"
+    if grep -qE '^PMA_ALLOWED_IP=' "$ENV_FILE" 2>/dev/null; then
+        env_set "PMA_ALLOWED_IP" ""
+    fi
+}
+
+apply_phpmyadmin_ip_config() {
+    local domain nginx_test_output
+    domain=$(normalize_domain "$(env_get DOMAIN)")
+    if [ -z "$domain" ]; then
+        ui_err "DOMAIN could not be read from ${ENV_FILE}."
+        return 1
+    fi
+    render_vhost "$domain" "${NGINX_CONF_DIR}/00-main.conf" || return 1
+    nginx_test_output=$(dc exec -T nginx nginx -t 2>&1)
+    if [ $? -ne 0 ]; then
+        ui_err "nginx configuration test failed."
+        printf '%s
+' "$nginx_test_output"
+        return 1
+    fi
+    if ! dc exec nginx nginx -s reload; then
+        ui_err "Failed to reload nginx."
+        return 1
+    fi
+    return 0
+}
+
+list_phpmyadmin_public_ips() {
+    local ips ip count=0
+    ips=$(get_phpmyadmin_allowed_ips)
+    if [ -z "$ips" ]; then
+        ui_info "No public IPs are currently allowed for phpMyAdmin."
+        return 0
+    fi
+    printf '
+'
+    while IFS= read -r ip; do
+        [ -z "$ip" ] && continue
+        count=$((count + 1))
+        printf '  %s%2d)%s %s
+' "$C_YELLOW" "$count" "$C_RESET" "$ip"
+    done <<EOF
+$(printf '%s' "$ips" | tr ',' '
+')
+EOF
+    printf '
+'
+}
+
+add_phpmyadmin_public_ip() {
+    local ips new_ip item new_list
+    ips=$(get_phpmyadmin_allowed_ips)
+    printf '
+  %s❯%s Enter public IPv4 or CIDR: ' "$C_YELLOW" "$C_RESET"
+    read -r new_ip
+    new_ip=$(printf '%s' "$new_ip" | tr -d '[:space:]')
+    if [ -z "$new_ip" ] || ! valid_ipv4_or_cidr "$new_ip"; then
+        ui_err "Invalid IPv4/CIDR value."
+        return 1
+    fi
+    if [ -n "$ips" ]; then
+        while IFS= read -r item; do
+            [ "$item" = "$new_ip" ] && { ui_info "${new_ip} is already allowed."; return 0; }
+        done <<EOF
+$(printf '%s' "$ips" | tr ',' '
+')
+EOF
+        new_list="${ips},${new_ip}"
+    else
+        new_list="$new_ip"
+    fi
+    save_phpmyadmin_allowed_ips "$new_list"
+    if ! apply_phpmyadmin_ip_config; then
+        save_phpmyadmin_allowed_ips "$ips"
+        apply_phpmyadmin_ip_config >/dev/null 2>&1 || true
+        return 1
+    fi
+    ui_ok "Added ${new_ip} to phpMyAdmin public IP allowlist."
+}
+
+remove_phpmyadmin_public_ip() {
+    local ips items=() ip pick index new_items=() new_list="" i
+    ips=$(get_phpmyadmin_allowed_ips)
+    if [ -z "$ips" ]; then
+        ui_info "No public IPs are currently allowed for phpMyAdmin."
+        return 0
+    fi
+    while IFS= read -r ip; do
+        [ -n "$ip" ] && items+=("$ip")
+    done <<EOF
+$(printf '%s' "$ips" | tr ',' '
+')
+EOF
+    if ! ui_pick_from_list "Which IP to remove" "${items[@]}"; then
+        ui_info "Cancelled."
+        return 0
+    fi
+    index="$UI_PICK_RESULT"
+    for ((i = 0; i < ${#items[@]}; i++)); do
+        [ "$i" -ne "$index" ] && new_items+=("${items[$i]}")
+    done
+    if [ "${#new_items[@]}" -gt 0 ]; then
+        new_list=$(IFS=,; printf '%s' "${new_items[*]}")
+    fi
+    save_phpmyadmin_allowed_ips "$new_list"
+    if ! apply_phpmyadmin_ip_config; then
+        save_phpmyadmin_allowed_ips "$ips"
+        apply_phpmyadmin_ip_config >/dev/null 2>&1 || true
+        return 1
+    fi
+    ui_ok "Removed ${items[$index]} from phpMyAdmin public IP allowlist."
+}
+
+manage_phpmyadmin_public_ips() {
+    local option
+    while true; do
+        show_logo
+        ui_panel "PHPMYADMIN PUBLIC IP ACCESS" "$C_BOLD$C_CYAN" "$C_CYAN" \
+            "${C_WHITE}Manage the public IPv4/CIDR addresses allowed to open phpMyAdmin.${C_RESET}"
+        list_phpmyadmin_public_ips
+        ui_menu_list "Public IP Access" \
+            "${C_WHITE}[1]${C_RESET} View Allowed IPs" \
+            "${C_WHITE}[2]${C_RESET} Add IP" \
+            "${C_WHITE}[3]${C_RESET} Remove IP" \
+            "${C_RED}[4]${C_RESET} Back"
+        printf '  %s❯%s Select an option [1-4]: ' "$C_YELLOW" "$C_RESET"
+        read -r option
+        case "$option" in
+            1)
+                list_phpmyadmin_public_ips
+                printf '  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"
+                read -r
+                ;;
+            2)
+                add_phpmyadmin_public_ip
+                printf '  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"
+                read -r
+                ;;
+            3)
+                remove_phpmyadmin_public_ip
+                printf '  %s❯%s Press Enter to continue... ' "$C_YELLOW" "$C_RESET"
+                read -r
+                ;;
+            4) return 0 ;;
+            *) ui_err "Invalid option."; sleep 1 ;;
+        esac
+    done
+}
+
 rotate_bot_db_credentials() {
     local field="$1" new_value="$2"
     local mysql_root_pass env_key old_value escaped_new escaped_old
@@ -3543,16 +3725,18 @@ menu_db_credentials() {
     ui_menu_list "Credentials" \
         "${C_WHITE}[1]${C_RESET} Change Username" \
         "${C_WHITE}[2]${C_RESET} Change Password" \
-        "${C_RED}[3]${C_RESET} Back"
+        "${C_WHITE}[3]${C_RESET} Manage phpMyAdmin Public IPs" \
+        "${C_RED}[4]${C_RESET} Back"
 
     local option
-    printf '  %s❯%s Select an option [1-3]: ' "$C_YELLOW" "$C_RESET"
+    printf '  %s❯%s Select an option [1-4]: ' "$C_YELLOW" "$C_RESET"
     read -r option
 
     case "$option" in
         1) change_db_username ;;
         2) change_db_password ;;
-        3) return 0 ;;
+        3) manage_phpmyadmin_public_ips ;;
+        4) return 0 ;;
         *) ui_err "Invalid option." ;;
     esac
 }
