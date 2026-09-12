@@ -10,7 +10,7 @@ elif locale -a 2>/dev/null | grep -qi '^C\.UTF-8$'; then
     export LC_ALL=C.UTF-8
 fi
 
-readonly FAOXIMA_VERSION="v1.0.0"
+readonly FAOXIMA_VERSION="1.0.2"
 readonly FAOXIMA_REPO="Mmd-Amir/Faoxima"
 readonly FAOXIMA_GITHUB="https://github.com/${FAOXIMA_REPO}"
 readonly FAOXIMA_TELEGRAM="https://t.me/faoxima"
@@ -392,6 +392,39 @@ log_error()  { log_message "ERROR"  "$@"; }
 init_logging
 log_info "Faoxima installer ${FAOXIMA_VERSION} initialized (PID $$)"
 
+get_installed_version() {
+    local installed_version
+    installed_version=$(env_get FAOXIMA_INSTALLED_VERSION 2>/dev/null)
+    if [ -z "$installed_version" ] && [ -f "${PROJECT_DIR}/version" ]; then
+        installed_version=$(tr -d '[:space:]' < "${PROJECT_DIR}/version")
+    fi
+    [ -n "$installed_version" ] && printf '%s' "$installed_version" || printf '%s' "$FAOXIMA_VERSION"
+}
+
+resolve_source_version() {
+    local source="$1" arg1="$2" arg2="$3" code_dir="$4" resolved=""
+    if [ "$source" = "github" ]; then
+        if [[ "$arg1" == "-beta" ]] || [[ "$arg1" == "-v" && "$arg2" == "beta" ]]; then
+            resolved="beta"
+        elif [[ "$arg1" == "-v" && -n "$arg2" ]]; then
+            resolved="$arg2"
+        else
+            resolved=$(get_latest_version)
+        fi
+    elif [ -f "${code_dir}/version" ]; then
+        resolved=$(tr -d '[:space:]' < "${code_dir}/version")
+    fi
+    [[ -z "$resolved" || "$resolved" == "unknown" ]] && resolved="$FAOXIMA_VERSION"
+    printf '%s' "$resolved"
+}
+
+version_is_newer() {
+    local candidate="${1#v}" installed="${2#v}"
+    [[ "$candidate" =~ ^[0-9]+([.][0-9]+)*$ ]] || return 1
+    [[ "$installed" =~ ^[0-9]+([.][0-9]+)*$ ]] || return 1
+    [ "$candidate" != "$installed" ] && [ "$(printf '%s\n%s\n' "$candidate" "$installed" | sort -V | tail -1)" = "$candidate" ]
+}
+
 show_animated_logo() {
     local latest_line="$1"
     clear
@@ -405,9 +438,11 @@ show_animated_logo() {
     printf '\n'
 
     local width=55
+    local installed_version
+    installed_version=$(get_installed_version)
     ui_box_top "Version" "$C_ORANGE$C_BOLD" "$C_ORANGE" "$width"
     ui_box_blank "$C_ORANGE" "$width"
-    ui_box_line "$C_ORANGE" "$width" "${C_CYAN}Installed${C_RESET} : ${C_GREEN}${FAOXIMA_VERSION}${C_RESET}"
+    ui_box_line "$C_ORANGE" "$width" "${C_CYAN}Installed${C_RESET} : ${C_GREEN}${installed_version}${C_RESET}"
     [ -n "$latest_line" ] && ui_box_line "$C_ORANGE" "$width" "$latest_line"
     ui_box_line "$C_ORANGE" "$width" "${C_CYAN}GitHub${C_RESET}    : ${C_WHITE}${FAOXIMA_GITHUB}${C_RESET}"
     ui_box_line "$C_ORANGE" "$width" "${C_CYAN}Telegram${C_RESET}  : ${C_WHITE}${FAOXIMA_TELEGRAM}${C_RESET}"
@@ -988,11 +1023,25 @@ grant_file_permissions() {
 }
 
 prompt_version_selection() {
-    local tags=()
-    {
-        mapfile -t tags < <(curl -s "https://api.github.com/repos/${FAOXIMA_REPO}/releases" 2>/dev/null \
-            | grep '"tag_name"' | cut -d'"' -f4)
-    } >&2
+    local tags=() prereleases=() release_json latest_tag current_tag line
+    release_json=$(curl -fsSL "https://api.github.com/repos/${FAOXIMA_REPO}/releases?per_page=100" 2>/dev/null)
+    latest_tag=$(curl -fsSL "https://api.github.com/repos/${FAOXIMA_REPO}/releases/latest" 2>/dev/null \
+        | grep -m1 '"tag_name"' | cut -d'"' -f4)
+
+    while IFS= read -r line; do
+        if [[ "$line" == *'"tag_name"'* ]]; then
+            current_tag=$(printf '%s' "$line" | cut -d'"' -f4)
+        elif [[ -n "$current_tag" && "$line" == *'"prerelease"'* ]]; then
+            tags+=("$current_tag")
+            if [[ "$line" == *true* ]]; then
+                prereleases+=("1")
+            else
+                prereleases+=("0")
+                [ -z "$latest_tag" ] && latest_tag="$current_tag"
+            fi
+            current_tag=""
+        fi
+    done <<< "$release_json"
 
     if [ "${#tags[@]}" -eq 0 ]; then
         ui_err "Could not fetch the release list from GitHub." >&2
@@ -1003,8 +1052,10 @@ prompt_version_selection() {
         printf '\n'
         local i
         for ((i = 0; i < ${#tags[@]}; i++)); do
-            if [ "$i" -eq 0 ]; then
-                printf '  %s%2d)%s %s %s(last)%s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${tags[$i]}" "$C_GREEN" "$C_RESET"
+            if [ "${tags[$i]}" = "$latest_tag" ]; then
+                printf '  %s%2d)%s %s %s(latest)%s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${tags[$i]}" "$C_GREEN" "$C_RESET"
+            elif [ "${prereleases[$i]}" = "1" ]; then
+                printf '  %s%2d)%s %s %s(pre-release)%s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${tags[$i]}" "$C_YELLOW" "$C_RESET"
             else
                 printf '  %s%2d)%s %s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${tags[$i]}"
             fi
@@ -1049,7 +1100,7 @@ install_bot() {
 
     install_docker
 
-    local install_source
+    local install_source version_arg1="${1:-}" version_arg2="${2:-}"
     install_source=$(env_get INSTALL_SOURCE)
     [ -z "$install_source" ] && install_source="manual"
 
@@ -1064,7 +1115,6 @@ install_bot() {
 
     if [ ! -f "$COMPOSE_FILE" ]; then
         install_source="github"
-        local version_arg1="$1" version_arg2="$2"
         if [ -z "$version_arg1" ]; then
             local picked_version
             picked_version=$(prompt_version_selection)
@@ -1209,6 +1259,7 @@ install_bot() {
     env_set "PGID" "33"
     env_set "BOTS_DIR" "$BOTS_DIR"
     env_set "INSTALL_SOURCE" "$install_source"
+    env_set "FAOXIMA_INSTALLED_VERSION" "$(resolve_source_version "$install_source" "$version_arg1" "$version_arg2" "$PROJECT_DIR")"
     ui_ok "Wrote ${ENV_FILE}"
 
     mkdir -p "$NGINX_CONF_DIR" "$NGINX_BOTS_CONF_DIR" "$BOTS_DIR" || { ui_err "Failed to create ${NGINX_CONF_DIR}, ${NGINX_BOTS_CONF_DIR}, or ${BOTS_DIR}."; exit 1; }
@@ -1377,11 +1428,10 @@ install_additional_bot() {
     local bot_dir="${BOTS_DIR}/${botname}"
     mkdir -p "$bot_dir" || { ui_err "Failed to create bot directory ${bot_dir}."; return 1; }
 
-    local main_install_source
+    local main_install_source version_arg1="${1:-}" version_arg2="${2:-}"
     main_install_source=$(env_get INSTALL_SOURCE)
 
     if [ "$main_install_source" = "github" ]; then
-        local version_arg1="$1" version_arg2="$2"
         if [ -z "$version_arg1" ]; then
             local picked_version
             picked_version=$(prompt_version_selection)
@@ -1450,6 +1500,7 @@ TELEGRAM_BOT_TOKEN=${YOUR_BOT_TOKEN}
 TELEGRAM_ADMIN_ID=${YOUR_CHAT_ID}
 PUID=$(env_get PUID)
 PGID=$(env_get PGID)
+FAOXIMA_INSTALLED_VERSION=$(resolve_source_version "$main_install_source" "$version_arg1" "$version_arg2" "$bot_dir")
 EOF
 
     cat > "${BOT_COMPOSE_PREFIX}${botname}.yml" <<EOF
@@ -1736,16 +1787,24 @@ menu_update_additional_bots() {
         return 1
     fi
 
-    local zip_path=""
+    local zip_path="" version_arg1="" version_arg2=""
     if [ "$mode" = "manual" ]; then
         printf '  %s❯%s Path to the update ZIP file: ' "$C_YELLOW" "$C_RESET"
         read -r zip_path
+    else
+        local UPDATE_VERSION_ARG1 UPDATE_VERSION_ARG2
+        if ! select_update_version; then
+            ui_err "No update version was selected."
+            return 1
+        fi
+        version_arg1="$UPDATE_VERSION_ARG1"
+        version_arg2="$UPDATE_VERSION_ARG2"
     fi
 
     local failures=() name
     for name in "${targets[@]}"; do
         ui_action "Updating '${name}'..."
-        if ! update_single_additional_bot "$name" "$mode" "" "" "$zip_path"; then
+        if ! update_single_additional_bot "$name" "$mode" "$version_arg1" "$version_arg2" "$zip_path"; then
             failures+=("$name")
         fi
     done
@@ -1831,6 +1890,19 @@ prompt_update_source() {
         2) printf 'manual' ;;
         *) printf '' ;;
     esac
+}
+
+select_update_version() {
+    local picked_version
+    picked_version=$(prompt_version_selection) || return 1
+    [ -n "$picked_version" ] || return 1
+    if [ "$picked_version" = "beta" ]; then
+        UPDATE_VERSION_ARG1="-beta"
+        UPDATE_VERSION_ARG2=""
+    else
+        UPDATE_VERSION_ARG1="-v"
+        UPDATE_VERSION_ARG2="$picked_version"
+    fi
 }
 
 prepare_update_source_dir() {
@@ -1921,6 +1993,13 @@ update_bot_source() {
         return 1
     fi
 
+    local installed_version
+    installed_version=$(resolve_source_version "$mode" "$version_arg1" "$version_arg2" "$code_dir")
+    file_env_set "${code_dir}/.env" "FAOXIMA_INSTALLED_VERSION" "$installed_version" || {
+        ui_err "Failed to save the installed version for '${label}'."
+        return 1
+    }
+
     ui_ok "'${label}' updated successfully."
     return 0
 }
@@ -1943,10 +2022,18 @@ update_bot() {
         exit 1
     fi
 
-    local zip_path=""
+    local zip_path="" version_arg1="" version_arg2=""
     if [ "$mode" = "manual" ]; then
         printf '  %s❯%s Path to the update ZIP file: ' "$C_YELLOW" "$C_RESET"
         read -r zip_path
+    else
+        local UPDATE_VERSION_ARG1 UPDATE_VERSION_ARG2
+        if ! select_update_version; then
+            ui_err "No update version was selected."
+            exit 1
+        fi
+        version_arg1="$UPDATE_VERSION_ARG1"
+        version_arg2="$UPDATE_VERSION_ARG2"
     fi
 
     local db_name db_user db_pass
@@ -1955,7 +2042,7 @@ update_bot() {
     db_user="$DB_USER"
     db_pass="$DB_PASS"
 
-    if ! update_bot_source "$PROJECT_DIR" "app" "Faoxima Bot" "$mode" "" "" "$zip_path" "$db_name" "$db_user" "$db_pass"; then
+    if ! update_bot_source "$PROJECT_DIR" "app" "Faoxima Bot" "$mode" "$version_arg1" "$version_arg2" "$zip_path" "$db_name" "$db_user" "$db_pass"; then
         exit 1
     fi
 
@@ -3650,9 +3737,16 @@ show_menu() {
         latest_version=$(get_latest_version)
         cache_set "latest_version" "$latest_version"
     fi
-    local latest_line="${C_CYAN}Latest${C_RESET}    : ${C_GREEN}${FAOXIMA_VERSION} (up to date)${C_RESET}"
-    if [ "$latest_version" != "unknown" ] && [ "$latest_version" != "$FAOXIMA_VERSION" ]; then
+    local installed_version latest_line
+    installed_version=$(get_installed_version)
+    if [ "$latest_version" = "unknown" ]; then
+        latest_line="${C_CYAN}Latest${C_RESET}    : ${C_DIM}unknown${C_RESET}"
+    elif [ "${latest_version#v}" = "${installed_version#v}" ]; then
+        latest_line="${C_CYAN}Latest${C_RESET}    : ${C_GREEN}${latest_version} (up to date)${C_RESET}"
+    elif version_is_newer "$latest_version" "$installed_version"; then
         latest_line="${C_CYAN}Latest${C_RESET}    : ${C_YELLOW}${latest_version} (update available!)${C_RESET}"
+    else
+        latest_line="${C_CYAN}Latest${C_RESET}    : ${C_GREEN}${latest_version} (latest official)${C_RESET}"
     fi
 
     local bot_token="" wh_url="" wh_pending=""
