@@ -132,6 +132,7 @@ if (!function_exists('rxNavParent')) {
                 'gettexttonpay'             => 'gw_tonpay',
                 'apicubepay'                => 'gw_cubepay',
                 'getcashcubepay'            => 'gw_cubepay',
+                'getfeecubepay'             => 'gw_cubepay',
                 'getmaincubepay'            => 'gw_cubepay',
                 'getmaxcubepay'             => 'gw_cubepay',
                 'helpcubepay'               => 'gw_cubepay',

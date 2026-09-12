@@ -2066,6 +2066,26 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     savedata("save", "cashback_menu", "cubepay");
     nm_adminInstantReply($from_id, "📌 جامعه هدف این کش‌بک را انتخاب نمایید", rx_cashbackTargetKeyboard(), 'HTML');
     step("getcashtarget", $from_id);
+} elseif ($text == "⚖️ کارمزد کیوب‌پی") {
+    $currentfeecubepay = getPaySettingValue('feecubepay', '0');
+    $textfeecubepay = "⚖️ کارمزد کیوب‌پی را چه کسی بپردازد؟\n\n"
+        . "کیوب‌پی بابت هر تراکنش کارمزدی از کیف پول شما کم می‌کند. اینجا می‌توانید آن هزینه را روی فاکتور بگذارید تا کاربر پرداختش کند:\n\n"
+        . "🔹 صفر (پیش‌فرض): غیرفعال. کارمزد را خودتان می‌پردازید.\n"
+        . "🔹 عدد ۱ تا ۱۰۰: همان درصد به مبلغ فاکتور اضافه می‌شود (اعشار مجاز است، مثلاً 9.9).\n"
+        . "🔹 عدد بالای ۱۰۰: همان مبلغ به تومان به فاکتور اضافه می‌شود.\n\n"
+        . "⚠️ فقط مبلغ پرداختی بزرگ‌تر می‌شود؛ اعتباری که به کاربر داده می‌شود همان مبلغ درخواستی خودش است.\n\n"
+        . "📌 مقدار فعلی: <code>" . htmlspecialchars((string) $currentfeecubepay, ENT_QUOTES, 'UTF-8') . "</code>";
+    nm_adminInstantReply($from_id, $textfeecubepay, $backadmin, 'HTML');
+    step("getfeecubepay", $from_id);
+} elseif ($user['step'] == "getfeecubepay") {
+    $feevalue = str_replace([',', '،'], '', trim($text));
+    if (!preg_match('/^\d+(\.\d{1,2})?$/', $feevalue)) {
+        nm_adminInstantReply($from_id, $textbotlang['Admin']['agent']['invalidvlue'], $backadmin, 'HTML');
+        return;
+    }
+    nm_adminInstantReply($from_id, "✅ کارمزد کیوب‌پی تنظیم گردید.", $cubepay, 'HTML');
+    step("home", $from_id);
+    update("PaySetting", "ValuePay", $feevalue, "NamePay", "feecubepay");
 } elseif ($text == "💰 کش بک plisio") {
     nm_adminInstantReply($from_id, "📌 در این بخش می توانید تعیین کنید کاربر پس از پرداخت چه درصدی به عنوان هدیه به حسابش واریز شود. ( برای غیرفعال کردن این قابلیت عدد صفر ارسال کنید)", $backadmin, 'HTML');
     step("getcashplisio", $from_id);

@@ -1402,6 +1402,33 @@ function cubepayApiToken()
     return trim((string) select("PaySetting", "*", "NamePay", "apicubepay", "select")['ValuePay']);
 }
 
+/**
+ * کارمزد کیوب‌پی از کیف پول فروشنده کم می‌شود. این تابع اجازه می‌دهد آن هزینه
+ * روی فاکتور گذاشته شود تا کاربر پرداختش کند:
+ *
+ *   عدد 0 تا 100  → درصدی که به مبلغ فاکتور اضافه می‌شود (اعشار مجاز، مثلاً 9.9)
+ *   عدد بالای 100 → مبلغ ثابت به تومان
+ *   صفر (پیش‌فرض) → غیرفعال؛ کارمزد را خود فروشنده می‌پردازد
+ *
+ * فقط مبلغ فاکتور درگاه بزرگ‌تر می‌شود. اعتباری که به کاربر داده می‌شود عوض
+ * نمی‌شود، چون payment/cubepay.php با Payment_report.price کار می‌کند که همان
+ * مبلغ درخواستی کاربر است.
+ */
+function cubepayPayableAmount($amount_toman)
+{
+    $amount = (int) $amount_toman;
+    $raw = str_replace([',', '،'], '', (string) getPaySettingValue('feecubepay', '0'));
+    $fee = is_numeric($raw) ? (float) $raw : 0.0;
+
+    if ($fee <= 0 || $amount <= 0) {
+        return $amount;
+    }
+
+    return $fee <= 100
+        ? (int) ceil($amount * (1 + $fee / 100))
+        : $amount + (int) round($fee);
+}
+
 function cubepayCreatePayment($order_id, $amount_toman, $customer_user_id = null, $description = '')
 {
     global $domainhosts;
@@ -1417,7 +1444,7 @@ function cubepayCreatePayment($order_id, $amount_toman, $customer_user_id = null
     $callbackUrl = 'https://' . $domainhosts . '/payment/cubepay.php';
     $requestPayload = [
         'order_id' => (string) $order_id,
-        'price_amount' => (int) $amount_toman,
+        'price_amount' => cubepayPayableAmount($amount_toman),
         'callback_url' => $callbackUrl,
         'redirect_after_payment' => false,
     ];

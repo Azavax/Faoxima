@@ -831,6 +831,7 @@ if (!empty($datain) && in_array($from_id, $admin_ids ?? [])) {
         'cubepay_name'     => "🏷️ نام نمایشی درگاه کیوب‌پی",
         'cubepay_apikey'   => "🔑 ثبت توکن API کیوب‌پی",
         'cubepay_cashback' => "💰 کش بک کیوب‌پی",
+        'cubepay_fee'      => "⚖️ کارمزد کیوب‌پی",
         'cubepay_min'      => "⬇️ کف کیوب‌پی",
         'cubepay_max'      => "⬆️ سقف کیوب‌پی",
         'cubepay_edu'      => "📚 آموزش کیوب‌پی",
