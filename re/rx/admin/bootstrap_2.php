@@ -344,6 +344,7 @@ if (in_array($text, $textadmin) || $datain == "admin") {
             'helptonpay' => $tonpay,
             'apicubepay' => $cubepay,
             'getcashcubepay' => $cubepay,
+            'getfeecubepay' => $cubepay,
             'getmaincubepay' => $cubepay,
             'getmaxcubepay' => $cubepay,
             'helpcubepay' => $cubepay,

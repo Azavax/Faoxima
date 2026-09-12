@@ -582,6 +582,7 @@ $cubepay = rx_kb_encode([
         [rx_kb_style(['text' => "🏷️ نام نمایشی درگاه کیوب‌پی", 'callback_data' => 'cubepay_name'], 'cubepay_name', $_rx_gw_styles)],
         [rx_kb_style(['text' => "🔑 ثبت توکن API کیوب‌پی", 'callback_data' => 'cubepay_apikey'], 'cubepay_apikey', $_rx_gw_styles)],
         [rx_kb_style(['text' => "💰 کش بک کیوب‌پی", 'callback_data' => 'cubepay_cashback'], 'cubepay_cashback', $_rx_gw_styles)],
+        [rx_kb_style(['text' => "⚖️ کارمزد کیوب‌پی", 'callback_data' => 'cubepay_fee'], 'cubepay_fee', $_rx_gw_styles)],
         [
             rx_kb_style(['text' => "⬇️ کف کیوب‌پی", 'callback_data' => 'cubepay_min'], 'cubepay_min', $_rx_gw_styles),
             rx_kb_style(['text' => "⬆️ سقف کیوب‌پی", 'callback_data' => 'cubepay_max'], 'cubepay_max', $_rx_gw_styles)

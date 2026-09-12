@@ -1957,6 +1957,7 @@ try {
         ['statuscubepay', 'offcubepay'],
         ['apicubepay', ''],
         ['chashbackcubepay', '0'],
+        ['feecubepay', '0'],
         ['minbalancecubepay', $main],
         ['maxbalancecubepay', $max],
         ['helpcubepay', '2'],
