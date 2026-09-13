@@ -812,6 +812,7 @@ if (!empty($datain) && in_array($from_id, $admin_ids ?? [])) {
         'trnado_name'     => "🏷️ نام نمایشی درگاه ترونادو",
         'trnado_apikey'      => "🔑 ثبت API Key ترونادو",
         'trnado_signingkey'  => "🔏 ثبت کلید امضای IPN ترونادو",
+        'trnado_wallet'      => "💼 آدرس کیف پول ترونادو",
         'trnado_wage'        => "⚖️ درصد کارمزد کسب‌وکار",
         'trnado_cashback' => "💰 کش بک ترونادو",
         'trnado_min'      => "⬇️ کف ترونادو",

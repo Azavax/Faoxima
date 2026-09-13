@@ -720,22 +720,68 @@ function tronadoNormalizeOrderTokenResponse($decoded)
     return $decoded;
 }
 
-function tronadoResolveWalletAddress()
+// Base58Check TRON address: 25 bytes, version byte 0x41, double-SHA-256 checksum - the rule
+// Tronado's GetOrderToken enforces. A shape regex cannot catch a typo or a re-cased address.
+// Pure PHP (no gmp/bcmath).
+function tronadoIsValidTronAddress($address)
 {
-    $walletSetting = select("PaySetting", "*", "NamePay", "walletaddress", "select");
-    $walletaddress = trim((string) ($walletSetting['ValuePay'] ?? ''));
-    if ($walletaddress !== '') {
-        return $walletaddress;
+    if (!is_string($address)) {
+        return false;
+    }
+    $address = trim($address);
+    if (strlen($address) !== 34 || $address[0] !== 'T') {
+        return false;
     }
 
-    if (function_exists('crypto_active_wallet')) {
-        $activeWallet = crypto_active_wallet('TRON');
-        if (is_array($activeWallet)) {
-            return trim((string) ($activeWallet['wallet_address'] ?? ''));
+    $alphabet = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz';
+    $bytes = [];
+    for ($i = 0; $i < 34; $i++) {
+        $carry = strpos($alphabet, $address[$i]);
+        if ($carry === false) {
+            return false;
+        }
+        for ($j = 0, $n = count($bytes); $j < $n; $j++) {
+            $carry += $bytes[$j] * 58;
+            $bytes[$j] = $carry & 0xFF;
+            $carry >>= 8;
+        }
+        while ($carry > 0) {
+            $bytes[] = $carry & 0xFF;
+            $carry >>= 8;
         }
     }
+    $bytes = array_reverse($bytes);
+    if (count($bytes) !== 25 || $bytes[0] !== 0x41) {
+        return false;
+    }
 
-    return '';
+    $raw = '';
+    foreach ($bytes as $byte) {
+        $raw .= chr($byte);
+    }
+
+    return hash_equals(substr(hash('sha256', hash('sha256', substr($raw, 0, 21), true), true), 0, 4), substr($raw, 21, 4));
+}
+
+// The offline hash-checker matches a payment's recipient against its TRX wallet case-insensitively
+// and does not know Tronado's payout transactions. If Tronado paid into that same wallet, one Tronado
+// payout could be submitted again as proof for an offline TRX invoice and credited twice - so the two
+// wallets must never be the same address.
+function tronadoWalletsCollide($tronadoWallet, $offlineTrxWallet)
+{
+    $a = trim((string) $tronadoWallet);
+    $b = trim((string) $offlineTrxWallet);
+    return $a !== '' && $b !== '' && strcasecmp($a, $b) === 0;
+}
+
+function tronadoResolveWalletAddress()
+{
+    // Tronado pays into its own wallet only. There is deliberately no fallback to the crypto
+    // wallets section: that TRX wallet is also watched by the offline hash-checker, which does not
+    // know Tronado's payout transactions, so a buyer could submit a Tronado payout hash as proof
+    // for an offline invoice and be credited twice for one payment.
+    $walletSetting = select("PaySetting", "*", "NamePay", "walletaddress", "select");
+    return trim((string) ($walletSetting['ValuePay'] ?? ''));
 }
 
 function tronadoCurlJson($endpoint, array $payload, $apiKey = null)
@@ -821,7 +867,7 @@ function trnado($order_id, $price)
     if ($walletaddress === '') {
         return [
             'success' => false,
-            'error' => 'آدرس کیف پول تنظیم نشده است',
+            'error' => 'آدرس کیف پول ترونادو تنظیم نشده است. از منوی ترونادو «💼 آدرس کیف پول ترونادو» آن را ثبت کنید.',
         ];
     }
 
@@ -854,9 +900,14 @@ function trnado($order_id, $price)
     $decodedResponse = tronadoNormalizeOrderTokenResponse($rawDecodedResponse);
 
     if (!is_array($decodedResponse) || !array_key_exists('Token', $decodedResponse) || trim((string) $decodedResponse['Token']) === '') {
+        $errorText = is_array($decodedResponse) ? (string) ($decodedResponse['ErrorMessage'] ?? 'پاسخ نامعتبر از سرویس ترونادو') : 'پاسخ نامعتبر از سرویس ترونادو';
+        if (!tronadoIsValidTronAddress($walletaddress)) {
+            // Most often an address saved upper-cased by an older version; Base58 is case sensitive.
+            $errorText .= ' | آدرس کیف پول ترونادو ذخیره‌شده معتبر نیست؛ از منوی ترونادو «💼 آدرس کیف پول ترونادو» آن را دوباره ثبت کنید.';
+        }
         $errorPayload = [
             'success' => false,
-            'error' => is_array($decodedResponse) ? ($decodedResponse['ErrorMessage'] ?? 'پاسخ نامعتبر از سرویس ترونادو') : 'پاسخ نامعتبر از سرویس ترونادو',
+            'error' => $errorText,
             'url' => $endpoint,
         ];
 

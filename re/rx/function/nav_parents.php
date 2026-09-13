@@ -123,7 +123,7 @@ if (!function_exists('rxNavParent')) {
                 'getmaaxiranpay3'           => 'gw_trnado',
                 'gethelpiranpay3'           => 'gw_trnado',
                 'getcashiranpay3'           => 'gw_trnado',
-                'walletaddresssiranpay'     => 'finance',
+                'walletaddresssiranpay'     => 'gw_trnado',
                 'apitonpay'                 => 'gw_tonpay',
                 'getcashtonpay'             => 'gw_tonpay',
                 'getmaintonpay'             => 'gw_tonpay',
