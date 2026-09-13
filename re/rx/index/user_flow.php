@@ -138,7 +138,7 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
     $username_ac = strtolower($username_ac);
     $DataUserOut = $ManagePanel->DataUser($marzban_list_get['name_panel'], $username_ac);
     $random_number = rand(1000000, 9999999);
-    if (isset($DataUserOut['username']) || in_array($username_ac, $usernameinvoice)) {
+    if (isset($DataUserOut['username']) || rxTableValueExists('invoice', 'username', $username_ac)) {
         $username_ac = $random_number . "_" . $username_ac;
     }
     $datac = array(
@@ -1616,7 +1616,7 @@ https://t.me/$usernamebot?start={$user['codeInvitation']}";
     $requestedUsername_ac = $username_ac;
     $DataUserOut = $ManagePanel->DataUser($marzban_list_get['name_panel'], $username_ac);
     $random_number = rand(1000000, 9999999);
-    $usernameWasRenamed = isset($DataUserOut['username']) || in_array($username_ac, $usernameinvoice);
+    $usernameWasRenamed = isset($DataUserOut['username']) || rxTableValueExists('invoice', 'username', $username_ac);
     if ($usernameWasRenamed) {
         $username_ac = $random_number . "_" . $username_ac;
     }
@@ -1741,14 +1741,14 @@ https://t.me/$usernamebot?start={$user['codeInvitation']}";
     }
     $username_ac = strtolower($user['Processing_value_tow']);
     $DataUserOut = $ManagePanel->DataUser($marzban_list_get['name_panel'], $username_ac);
-    if (isset($DataUserOut['username']) || in_array($username_ac, $usernameinvoice)) {
+    if (isset($DataUserOut['username']) || rxTableValueExists('invoice', 'username', $username_ac)) {
         sendmessage($from_id, $datatextbot['dyn_errors_restart_buy_process_short'] ?? "❌ لطفا مراحل خرید را مجددا انجام دهید", null, 'HTML');
         return;
     }
     $date = time();
     $randomString = bin2hex(random_bytes(4));
     $random_number = rand(1000000, 9999999);
-    if (in_array($randomString, $id_invoice)) {
+    if (rxTableValueExists('invoice', 'id_invoice', $randomString)) {
         $randomString = $random_number . $randomString;
     }
     if ($marzban_list_get['type'] == "Manualsale") {
@@ -2110,7 +2110,7 @@ $textonebuy
         return;
     }
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $userdate['name_panel'], "select");
-    if (!in_array($text, $SellDiscount)) {
+    if (!rxTableValueExists('DiscountSell', 'codeDiscount', $text)) {
         sendmessage($from_id, $textbotlang['users']['Discount']['notcode'], $backuser, 'HTML');
         return;
     }
@@ -2546,11 +2546,11 @@ $textonebuy
         $__bulkItemCharge = $__bulkUnitCharge + (($i == $__bulkQty - 1) ? $__bulkUnitChargeRemainder : 0);
         $random_number = rand(1000000, 9999999);
         $username_acc = $username_ac . "_" . $i;
-        if (isset($usernameinvoice) && is_array($usernameinvoice) && in_array($username_acc, $usernameinvoice)) {
+        if (rxTableValueExists('invoice', 'username', $username_acc)) {
             $username_acc = $random_number . "_" . $username_acc;
         }
         $randomString = bin2hex(random_bytes(4));
-        if (in_array($randomString, $id_invoice)) {
+        if (rxTableValueExists('invoice', 'id_invoice', $randomString)) {
             $randomString = $random_number . $randomString;
         }
 
@@ -2597,7 +2597,7 @@ $textonebuy
             continue;
         }
         $get_username_Check = $ManagePanel->DataUser($marzban_list_get['name_panel'], $username_acc);
-        if (isset($get_username_Check['username']) || (isset($usernameinvoice) && is_array($usernameinvoice) && in_array($username_acc, $usernameinvoice))) {
+        if (isset($get_username_Check['username']) || rxTableValueExists('invoice', 'username', $username_acc)) {
             $username_acc = $random_number . "_" . $username_acc;
         }
         $dataoutput = $ManagePanel->createUser($marzban_list_get['name_panel'], $info_product['code_product'], $username_acc, $datac);
@@ -3205,7 +3205,7 @@ $textonebuy
         step('home', $from_id);
         return;
     }
-    if (!in_array($text, $SellDiscount)) {
+    if (!rxTableValueExists('DiscountSell', 'codeDiscount', $text)) {
         sendmessage($from_id, $textbotlang['users']['Discount']['notcode'], $backuser, 'HTML');
         return;
     }

@@ -59,6 +59,39 @@ if (!function_exists('rxSafeAddColumn')) {
     }
 }
 
+if (!function_exists('rxSafeModifyColumn')) {
+    function rxSafeModifyColumn($connection, $tableName, $columnName, $definition, $expectedType, $expectedNullable, $expectedDefault, $expectedCollation = null)
+    {
+        $tableName = preg_replace('/[^A-Za-z0-9_]/', '', (string) $tableName);
+        $columnName = preg_replace('/[^A-Za-z0-9_]/', '', (string) $columnName);
+        if ($tableName === '' || $columnName === '' || !rxTableColumnExists($connection, $tableName, $columnName)) {
+            return;
+        }
+        try {
+            $safeColumn = method_exists($connection, 'real_escape_string') ? $connection->real_escape_string($columnName) : $columnName;
+            $result = $connection->query("SHOW FULL COLUMNS FROM `{$tableName}` LIKE '{$safeColumn}'");
+            $row = ($result && isset($result->num_rows) && $result->num_rows > 0) ? $result->fetch_assoc() : null;
+            if (!is_array($row)) {
+                return;
+            }
+            $typeMatches = strtolower((string) ($row['Type'] ?? '')) === strtolower((string) $expectedType);
+            $nullableMatches = strtoupper((string) ($row['Null'] ?? '')) === ($expectedNullable ? 'YES' : 'NO');
+            $actualDefault = array_key_exists('Default', $row) ? $row['Default'] : null;
+            $defaultMatches = $expectedDefault === null
+                ? $actualDefault === null
+                : $actualDefault !== null && (string) $actualDefault === (string) $expectedDefault;
+            $collationMatches = $expectedCollation === null
+                || strtolower((string) ($row['Collation'] ?? '')) === strtolower((string) $expectedCollation);
+            if ($typeMatches && $nullableMatches && $defaultMatches && $collationMatches) {
+                return;
+            }
+            $connection->query("ALTER TABLE `{$tableName}` MODIFY COLUMN `{$columnName}` {$definition}");
+        } catch (Throwable $e) {
+            error_log("[table.php] rxSafeModifyColumn {$tableName}.{$columnName}: " . $e->getMessage());
+        }
+    }
+}
+
 if (!function_exists('rxSafeAddIndex')) {
     function rxSafeAddIndex($connection, $tableName, $indexName, $columnName, $prefix = null)
     {
@@ -279,28 +312,28 @@ try {
         addFieldToTable($tableName, 'hide_mini_app_instruction', '0', "VARCHAR(20)");
         addFieldToTable($tableName, 'Processing_value_price', null, "VARCHAR(100)");
         addFieldToTable($tableName, 'last_seen_notification_id', null, "INT");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN limit_usertest    INT      NOT NULL DEFAULT 1");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN roll_Status       BOOL          NOT NULL DEFAULT 0");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN username          VARCHAR(500)  NOT NULL DEFAULT ''");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN Processing_value  TEXT          CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN Processing_value_one TEXT        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN Processing_value_tow TEXT        CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN Processing_value_four TEXT       CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN step              VARCHAR(500)  NOT NULL DEFAULT 'home'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN number            VARCHAR(300)  NOT NULL DEFAULT 'none'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN Balance           INT      NOT NULL DEFAULT 0");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN User_Status       VARCHAR(500)  NOT NULL DEFAULT 'Active'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN pagenumber        INT       NOT NULL DEFAULT 0");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN message_count     VARCHAR(100)  NOT NULL DEFAULT '0'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN last_message_time VARCHAR(100)  NOT NULL DEFAULT '0'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN agent             VARCHAR(100)  NOT NULL DEFAULT 'f'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN affiliatescount   VARCHAR(100)  NOT NULL DEFAULT '0'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN affiliates        VARCHAR(100)  NOT NULL DEFAULT '0'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN namecustom        VARCHAR(300)  NOT NULL DEFAULT 'none'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN number_username   VARCHAR(300)  NOT NULL DEFAULT '100'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN register          VARCHAR(100)  NOT NULL DEFAULT 'none'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN verify            VARCHAR(100)  NOT NULL DEFAULT '1'");
-        $connect->query("ALTER TABLE `{$tableName}` MODIFY COLUMN cardpayment       VARCHAR(100)  NOT NULL DEFAULT '1'");
+        rxSafeModifyColumn($connect, $tableName, 'limit_usertest', 'INT NOT NULL DEFAULT 1', 'int', false, '1');
+        rxSafeModifyColumn($connect, $tableName, 'roll_Status', 'BOOL NOT NULL DEFAULT 0', 'tinyint(1)', false, '0');
+        rxSafeModifyColumn($connect, $tableName, 'username', "VARCHAR(500) NOT NULL DEFAULT ''", 'varchar(500)', false, '', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'Processing_value', 'TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL', 'text', true, null, 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'Processing_value_one', 'TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL', 'text', true, null, 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'Processing_value_tow', 'TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL', 'text', true, null, 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'Processing_value_four', 'TEXT CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL', 'text', true, null, 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'step', "VARCHAR(500) NOT NULL DEFAULT 'home'", 'varchar(500)', false, 'home', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'number', "VARCHAR(300) NOT NULL DEFAULT 'none'", 'varchar(300)', false, 'none', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'Balance', 'INT NOT NULL DEFAULT 0', 'int', false, '0');
+        rxSafeModifyColumn($connect, $tableName, 'User_Status', "VARCHAR(500) NOT NULL DEFAULT 'Active'", 'varchar(500)', false, 'Active', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'pagenumber', 'INT NOT NULL DEFAULT 0', 'int', false, '0');
+        rxSafeModifyColumn($connect, $tableName, 'message_count', "VARCHAR(100) NOT NULL DEFAULT '0'", 'varchar(100)', false, '0', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'last_message_time', "VARCHAR(100) NOT NULL DEFAULT '0'", 'varchar(100)', false, '0', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'agent', "VARCHAR(100) NOT NULL DEFAULT 'f'", 'varchar(100)', false, 'f', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'affiliatescount', "VARCHAR(100) NOT NULL DEFAULT '0'", 'varchar(100)', false, '0', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'affiliates', "VARCHAR(100) NOT NULL DEFAULT '0'", 'varchar(100)', false, '0', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'namecustom', "VARCHAR(300) NOT NULL DEFAULT 'none'", 'varchar(300)', false, 'none', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'number_username', "VARCHAR(300) NOT NULL DEFAULT '100'", 'varchar(300)', false, '100', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'register', "VARCHAR(100) NOT NULL DEFAULT 'none'", 'varchar(100)', false, 'none', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'verify', "VARCHAR(100) NOT NULL DEFAULT '1'", 'varchar(100)', false, '1', 'utf8mb4_unicode_ci');
+        rxSafeModifyColumn($connect, $tableName, 'cardpayment', "VARCHAR(100) NOT NULL DEFAULT '1'", 'varchar(100)', false, '1', 'utf8mb4_unicode_ci');
 
 
         addFieldToTable($tableName, 'antispam_window_start', '0', "VARCHAR(20)");
@@ -3372,13 +3405,30 @@ try {
 
 
 try {
+    $connect->query("CREATE TABLE IF NOT EXISTS processed_updates (
+        update_id BIGINT UNSIGNED PRIMARY KEY,
+        processed_at INT UNSIGNED NOT NULL,
+        KEY idx_processed_updates_time (processed_at)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+    rxSafeAddIndex($connect, 'processed_updates', 'idx_processed_updates_time', 'processed_at');
+
+    $connect->query("CREATE TABLE IF NOT EXISTS cron_runtime_state (
+        job_key VARCHAR(255) PRIMARY KEY,
+        last_run BIGINT(20) UNSIGNED NOT NULL DEFAULT 0,
+        unit VARCHAR(20) NOT NULL DEFAULT 'minute',
+        value INT(10) UNSIGNED NOT NULL DEFAULT 1,
+        enabled TINYINT(1) NOT NULL DEFAULT 1,
+        created_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci");
+
     $rxOwnTables = [
         'user','help','setting','admin','channels','marzban_panel','remnawave_users','remnawave_nodes_cache',
         'product','invoice','Payment_report','Discount','Giftcodeconsumed','textbot','PaySetting','DiscountSell',
         'affiliates','shopSetting','cancel_service','service_other','card_number','Requestagent','topicid',
         'manualsell','departman','support_message','wheel_list','botsaz','app','logs_api','category',
         'reagent_report','crypto_wallets','crypto_verified_hashes','crypto_sender_locks','premium_emojis',
-        'nm_config_stock','nm_stock_shelves','nm_config_stock_log','nm_stock_product_map','cron_runtime_state',
+        'nm_config_stock','nm_stock_shelves','nm_config_stock_log','nm_stock_product_map','cron_runtime_state','processed_updates',
     ];
     $rxEngRes = $connect->query("SELECT TABLE_NAME, ENGINE FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND ENGINE IS NOT NULL AND ENGINE <> 'InnoDB'");
     if ($rxEngRes) {

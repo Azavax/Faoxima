@@ -1004,7 +1004,7 @@ if (preg_match('/^sendresidcart-(.*)/', $datain, $dataget)) {
     step('get_code_user', $from_id);
 } elseif ($user['step'] == "get_code_user") {
     if (!isset($update['message']) && empty($text)) { return; }
-    if (!in_array($text, $code_Discount)) {
+    if (!rxTableValueExists('Discount', 'code', $text)) {
         sendmessage($from_id, $textbotlang['users']['Discount']['notcode'], null, 'HTML');
         return;
     }

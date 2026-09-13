@@ -14,6 +14,9 @@ if (!defined('RX_CRON_INIT_LOADED')) {
     @ini_set('memory_limit', '256M');
     @ini_set('display_errors', 0);
     @ini_set('display_startup_errors', 0);
+    if (!defined('FAOXIMA_LAZY_MYSQLI')) {
+        define('FAOXIMA_LAZY_MYSQLI', true);
+    }
 
 
     if (function_exists('fastcgi_finish_request') && PHP_SAPI !== 'cli') {
@@ -26,18 +29,6 @@ if (!defined('RX_CRON_INIT_LOADED')) {
         @flush();
         @fastcgi_finish_request();
     }
-}
-
-if (!function_exists('rx_redis_is_active')) {
-    $rxCronRedisConfig = __DIR__ . '/../config.php';
-    $rxCronRedisClient = __DIR__ . '/../re/rx/function/redis_client.php';
-    if (@is_readable($rxCronRedisConfig)) {
-        @require_once $rxCronRedisConfig;
-    }
-    if (@is_readable($rxCronRedisClient)) {
-        @require_once $rxCronRedisClient;
-    }
-    unset($rxCronRedisConfig, $rxCronRedisClient);
 }
 
 if (!function_exists('rx_cron_runtime_dir')) {
@@ -167,6 +158,10 @@ if (!function_exists('rx_cron_boot')) {
             });
         }
 
+        if ($useDbSlot && function_exists('rx_cron_db_slot') && !rx_cron_db_slot()) {
+            exit;
+        }
+
         if (function_exists('rx_redis_is_active') && rx_redis_is_active()) {
             $rxRedisLockKey = 'faoxima:cronlock:' . $rxLockName;
             $rxRedisLockToken = uniqid('', true);
@@ -179,10 +174,6 @@ if (!function_exists('rx_cron_boot')) {
                     rx_redis_release_lock($rxRedisLockKey, $rxRedisLockToken);
                 });
             }
-        }
-
-        if ($useDbSlot && function_exists('rx_cron_db_slot') && !rx_cron_db_slot()) {
-            exit;
         }
 
         if (function_exists('rx_cron_deadline')) {
@@ -319,8 +310,8 @@ if (!function_exists('rx_cron_read_profile')) {
             'profile'           => 'shared',
             'cron_db_budget'    => 6,
             'cron_time_budget'  => 22,
-            'broadcast_workers' => 2,
-            'payment_workers'   => 2,
+            'broadcast_workers' => 1,
+            'payment_workers'   => 1,
         ];
         $rxOptCfg = dirname(__DIR__) . DIRECTORY_SEPARATOR . 'optimization_config.php';
         if (@is_file($rxOptCfg)) {

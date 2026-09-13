@@ -444,7 +444,6 @@ if (!function_exists('ensureCronRuntimeStateTable')) {
 if (!function_exists('loadCronRuntimeState')) {
     function loadCronRuntimeState(PDO $pdo): array
     {
-        ensureCronRuntimeStateTable($pdo);
         $state = [];
         $stmt = $pdo->query('SELECT job_key, last_run FROM cron_runtime_state');
         while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) $state[(string) $row['job_key']] = (int) $row['last_run'];
@@ -456,9 +455,13 @@ if (!function_exists('setCronJobLastRun')) {
     function setCronJobLastRun(PDO $pdo, string $jobKey, int $timestamp): void
     {
         if (trim($jobKey) === '') return;
-        ensureCronRuntimeStateTable($pdo);
-        $stmt = $pdo->prepare('INSERT INTO cron_runtime_state (job_key, last_run) VALUES (:job_key, :last_run) ON DUPLICATE KEY UPDATE last_run = VALUES(last_run)');
-        $stmt->execute([':job_key' => $jobKey, ':last_run' => $timestamp]);
+        $definition = getCronJobDefinitions()[$jobKey] ?? [];
+        $default = $definition['default'] ?? ['unit' => 'minute', 'value' => 1];
+        $unit = (string) ($default['unit'] ?? 'minute');
+        $value = max(1, (int) ($default['value'] ?? 1));
+        $enabled = $unit === 'disabled' ? 0 : 1;
+        $stmt = $pdo->prepare('INSERT INTO cron_runtime_state (job_key, last_run, unit, value, enabled) VALUES (:job_key, :last_run, :unit, :value, :enabled) ON DUPLICATE KEY UPDATE last_run = VALUES(last_run)');
+        $stmt->execute([':job_key' => $jobKey, ':last_run' => $timestamp, ':unit' => $unit, ':value' => $value, ':enabled' => $enabled]);
     }
 }
 
@@ -470,12 +473,6 @@ if (!function_exists('loadCronSchedules')) {
         $pdo = getDatabaseConnection();
         if (!($pdo instanceof PDO)) return $schedules;
         try {
-            ensureCronRuntimeStateTable($pdo);
-            foreach ($definitions as $key => $definition) {
-                $default = $definition['default'] ?? ['unit' => 'minute', 'value' => 1];
-                $stmt = $pdo->prepare('INSERT IGNORE INTO cron_runtime_state (job_key, unit, value, enabled) VALUES (:job_key, :unit, :value, 1)');
-                $stmt->execute([':job_key' => $key, ':unit' => $default['unit'], ':value' => (int) $default['value']]);
-            }
             $stmt = $pdo->query('SELECT job_key, unit, value, enabled FROM cron_runtime_state');
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                 $jobKey = trim((string) ($row['job_key'] ?? ''));

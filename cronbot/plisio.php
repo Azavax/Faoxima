@@ -9,6 +9,8 @@ if (empty($ctx['db_ready'])) { return; }
 require_once __DIR__ . '/../lib/PaymentConfirm.php';
 
 global $connect, $pdo, $setting;
+$connect = function_exists('getMysqliConnection') ? getMysqliConnection() : null;
+if (!($connect instanceof mysqli)) { return; }
 $setting = $ctx['setting'];
 $paymentreports = $ctx['paymentreports'];
 $ManagePanel = $ctx['managePanel'];

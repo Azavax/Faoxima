@@ -1171,27 +1171,43 @@ function languagechange($path_dir)
     $rx_candidates[] = __DIR__ . DIRECTORY_SEPARATOR . 'text.json';
     $rx_candidates[] = dirname(__DIR__, 3) . DIRECTORY_SEPARATOR . 'text.json';
 
-    $rx_raw = null;
+    $rx_source = null;
     foreach ($rx_candidates as $rx_candidate) {
         if (!is_string($rx_candidate) || $rx_candidate === '') continue;
         if (!@file_exists($rx_candidate)) continue;
-        $rx_attempt = @file_get_contents($rx_candidate);
-        if ($rx_attempt !== false && $rx_attempt !== '') {
-            $rx_raw = $rx_attempt;
+        if (@is_readable($rx_candidate)) {
+            $rx_source = $rx_candidate;
             break;
         }
     }
-    if ($rx_raw === null) {
+    if ($rx_source === null) {
         return [];
     }
 
-    $rx_decoded = json_decode($rx_raw, true);
+    $rx_decoded = null;
+    $rx_cache_key = 'faoxima:language:' . md5((string) @realpath($rx_source) . '|' . (int) @filemtime($rx_source) . '|' . (int) @filesize($rx_source));
+    if (function_exists('apcu_fetch') && filter_var((string) ini_get('apc.enabled'), FILTER_VALIDATE_BOOLEAN)) {
+        $rx_cached = apcu_fetch($rx_cache_key, $rx_cache_hit);
+        if ($rx_cache_hit && is_array($rx_cached)) {
+            $rx_decoded = $rx_cached;
+        }
+    }
+    if (!is_array($rx_decoded)) {
+        $rx_raw = @file_get_contents($rx_source);
+        if ($rx_raw === false || $rx_raw === '') {
+            return [];
+        }
+        $rx_decoded = json_decode($rx_raw, true);
+        if (is_array($rx_decoded) && function_exists('apcu_store') && filter_var((string) ini_get('apc.enabled'), FILTER_VALIDATE_BOOLEAN)) {
+            @apcu_store($rx_cache_key, $rx_decoded, 3600);
+        }
+    }
     if (!is_array($rx_decoded)) {
         return [];
     }
 
-    $rx_setting = null;
-    if (function_exists('select')) {
+    $rx_setting = isset($GLOBALS['setting']) && is_array($GLOBALS['setting']) ? $GLOBALS['setting'] : null;
+    if ($rx_setting === null && function_exists('select')) {
         try {
             $rx_setting = select("setting", "*");
         } catch (\Throwable $rx_setting_err) {
@@ -1222,6 +1238,7 @@ function languagechange($path_dir)
         try {
             $rx_overlay_rows = select('textbot', '*', null, null, 'fetchAll');
             if (is_array($rx_overlay_rows)) {
+                $GLOBALS['_rx_textbot_rows'] = $rx_overlay_rows;
                 foreach ($rx_overlay_rows as $rx_overlay_row) {
                     $rx_overlay_id = (string) ($rx_overlay_row['id_text'] ?? '');
                     if (strpos($rx_overlay_id, 'jsontext.') !== 0) {

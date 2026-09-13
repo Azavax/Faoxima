@@ -6,6 +6,9 @@ $new_marzban = isset($new_marzban) ? $new_marzban : false;
 ini_set('default_charset', 'UTF-8');
 ini_set('error_log', 'error_log');
 ini_set('memory_limit', '-1');
+if (!defined('FAOXIMA_LAZY_MYSQLI')) {
+    define('FAOXIMA_LAZY_MYSQLI', true);
+}
 require_once 'config.php';
 require_once REFACTORED_LEGACY_ROOT . '/lib/WebhookAuth.php';
 FaoximaWebhookAuth::enforce((string) ($APIKEY ?? ''));
@@ -16,6 +19,7 @@ require_once 'keyboard.php';
 require_once 'vendor/autoload.php';
 require_once 'panels.php';
 require_once 'infocard.php';
+$setting = select("setting", "*");
 $textbotlang = languagechange('text.json');
 if ($is_bot)
     return;
@@ -53,7 +57,6 @@ if ($Chat_type === "supergroup" && isset($update['message'])) {
 if (isset($chat_member))
     return;
 $first_name = sanitizeUserName($first_name);
-$setting = select("setting", "*");
 if (!is_array($setting)) {
     $rxSettingMissingMarker = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'rx_setting_missing.flag';
     if (!is_file($rxSettingMissingMarker) || (time() - (int) @filemtime($rxSettingMissingMarker)) > 3600) {
@@ -232,17 +235,9 @@ if (
         return;
     }
 }
-$helpdata = select("help", "*");
-$datatextbotget = select("textbot", "*", null, null, "fetchAll");
-$id_invoice = select("invoice", "id_invoice", null, null, "FETCH_COLUMN");
-$usernameinvoice = select("invoice", "username", null, null, "FETCH_COLUMN");
-$code_Discount = select("Discount", "code", null, null, "FETCH_COLUMN");
-$marzban_list = select("marzban_panel", "name_panel", null, null, "FETCH_COLUMN");
-$name_product = select("product", "name_product", null, null, "FETCH_COLUMN");
-$SellDiscount = select("DiscountSell", "codeDiscount", null, null, "FETCH_COLUMN");
-$channels_id = select("channels", "link", null, null, "FETCH_COLUMN", ['cache' => false]);
-$pricepayment = select("Payment_report", "price", null, null, "FETCH_COLUMN");
-$listcard = select("card_number", "cardnumber", null, null, "FETCH_COLUMN");
+$datatextbotget = isset($GLOBALS['_rx_textbot_rows']) && is_array($GLOBALS['_rx_textbot_rows'])
+    ? $GLOBALS['_rx_textbot_rows']
+    : select("textbot", "*", null, null, "fetchAll");
 $datatxtbot = array();
 $topic_id = select("topicid", "*", null, null, "fetchAll");
 $statusnote = false;
@@ -284,6 +279,26 @@ if (!function_exists('createForumTopicIfMissing')) {
         $channelId = trim((string)$channelId);
         if ($channelId === '' || $channelId === '0') {
             return;
+        }
+
+        $marker = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'faoxima_topic_' . md5($channelId . '|' . $reportKey) . '.lock';
+        $markerExisted = is_file($marker);
+        $markerHandle = @fopen($marker, 'c');
+        if ($markerHandle !== false) {
+            if (!@flock($markerHandle, LOCK_EX)) {
+                @fclose($markerHandle);
+                return;
+            }
+            clearstatcache(true, $marker);
+            $lastAttempt = (int) @filemtime($marker);
+            if ($markerExisted && $lastAttempt > 0 && (time() - $lastAttempt) < 3600) {
+                @flock($markerHandle, LOCK_UN);
+                @fclose($markerHandle);
+                return;
+            }
+            @touch($marker);
+            @flock($markerHandle, LOCK_UN);
+            @fclose($markerHandle);
         }
 
         $response = telegram('createForumTopic', [
@@ -1035,7 +1050,11 @@ if ($text == "/start" || $datain == "start" || $text == "start") {
     step('home', $from_id);
     rx_send_banner_message($from_id, 'start', $datatextbot['text_start'], $keyboard, "html");
     return;
-} elseif ($text == "version") {
+}
+if ((!isset($connect) || !($connect instanceof mysqli)) && function_exists('getMysqliConnection')) {
+    $connect = getMysqliConnection();
+}
+if ($text == "version") {
     sendmessage($from_id, $version, null, 'html');
 } elseif ($text == $textbotlang['users']['backbtn'] || $datain == "backuser" || $datain == "admin_back") {
     if ($datain == "backuser" || $datain == "admin_back")
@@ -3117,7 +3136,7 @@ $nameconfig";
     $userdate = json_decode($user['Processing_value'], true);
     $nameloc = select("invoice", "*", "id_invoice", $userdate['id_invoice'], "select");
     $marzban_list_get = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
-    if (!in_array($text, $SellDiscount)) {
+    if (!rxTableValueExists('DiscountSell', 'codeDiscount', $text)) {
         sendmessage($from_id, $textbotlang['users']['Discount']['notcode'], $backuser, 'HTML');
         return;
     }
@@ -3651,7 +3670,7 @@ $nameconfig";
         step('home', $from_id);
         return;
     }
-    if (!in_array($text, $SellDiscount)) {
+    if (!rxTableValueExists('DiscountSell', 'codeDiscount', $text)) {
         sendmessage($from_id, $textbotlang['users']['Discount']['notcode'], $backuser, 'HTML');
         return;
     }
@@ -4405,7 +4424,7 @@ $nameconfig";
         step('home', $from_id);
         return;
     }
-    if (!in_array($text, $SellDiscount)) {
+    if (!rxTableValueExists('DiscountSell', 'codeDiscount', $text)) {
         sendmessage($from_id, $textbotlang['users']['Discount']['notcode'], $backuser, 'HTML');
         return;
     }

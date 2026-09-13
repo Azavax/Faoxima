@@ -722,11 +722,6 @@ function update($table, $field, $newValue, $whereField = null, $whereValue = nul
     $valueToStore = normaliseUpdateValue($newValue);
     $whereValueToStore = $whereField !== null ? normaliseUpdateValue($whereValue) : null;
 
-    ensureColumnExistsForUpdate($table, $field, $valueToStore);
-    if ($whereField !== null) {
-        ensureColumnExistsForUpdate($table, $whereField, $whereValueToStore);
-    }
-
     $executeUpdate = function ($value) use ($pdo, $table, $field, $whereField, $whereValueToStore) {
         if ($whereField !== null) {
             $stmt = $pdo->prepare("UPDATE $table SET $field = ? WHERE $whereField = ?");
@@ -744,7 +739,16 @@ function update($table, $field, $newValue, $whereField = null, $whereValue = nul
     try {
         $affectedRows = $executeUpdate($valueToStore);
     } catch (PDOException $e) {
-        if (strpos($e->getMessage(), 'Incorrect string value') !== false) {
+        $rxMissingColumn = (string) $e->getCode() === '42S22'
+            || (int) ($e->errorInfo[1] ?? 0) === 1054
+            || stripos($e->getMessage(), 'Unknown column') !== false;
+        if ($rxMissingColumn) {
+            ensureColumnExistsForUpdate($table, $field, $valueToStore);
+            if ($whereField !== null) {
+                ensureColumnExistsForUpdate($table, $whereField, $whereValueToStore);
+            }
+            $affectedRows = $executeUpdate($valueToStore);
+        } elseif (strpos($e->getMessage(), 'Incorrect string value') !== false) {
             $tableConverted = ensureTableUtf8mb4($table);
             if ($tableConverted) {
                 try {
@@ -1277,4 +1281,28 @@ function generateUUID()
     $uuid = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($data), 4));
 
     return $uuid;
+}
+
+function rxTableValueExists($table, $field, $value)
+{
+    static $allowed = [
+        'invoice'      => ['id_invoice' => true, 'username' => true],
+        'Discount'     => ['code' => true],
+        'DiscountSell' => ['codeDiscount' => true],
+    ];
+    if (!isset($allowed[$table][$field]) || is_array($value) || is_object($value)) {
+        return false;
+    }
+    $pdo = getDatabaseConnection();
+    if (!($pdo instanceof PDO)) {
+        return false;
+    }
+    try {
+        $stmt = $pdo->prepare("SELECT 1 FROM `{$table}` WHERE `{$field}` = BINARY :value LIMIT 1");
+        $stmt->execute([':value' => (string) $value]);
+        return $stmt->fetchColumn() !== false;
+    } catch (Throwable $e) {
+        error_log('rxTableValueExists: ' . $e->getMessage());
+        return false;
+    }
 }

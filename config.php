@@ -282,13 +282,17 @@ if ($dbname !== '' && $usernamedb !== '') {
         rx_cleanup_installer($rxInstallerDir, 'config_bootstrap');
     }
     $dbhostResolved = $dbhost !== '' ? $dbhost : 'localhost';
-    $connect        = rx_connect_mysqli($dbhostResolved, $usernamedb, $passworddb, $dbname);
-    if ($connect instanceof mysqli) {
-        @mysqli_set_charset($connect, 'utf8mb4');
-        @mysqli_query($connect, "SET time_zone = '+03:30'");
+    if (!defined('FAOXIMA_LAZY_MYSQLI') || FAOXIMA_LAZY_MYSQLI !== true) {
+        $connect = rx_connect_mysqli($dbhostResolved, $usernamedb, $passworddb, $dbname);
+        if ($connect instanceof mysqli) {
+            @mysqli_set_charset($connect, 'utf8mb4');
+            @mysqli_query($connect, "SET time_zone = '+03:30'");
+        } else {
+            $connect = null;
+            error_log('config.php mysqli_connect failed (after retries).');
+        }
     } else {
         $connect = null;
-        error_log('config.php mysqli_connect failed (after retries).');
     }
 
     $dsn = 'mysql:host=' . $dbhostResolved . ';dbname=' . $dbname . ';charset=utf8mb4';

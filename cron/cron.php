@@ -6,22 +6,30 @@ ignore_user_abort(true);
 @ini_set('memory_limit', '128M');
 
 date_default_timezone_set('Asia/Tehran');
+if (!defined('FAOXIMA_LAZY_MYSQLI')) {
+    define('FAOXIMA_LAZY_MYSQLI', true);
+}
 if (function_exists('putenv') && !preg_match('/(^|,)\s*putenv\s*(,|$)/', strtolower((string) ini_get('disable_functions')))) {
     @putenv('TZ=Asia/Tehran');
 }
 
 
 $lockFile = __DIR__ . '/cron.lock';
-if (is_file($lockFile)) {
-    $lockAge = time() - (int) @filemtime($lockFile);
-    if ($lockAge >= 0 && $lockAge < 15) {
-        echo "BUSY\n";
-        exit;
+$lockHandle = @fopen($lockFile, 'c');
+if ($lockHandle === false || !@flock($lockHandle, LOCK_EX | LOCK_NB)) {
+    if (is_resource($lockHandle)) {
+        @fclose($lockHandle);
     }
-    @unlink($lockFile);
+    echo "BUSY\n";
+    exit;
 }
-@file_put_contents($lockFile, getmypid() . '|' . date('Y-m-d H:i:s'));
-register_shutdown_function(static function () use ($lockFile) { @unlink($lockFile); });
+@ftruncate($lockHandle, 0);
+@fwrite($lockHandle, getmypid() . '|' . date('Y-m-d H:i:s'));
+@fflush($lockHandle);
+register_shutdown_function(static function () use ($lockHandle) {
+    @flock($lockHandle, LOCK_UN);
+    @fclose($lockHandle);
+});
 
 
 $functionBootstrap = __DIR__ . '/function.php';
@@ -47,14 +55,12 @@ if (is_readable($functionBootstrap)) {
             error_log('[cron.php] bootstrap failed: ' . $e->getMessage());
             @touch($rxCronBootstrapMarker);
         }
-        @unlink($lockFile);
         echo "SKIP (bootstrap unavailable)\n";
         exit;
     }
 }
 
 if (!$bootstrapLoaded) {
-    @unlink($lockFile);
     echo "SKIP (bootstrap unavailable)\n";
     exit;
 }
@@ -126,15 +132,14 @@ if (!defined('APP_ROOT_PATH')) {
 
 $pdo = function_exists('getDatabaseConnection') ? getDatabaseConnection() : null;
 if (!($pdo instanceof PDO)) {
-    @unlink($lockFile);
     echo "SKIP (db unavailable)\n";
     exit;
 }
 
-if (function_exists('ensureCronRuntimeStateTable')) {
-    try { ensureCronRuntimeStateTable($pdo); } catch (Throwable $e) {}
+$runtimeState = [];
+if (function_exists('loadCronRuntimeState')) {
+    try { $runtimeState = loadCronRuntimeState($pdo); } catch (Throwable $e) { $runtimeState = []; }
 }
-$runtimeState = function_exists('loadCronRuntimeState') ? loadCronRuntimeState($pdo) : [];
 
 
 $rxCronbotDir = __DIR__ . DIRECTORY_SEPARATOR . '..' . DIRECTORY_SEPARATOR . 'cronbot';
@@ -142,7 +147,7 @@ if (is_dir($rxCronbotDir)) {
     foreach ((array) @glob($rxCronbotDir . '/*.lock') as $rxStale) {
         if ((time() - (int) @filemtime($rxStale)) > 120) { @unlink($rxStale); }
     }
-    foreach (['_db_unavailable.flag', '_db_unavailable.log', '_missing_files.log', 'host_profile.json'] as $rxLegacy) {
+    foreach (['_db_unavailable.flag', '_db_unavailable.log', '_missing_files.log'] as $rxLegacy) {
         $rxLegacyPath = $rxCronbotDir . DIRECTORY_SEPARATOR . $rxLegacy;
         if (is_file($rxLegacyPath) && (time() - (int) @filemtime($rxLegacyPath)) > 120) { @unlink($rxLegacyPath); }
     }
@@ -159,6 +164,7 @@ if (function_exists('rx_host_profile')) {
 }
 $rxBroadcastWorkers = max(1, (int) ($rxHostProfile['broadcast_workers'] ?? 3));
 $rxPaymentWorkers   = max(1, (int) ($rxHostProfile['payment_workers'] ?? 2));
+$rxSharedProfile    = (($rxHostProfile['profile'] ?? 'shared') === 'shared');
 $jobWorkerCounts = [];
 try {
     $rxSettingRow = function_exists('select') ? select('setting', '*') : null;
@@ -173,6 +179,11 @@ try {
         }
     }
 } catch (Throwable $e) {}
+if ($rxSharedProfile) {
+    $rxBroadcastWorkers = 1;
+    $rxPaymentWorkers = 1;
+    @set_time_limit(300);
+}
 $jobWorkerCounts = [
     'sendmessage'   => $rxBroadcastWorkers,
     'notifications' => $rxBroadcastWorkers,
@@ -185,6 +196,12 @@ $now       = time();
 $minute    = (int) date('i', $now);
 $hour      = (int) date('G', $now);
 $dayOfYear = (int) date('z', $now);
+
+if ($hour === 3 && $minute === 0) {
+    try {
+        $pdo->exec("DELETE FROM processed_updates WHERE processed_at < UNIX_TIMESTAMP(NOW() - INTERVAL 1 DAY)");
+    } catch (Throwable $e) {}
+}
 
 
 $shouldRun = static function (string $jobKey, array $schedule, int $minute, int $hour, int $dayOfYear, int $now, array $runtimeState, int $targetHour = 0): bool {
@@ -287,7 +304,7 @@ $dispatchAsync = static function (array $urls, bool $useLoopback): array {
     return $failed;
 };
 
-$rxDispatchCli = static function (string $script, int $worker, int $workers): void {
+$rxDispatchCli = static function (string $script, int $worker, int $workers, bool $background): void {
     $file = realpath(__DIR__ . '/../cronbot/' . ltrim($script, '/'));
     if ($file === false || !is_file($file)) {
         return;
@@ -296,10 +313,15 @@ $rxDispatchCli = static function (string $script, int $worker, int $workers): vo
     if (DIRECTORY_SEPARATOR === '\\') {
         $cmd = 'set "BROADCAST_WORKER_ID=' . $worker . '" && set "BROADCAST_WORKERS=' . $workers . '" && '
              . escapeshellarg($phpBin) . ' ' . escapeshellarg($file);
-        @pclose(@popen('start /B cmd /C "' . $cmd . '"', 'r'));
+        if ($background) {
+            @pclose(@popen('start /B cmd /C "' . $cmd . '"', 'r'));
+        } else {
+            @exec($cmd . ' > NUL 2>&1');
+        }
     } else {
-        @exec('BROADCAST_WORKER_ID=' . $worker . ' BROADCAST_WORKERS=' . $workers . ' '
-            . escapeshellarg($phpBin) . ' ' . escapeshellarg($file) . ' > /dev/null 2>&1 &');
+        $cmd = 'BROADCAST_WORKER_ID=' . $worker . ' BROADCAST_WORKERS=' . $workers . ' '
+            . escapeshellarg($phpBin) . ' ' . escapeshellarg($file) . ' > /dev/null 2>&1';
+        @exec($cmd . ($background ? ' &' : ''));
     }
 };
 
@@ -336,11 +358,11 @@ if ($bootstrapLoaded && function_exists('getCronJobDefinitions')) {
         if ($rxIsCli) {
             if ($rxN > 1) {
                 for ($rxI = 0; $rxI < $rxN; $rxI++) {
-                    $rxDispatchCli($definition['script'], $rxI, $rxN);
+                    $rxDispatchCli($definition['script'], $rxI, $rxN, !$rxSharedProfile);
                     $rxCliDispatched++;
                 }
             } else {
-                $rxDispatchCli($definition['script'], 0, 1);
+                $rxDispatchCli($definition['script'], 0, 1, !$rxSharedProfile);
                 $rxCliDispatched++;
             }
         } elseif ($rxN > 1) {
@@ -360,28 +382,14 @@ if ($bootstrapLoaded && function_exists('getCronJobDefinitions')) {
         $runtimeState[$key] = $now;
     }
 
-
-    $extraScripts = ['index.php'];
-    $definedScripts = [];
-    foreach ($definitions as $definition) {
-        if (isset($definition['script']) && is_string($definition['script'])) {
-            $definedScripts[] = ltrim($definition['script'], '/');
-        }
-    }
-    foreach ($extraScripts as $extraScript) {
-        if (!in_array($extraScript, $definedScripts, true)) {
-            if ($rxIsCli) {
-                $rxDispatchCli($extraScript, 0, 1);
-                $rxCliDispatched++;
-            } else {
-                $dueUrls[] = $buildCronUrl($extraScript);
-            }
-        }
-    }
 }
 
 if (!$rxIsCli && !empty($dueUrls)) {
-    $failed = $dispatchAsync($dueUrls, false);
+    $failed = [];
+    $rxHttpBatchSize = $rxSharedProfile ? 2 : 8;
+    foreach (array_chunk($dueUrls, $rxHttpBatchSize) as $rxUrlBatch) {
+        $failed = array_merge($failed, $dispatchAsync($rxUrlBatch, false));
+    }
     if (!empty($failed)) {
         $rxLoopback = $rxDetectLoopback();
         if (is_array($rxLoopback)) {
@@ -392,12 +400,13 @@ if (!$rxIsCli && !empty($dueUrls)) {
                 $rxQuery = isset($rxParts['query']) ? '?' . $rxParts['query'] : '';
                 $rxRebuilt[] = $rxLoopback['scheme'] . '://127.0.0.1:' . $rxLoopback['port'] . $rxPath . $rxQuery;
             }
-            $dispatchAsync($rxRebuilt, true);
+            foreach (array_chunk($rxRebuilt, $rxHttpBatchSize) as $rxUrlBatch) {
+                $dispatchAsync($rxUrlBatch, true);
+            }
         }
     }
 }
 
-@unlink($lockFile);
 $rxDispatchedTotal = $rxIsCli ? $rxCliDispatched : count($dueUrls);
 echo "OK " . date('Y-m-d H:i:s') . " (Asia/Tehran) | dispatched=" . $rxDispatchedTotal . "\n";
 

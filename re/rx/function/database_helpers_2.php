@@ -92,8 +92,8 @@ if (!function_exists('rx_resize_for_profile')) {
         return [
             'cron_db_budget'    => ($maxConnections > 0) ? max(4, min(8, (int) floor($maxConnections * 0.06))) : 6,
             'cron_time_budget'  => 22,
-            'broadcast_workers' => 2,
-            'payment_workers'   => 2,
+            'broadcast_workers' => 1,
+            'payment_workers'   => 1,
         ];
     }
 }
@@ -622,7 +622,8 @@ function StatusPayment($paymentid)
         CURLOPT_RETURNTRANSFER => true,
         CURLOPT_ENCODING => '',
         CURLOPT_MAXREDIRS => 10,
-        CURLOPT_TIMEOUT => 0,
+        CURLOPT_CONNECTTIMEOUT => 5,
+        CURLOPT_TIMEOUT => 15,
         CURLOPT_FOLLOWLOCATION => true,
         CURLOPT_HTTP_VERSION => CURL_HTTP_VERSION_1_1,
         CURLOPT_CUSTOMREQUEST => 'GET',

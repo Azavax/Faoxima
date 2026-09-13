@@ -2767,31 +2767,18 @@ function isDuplicateUpdate($updateId)
     if (!$isDuplicate) {
         $pdo = $GLOBALS['pdo'] ?? null;
         if ($pdo instanceof PDO) {
-            static $dbInitialised = false;
-            static $lastCleanup = 0;
-
             try {
-                if (!$dbInitialised) {
-                    $pdo->exec('CREATE TABLE IF NOT EXISTS processed_updates (
-                        update_id BIGINT UNSIGNED PRIMARY KEY,
-                        processed_at INT UNSIGNED NOT NULL
-                    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci');
-                    $dbInitialised = true;
-                }
-
-                if ($lastCleanup === 0 || ($now - $lastCleanup) > 60) {
-                    $stmtCleanup = $pdo->prepare('DELETE FROM processed_updates WHERE processed_at < :threshold');
-                    $stmtCleanup->execute([':threshold' => $now - $timeToLive]);
-                    $lastCleanup = $now;
-                }
-
                 $stmtInsert = $pdo->prepare('INSERT IGNORE INTO processed_updates (update_id, processed_at) VALUES (:id, :ts)');
                 $stmtInsert->execute([':id' => $updateId, ':ts' => $now]);
                 if ($stmtInsert->rowCount() === 0) {
                     $isDuplicate = true;
                 }
             } catch (Throwable $e) {
-                error_log('Duplicate update tracker database fallback error: ' . $e->getMessage());
+                $rxDedupeErrorMarker = sys_get_temp_dir() . DIRECTORY_SEPARATOR . 'faoxima_dedupe_db_error.flag';
+                if (!is_file($rxDedupeErrorMarker) || (time() - (int) @filemtime($rxDedupeErrorMarker)) > 3600) {
+                    error_log('Duplicate update tracker database fallback error: ' . $e->getMessage());
+                    @touch($rxDedupeErrorMarker);
+                }
             }
         }
     }
@@ -2875,6 +2862,16 @@ if (!is_numeric($from_id) || (string)(int) $from_id !== (string) $from_id) {
     exit;
 }
 $from_id = (int) $from_id;
+rx_releaseWebhookConnection();
+$rxUpdateLock = rx_callback_lock_acquire($from_id, 'update', 5);
+if ($rxUpdateLock === false) {
+    exit;
+}
+if (is_string($rxUpdateLock) && $rxUpdateLock !== '') {
+    register_shutdown_function(static function () use ($rxUpdateLock) {
+        rx_callback_lock_release($rxUpdateLock);
+    });
+}
 $text =convertPersianNumbersToEnglish($text);
 
 $text_inline = $update["callback_query"]["message"]['text'] ?? '';

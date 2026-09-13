@@ -148,7 +148,8 @@ if (!function_exists('rx_compile_section')) {
 
         $partPaths = [];
         $newest = (int) @filemtime($manifestPath);
-        $sourceHashInput = '';
+        $manifestStat = @stat($manifestPath);
+        $sourceMeta = ['manifest' => [$newest, (int) @filesize($manifestPath), (int) @filectime($manifestPath), (int) ($manifestStat['ino'] ?? 0)], 'parts' => []];
         foreach ($parts as $part) {
             $partPath = $dir . DIRECTORY_SEPARATOR . $part;
             if (!is_file($partPath)) {
@@ -160,9 +161,10 @@ if (!function_exists('rx_compile_section')) {
             if ($mtime > $newest) {
                 $newest = $mtime;
             }
-            $sourceHashInput .= $part . ':' . md5_file($partPath) . ';';
+            $partStat = @stat($partPath);
+            $sourceMeta['parts'][$part] = [$mtime, (int) @filesize($partPath), (int) @filectime($partPath), (int) ($partStat['ino'] ?? 0)];
         }
-        $sourceHash = md5($sourceHashInput);
+        $sourceMetaHash = md5((string) json_encode($sourceMeta));
 
         $cachedMap = null;
         if (is_file($mapPath)) {
@@ -171,15 +173,15 @@ if (!function_exists('rx_compile_section')) {
                 $cachedMap = $decodedMap;
             }
         }
-        $cachedHash = is_array($cachedMap) && isset($cachedMap['_source_hash']) ? (string) $cachedMap['_source_hash'] : null;
+        $cachedMetaHash = is_array($cachedMap) && isset($cachedMap['_source_meta_hash']) ? (string) $cachedMap['_source_meta_hash'] : null;
 
-        if ($cachedHash === $sourceHash && is_file($compiled)
+        if ($cachedMetaHash === $sourceMetaHash && is_file($compiled)
             && ($newest <= 0 || (int) @filemtime($compiled) >= $newest)) {
             return ['path' => $compiled, 'body' => null];
         }
 
         $body = '';
-        $map = ['_source_hash' => $sourceHash, '_entries' => []];
+        $map = ['_source_meta_hash' => $sourceMetaHash, '_source_meta' => $sourceMeta, '_entries' => []];
         $lineAt = 2;
         foreach ($partPaths as $part => $partPath) {
             $stripped = rx_strip_php_open((string) file_get_contents($partPath));
