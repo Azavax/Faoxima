@@ -552,6 +552,7 @@ $trnado = rx_kb_encode([
         [rx_kb_style(['text' => "🏷️ نام نمایشی درگاه ترونادو", 'callback_data' => 'trnado_name'], 'trnado_name', $_rx_gw_styles)],
         [rx_kb_style(['text' => "🔑 ثبت API Key ترونادو", 'callback_data' => 'trnado_apikey'], 'trnado_apikey', $_rx_gw_styles)],
         [rx_kb_style(['text' => "🔏 ثبت کلید امضای IPN ترونادو", 'callback_data' => 'trnado_signingkey'], 'trnado_signingkey', $_rx_gw_styles)],
+        [rx_kb_style(['text' => "💼 آدرس کیف پول ترونادو", 'callback_data' => 'trnado_wallet'], 'trnado_wallet', $_rx_gw_styles)],
         [rx_kb_style(['text' => "⚖️ درصد کارمزد کسب‌وکار", 'callback_data' => 'trnado_wage'], 'trnado_wage', $_rx_gw_styles)],
         [rx_kb_style(['text' => "💰 کش بک ترونادو", 'callback_data' => 'trnado_cashback'], 'trnado_cashback', $_rx_gw_styles)],
         [

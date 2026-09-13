@@ -748,6 +748,23 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $trnado, 'HTML');
     update("PaySetting", "ValuePay", $text, "NamePay", "ipnsigningkeytronado");
     step('home', $from_id);
+} elseif ($text == "💼 آدرس کیف پول ترونادو" && $adminrulecheck['rule'] == "administrator") {
+    $PaySetting = select("PaySetting", "ValuePay", "NamePay", "walletaddress", "select");
+    $currentWallet = trim((string) ($PaySetting['ValuePay'] ?? ''));
+    $texttronseller = "💼 آدرس کیف پول ترون (TRC20) که ترونادو مبالغ را به آن واریز می‌کند را ارسال کنید.\n\n"
+        . "⚠️ آدرس را دقیقاً همان‌طور که در کیف پول نمایش داده می‌شود و با همان حروف کوچک و بزرگ ارسال کنید.\n\n"
+        . "آدرس فعلی: " . ($currentWallet === '' ? 'ثبت نشده' : "<code>" . htmlspecialchars($currentWallet) . "</code>");
+    if ($currentWallet !== '' && function_exists('tronadoIsValidTronAddress') && !tronadoIsValidTronAddress($currentWallet)) {
+        $texttronseller .= "\n\n❌ آدرس فعلی معتبر نیست و ترونادو آن را رد می‌کند؛ لطفاً آدرس صحیح را دوباره ثبت کنید.";
+    }
+    $offlineTrx = function_exists('crypto_active_wallet') ? crypto_active_wallet('TRX') : null;
+    if (function_exists('tronadoWalletsCollide') && is_array($offlineTrx)
+        && tronadoWalletsCollide($currentWallet, $offlineTrx['wallet_address'] ?? '')) {
+        $texttronseller .= "\n\n⚠️ این آدرس با کیف پول «🟥 ترون (TRX)» بخش ارز آفلاین یکی است؛ برای جلوگیری از تایید دوباره‌ی یک پرداخت، یک آدرس جداگانه برای ترونادو ثبت کنید.";
+    }
+    nm_adminInstantReply($from_id, $texttronseller, $backadmin, 'HTML');
+    savedata('clear', 'walletaddress_origin', 'trnado');
+    step('walletaddresssiranpay', $from_id);
 } elseif ($text == "⚖️ درصد کارمزد کسب‌وکار" && $adminrulecheck['rule'] == "administrator") {
     $PaySetting = select("PaySetting", "ValuePay", "NamePay", "wageFromBusinessPercentageTronado", "select");
     $currentValue = $PaySetting['ValuePay'] ?? '0';
@@ -3224,6 +3241,13 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
         nm_adminInstantReply($from_id, "❌ آدرس وارد شده برای شبکه <b>{$network}</b> معتبر نیست.\n\n{$exHint}", null, 'HTML');
         return;
     }
+    if ($cur === 'TRX' && function_exists('tronadoWalletsCollide')) {
+        $tronadoWalletSetting = select("PaySetting", "ValuePay", "NamePay", "walletaddress", "select");
+        if (tronadoWalletsCollide($address, $tronadoWalletSetting['ValuePay'] ?? '')) {
+            nm_adminInstantReply($from_id, "❌ این آدرس همان کیف پول ترونادو است و ثبت نشد.\n\nاگر هر دو درگاه به یک کیف پول واریز شوند، یک پرداخت ترونادو می‌تواند دوباره به‌عنوان رسید پرداخت آفلاین ثبت و دو بار تایید شود. لطفاً یک آدرس جداگانه ارسال کنید.", null, 'HTML');
+            return;
+        }
+    }
     $ok = function_exists('crypto_save_wallet') ? crypto_save_wallet($cur, $address) : false;
     if (!$ok) {
         nm_adminInstantReply($from_id, "❌ ذخیره‌سازی با خطا مواجه شد. لاگ سرور را بررسی کنید.", $backadmin, 'HTML');
@@ -3394,8 +3418,12 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     update("user", "Processing_value", json_encode(['code' => $cur, 'network' => $manual[$cur]['network'], 'label' => $label], JSON_UNESCAPED_UNICODE), "id", $from_id);
     nm_adminInstantReply($from_id, $msg, $backadmin, 'HTML');
     step('cryptowallet_new_address', $from_id);
-} elseif ($user['step'] == "walletaddresssiranpay") {
+} elseif ($user['step'] == "walletaddresssiranpay" && empty($datain)) {
     $walletInput = trim((string) $text);
+    $walletProcessing = json_decode((string) ($user['Processing_value'] ?? ''), true);
+    $walletReturnKeyboard = (is_array($walletProcessing) && ($walletProcessing['walletaddress_origin'] ?? '') === 'trnado')
+        ? $trnado
+        : $keyboardadmin;
 
     if ($walletInput === ''
         || mb_strlen($walletInput) < 30
@@ -3404,19 +3432,30 @@ if ($datain == "settimecornremove" && $adminrulecheck['rule'] == "administrator"
     ) {
         step('home', $from_id);
         if ($walletInput !== '') {
-            nm_adminInstantReply($from_id, "🏠 از حالت ثبت آدرس ولت خارج شدید.", $keyboardadmin, 'HTML');
+            nm_adminInstantReply($from_id, "🏠 از حالت ثبت آدرس ولت خارج شدید.", $walletReturnKeyboard, 'HTML');
         }
         return;
     }
 
-    if ($walletInput === '' || !preg_match('/^T[a-zA-Z0-9]{33}$/', $walletInput)) {
-        nm_adminInstantReply($from_id, "❌ آدرس ولت وارد شده نامعتبر است. لطفاً آدرس TRC20 معتبر ارسال کنید.", $backadmin, 'HTML');
+    if (!function_exists('tronadoIsValidTronAddress') || !tronadoIsValidTronAddress($walletInput)) {
+        nm_adminInstantReply($from_id, "❌ آدرس ولت وارد شده نامعتبر است. لطفاً آدرس TRC20 معتبر را دقیقاً با همان حروف کوچک و بزرگ ارسال کنید.", $backadmin, 'HTML');
         return;
     }
 
-    $standardizedWallet = strtoupper($walletInput);
+    // Stored exactly as entered: Base58 is case sensitive. This used to be strtoupper(), which
+    // corrupted every address saved here.
+    $standardizedWallet = $walletInput;
 
-    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $keyboardadmin, 'HTML');
+    // Refused, not just warned: sharing the offline TRX wallet would let one payment be credited twice.
+    // USDT-TRC20 is not checked - that checker needs a USDT transfer, and Tronado pays plain TRX.
+    $offlineTrx = function_exists('crypto_active_wallet') ? crypto_active_wallet('TRX') : null;
+    if (function_exists('tronadoWalletsCollide') && is_array($offlineTrx)
+        && tronadoWalletsCollide($standardizedWallet, $offlineTrx['wallet_address'] ?? '')) {
+        nm_adminInstantReply($from_id, "❌ این آدرس همان کیف پول «🟥 ترون (TRX)» بخش ارز آفلاین است و ثبت نشد.\n\nاگر هر دو درگاه به یک کیف پول واریز شوند، یک پرداخت ترونادو می‌تواند دوباره به‌عنوان رسید پرداخت آفلاین ثبت و دو بار تایید شود. لطفاً برای ترونادو یک آدرس جداگانه ارسال کنید.", $backadmin, 'HTML');
+        return;
+    }
+
+    nm_adminInstantReply($from_id, $textbotlang['Admin']['SettingnowPayment']['Savaapi'], $walletReturnKeyboard, 'HTML');
     update("PaySetting", "ValuePay", $standardizedWallet, "NamePay", "walletaddress");
     update("user", "Processing_value", '{}', "id", $from_id);
     step('home', $from_id);

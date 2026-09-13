@@ -1568,6 +1568,7 @@ if (!function_exists('rx_getKeyboardDefaultStyles')) {
                     'trnado_name'      => 'primary',
                     'trnado_apikey'    => 'success',
                     'trnado_signingkey' => 'success',
+                    'trnado_wallet'    => 'success',
                     'trnado_wage'      => 'primary',
                     'trnado_cashback'  => 'success',
                     'trnado_min'       => 'primary',
