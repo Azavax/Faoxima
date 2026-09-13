@@ -706,6 +706,17 @@ function tronadoNormalizeOrderTokenResponse($decoded)
         }
         return $normalized;
     }
+
+    // A rejected GetOrderToken comes back as
+    //   {"IsSuccessful":false,"Code":-31,"Message":"Please specify your Tron Wallet Address.","Data":null}
+    // Data is null there, so isset() skips the branch above and the reason was dropped: the
+    // seller only ever saw the generic "پاسخ نامعتبر از سرویس ترونادو" with nothing to act on.
+    if (!array_key_exists('ErrorMessage', $decoded)
+        && isset($decoded['Message'])
+        && trim((string) $decoded['Message']) !== '') {
+        $decoded['ErrorMessage'] = (string) $decoded['Message'];
+    }
+
     return $decoded;
 }
 

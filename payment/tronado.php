@@ -104,7 +104,17 @@ if (!is_array($Payment_report)) {
     exit('Order not found');
 }
 if ($Payment_report['payment_Status'] == "expire") {
-    return;
+    // The order expired on this side, but Tronado only sends a paid callback once the buyer
+    // actually paid - so the money exists and this bot is about to credit nothing. A bare
+    // return answers HTTP 200, which Tronado records as a delivered callback: it never retries
+    // and never reports, so the payment is lost silently. 409 is a permanent client error on
+    // their side, so they stop retrying at once AND raise the failure to the shop, which can
+    // then settle the order by hand.
+    tronado_log_event('TRONADO_PAID_AFTER_EXPIRE', 'Paid callback arrived for an expired order', [
+        'payment_id' => $paymentId,
+    ]);
+    http_response_code(409);
+    exit('Order already expired');
 }
 $setting = mysqli_fetch_assoc(mysqli_query($connect, "SELECT * FROM setting"));
 $price = $Payment_report['price'];
