@@ -757,6 +757,8 @@ if (in_array($text, $textadmin) || $datain == "admin") {
     (isset($datain) && preg_match('/^ch_manage_(\d+)$/', (string)$datain)) ||
     (
         !empty($text)
+        && isset($user['step'])
+        && $user['step'] === "channel"
         && $text !== "📢 کانال و اطلاع‌رسانی"
         && $text !== "📣 گزارشات ربات"
         && $text !== "📯 تنظیمات کانال"
