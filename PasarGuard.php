@@ -218,7 +218,28 @@ function pasarguardAddUser($location, $data_limit, $username_ac, $timestamp, $no
         "data_limit_reset_strategy" => $data_limit_reset
     );
     if (isset($inbounds)) {
-        $data['group_ids'] = $inbounds;
+        // Issue #22 (feature request): merge the bot-configured groups with the
+        // groups the user currently has on the panel — add-only, never remove —
+        // so groups manually granted on the panel survive renewals.
+        $groupIds = array_values(array_map('intval', (array) $inbounds));
+        $userResponse = pasarguardGetUser($username_ac, $location);
+        $httpStatus = is_array($userResponse) ? (int) ($userResponse['status'] ?? 0) : 0;
+        if ($httpStatus === 200) {
+            $panelUser = json_decode($userResponse['body'] ?? '', true);
+            $currentGroups = is_array($panelUser) ? ($panelUser['group_ids'] ?? null) : null;
+            if (is_array($currentGroups) && !empty($currentGroups)) {
+                $groupIds = array_values(array_unique(array_merge(
+                    array_map('intval', $currentGroups),
+                    $groupIds
+                )));
+            }
+        } elseif ($httpStatus !== 404) {
+            // Live read failed for a reason other than "user not found" (e.g.
+            // network or 5xx): omit group_ids entirely instead of sending the
+            // default list, which could move an existing user between groups.
+            return pasarguardRequest($panel, 'POST', '/api/user', $data);
+        }
+        $data['group_ids'] = $groupIds;
     }
     if (!empty($hwid_limit)) {
         $data['hwid_limit'] = (int) $hwid_limit;
