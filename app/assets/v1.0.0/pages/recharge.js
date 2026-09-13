@@ -614,7 +614,7 @@ function renderCardVerifyStep(d) {
                 <p style="margin:0">📸 تصویر کارت فیزیکی که با آن واریز می‌کنید را آپلود کنید.</p>
             </div>
 
-            <input type="file" id="card-photo-file" accept="image/*" capture="environment" style="display:none" />
+            <input type="file" id="card-photo-file" accept="image/*" style="display:none" />
 
             <div id="card-photo-drop"
                 style="border:2px dashed var(--accent-color,#5b9cf6);border-radius:12px;padding:28px 16px;text-align:center;cursor:pointer;margin-top:14px;transition:background .2s"
@@ -662,7 +662,7 @@ function renderCardVerifyStep(d) {
                 <div class="card-section mt-md receipt-upload-zone">
                     <p class="section-title">${icon('fileText')} ارسال رسید پرداخت</p>
                     <p class="muted" style="font-size:13px">پس از واریز، عکس رسید را آپلود کنید تا برای ادمین ارسال شود.</p>
-                    <input type="file" id="receipt-file" accept="image/*" capture="environment" style="display:none" />
+                    <input type="file" id="receipt-file" accept="image/*" style="display:none" />
                     <button type="button" id="receipt-pick" class="btn btn-primary btn-block mt-sm">
                         ${icon('download', 'class="ico ico-leading"')}<span>انتخاب عکس رسید</span>
                     </button>
@@ -818,7 +818,7 @@ function renderCardToCard(d) {
                 <p class="section-title">${icon('fileText')} ارسال رسید پرداخت</p>
                 <p class="muted" style="font-size:13px">پس از واریز، عکس رسید را آپلود کنید تا برای ادمین ارسال شود.</p>
 
-                <input type="file" id="receipt-file" accept="image/*" capture="environment" style="display:none" />
+                <input type="file" id="receipt-file" accept="image/*" style="display:none" />
                 <button type="button" id="receipt-pick" class="btn btn-primary btn-block mt-sm">
                     ${icon('download', 'class="ico ico-leading"')}
                     <span>انتخاب عکس رسید</span>

@@ -185,7 +185,7 @@ export function renderCardToCard(d) {
                 <p class="section-title">${icon('fileText')} ارسال رسید پرداخت</p>
                 <p class="muted" style="font-size:13px">پس از واریز، عکس رسید را آپلود کنید تا برای ادمین ارسال شود.</p>
 
-                <input type="file" id="receipt-file" accept="image/*" capture="environment" style="display:none" />
+                <input type="file" id="receipt-file" accept="image/*" style="display:none" />
                 <button type="button" id="receipt-pick" class="btn btn-primary btn-block mt-sm">
                     ${icon('download', 'class="ico ico-leading"')}
                     <span>انتخاب عکس رسید</span>
