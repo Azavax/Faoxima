@@ -4792,7 +4792,7 @@ $caption";
     $cashbackEligible = !function_exists('rx_cashbackEligibleForKey')
         || rx_cashbackEligibleForKey("chashbackcart", $Balance_id['register'] ?? null, $Payment_report['id_invoice'] ?? null, $Balance_id['id'] ?? null, $Payment_report['id_order'] ?? null);
     if ($cashbackEligible && $pricecashback != "0") {
-        $result = ($Payment_report['price'] * $pricecashback) / 100;
+        $result = round(($Payment_report['price'] * $pricecashback) / 100);
 
         $stmtCashback = $pdo->prepare("UPDATE user SET Balance = Balance + :delta WHERE id = :uid");
         $stmtCashback->bindValue(':delta', (int) round($result), PDO::PARAM_INT);
