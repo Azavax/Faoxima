@@ -19,6 +19,68 @@ require_once 'config.php';
 require_once 'botapi.php';
 global $connect;
 
+if (!function_exists('rxEnsureUtf8mb4Schema')) {
+    function rxEnsureUtf8mb4Schema($connection, $pdoConnection = null)
+    {
+        if (!is_object($connection) || !method_exists($connection, 'query')) {
+            return;
+        }
+        try {
+            if (method_exists($connection, 'set_charset')) {
+                $connection->set_charset('utf8mb4');
+            }
+            $connection->query("SET collation_connection = 'utf8mb4_unicode_ci'");
+            if (is_object($pdoConnection) && method_exists($pdoConnection, 'exec')) {
+                try {
+                    $pdoConnection->exec("SET NAMES utf8mb4 COLLATE utf8mb4_unicode_ci");
+                } catch (Throwable $e) {
+                    error_log('[table.php] PDO utf8mb4 connection: ' . $e->getMessage());
+                }
+            }
+            $databaseResult = $connection->query('SELECT DATABASE() AS database_name');
+            $databaseRow = ($databaseResult && isset($databaseResult->num_rows) && $databaseResult->num_rows > 0) ? $databaseResult->fetch_assoc() : null;
+            $databaseName = is_array($databaseRow) ? (string) ($databaseRow['database_name'] ?? '') : '';
+            if ($databaseName === '') {
+                return;
+            }
+            $schemaResult = $connection->query("SELECT DEFAULT_CHARACTER_SET_NAME, DEFAULT_COLLATION_NAME FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = DATABASE()");
+            $schemaRow = ($schemaResult && isset($schemaResult->num_rows) && $schemaResult->num_rows > 0) ? $schemaResult->fetch_assoc() : null;
+            if (is_array($schemaRow) && (
+                strtolower((string) ($schemaRow['DEFAULT_CHARACTER_SET_NAME'] ?? '')) !== 'utf8mb4'
+                || strtolower((string) ($schemaRow['DEFAULT_COLLATION_NAME'] ?? '')) !== 'utf8mb4_unicode_ci'
+            )) {
+                $safeDatabase = str_replace('`', '``', $databaseName);
+                try {
+                    $connection->query("ALTER DATABASE `{$safeDatabase}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci");
+                } catch (Throwable $e) {
+                    error_log('[table.php] utf8mb4 database default: ' . $e->getMessage());
+                }
+            }
+            $tablesResult = $connection->query("SELECT DISTINCT TABLE_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND CHARACTER_SET_NAME IS NOT NULL AND CHARACTER_SET_NAME <> 'utf8mb4' UNION SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' AND TABLE_COLLATION IS NOT NULL AND TABLE_COLLATION NOT LIKE 'utf8mb4%'");
+            if (!$tablesResult) {
+                return;
+            }
+            while ($tableRow = $tablesResult->fetch_assoc()) {
+                $tableName = (string) ($tableRow['TABLE_NAME'] ?? '');
+                if ($tableName === '') {
+                    continue;
+                }
+                $safeTable = str_replace('`', '``', $tableName);
+                $targetCollation = in_array($tableName, ['category', 'reagent_report'], true) ? 'utf8mb4_bin' : 'utf8mb4_unicode_ci';
+                try {
+                    $connection->query("ALTER TABLE `{$safeTable}` CONVERT TO CHARACTER SET utf8mb4 COLLATE {$targetCollation}");
+                } catch (Throwable $e) {
+                    error_log("[table.php] utf8mb4 conversion {$tableName}: " . $e->getMessage());
+                }
+            }
+        } catch (Throwable $e) {
+            error_log('[table.php] utf8mb4 schema migration: ' . $e->getMessage());
+        }
+    }
+}
+
+rxEnsureUtf8mb4Schema($connect, $pdo ?? null);
+
 
 if (!function_exists('rxTableColumnExists')) {
     function rxTableColumnExists($connection, $tableName, $columnName)
