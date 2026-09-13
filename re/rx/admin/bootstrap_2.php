@@ -3360,6 +3360,42 @@ elseif ($text == "📝 تنظیم متن ربات" && $adminrulecheck['rule'] ==
     step('home', $from_id);
 } elseif ($text == "📚 بخش آموزش" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, $textbotlang['users']['selectoption'], $keyboardhelpadmin, 'HTML');
+error_log('RXDBG-HIT datain=' . var_export($datain ?? null, true) . ' text=' . var_export(mb_substr((string)($text ?? ''), 0, 40), true) . ' step=' . var_export($user['step'] ?? null, true));
+} elseif (($text == "📥 دریافت پیش‌فرض‌ها" || $datain == "help_load_default") && $adminrulecheck['rule'] == "administrator") {
+    // Issue #27: load the bundled default bot-usage tutorials into the help table.
+    // Idempotent: entries whose name_os already exist are left untouched, so an
+    // admin's customized tutorials are never overwritten.
+    $rxHelpRoot = defined('REFACTORED_LEGACY_ROOT') ? REFACTORED_LEGACY_ROOT : dirname(__DIR__, 3);
+    $rxHelpDefaultsFile = $rxHelpRoot . '/default_help.json';
+    if (!is_file($rxHelpDefaultsFile)) {
+        nm_adminInstantReply($from_id, "❌ فایل default_help.json در سورس ربات یافت نشد.", $keyboardhelpadmin, 'HTML');
+        return;
+    }
+    $rxHelpDefaults = json_decode((string) file_get_contents($rxHelpDefaultsFile), true);
+    if (!is_array($rxHelpDefaults) || empty($rxHelpDefaults)) {
+        nm_adminInstantReply($from_id, "❌ فایل default_help.json معتبر نیست.", $keyboardhelpadmin, 'HTML');
+        return;
+    }
+    $rxHelpAdded = 0;
+    $rxHelpSkipped = 0;
+    $rxHelpInsert = $pdo->prepare("INSERT INTO help (name_os,Media_os,type_Media_os,category,Description_os,app_title,app_link) VALUES (?,?,?,?,?,?,?)");
+    foreach ($rxHelpDefaults as $rxHelpItem) {
+        $rxHelpName = trim((string) ($rxHelpItem['name_os'] ?? ''));
+        if ($rxHelpName === '') { $rxHelpSkipped++; continue; }
+        if (select("help", "id", "name_os", $rxHelpName, "select") !== false) { $rxHelpSkipped++; continue; }
+        $rxHelpInsert->execute([
+            $rxHelpName,
+            '',
+            'text',
+            (string) ($rxHelpItem['category'] ?? ''),
+            (string) ($rxHelpItem['description'] ?? ''),
+            (string) ($rxHelpItem['app_title'] ?? ''),
+            (string) ($rxHelpItem['app_link'] ?? ''),
+        ]);
+        $rxHelpAdded++;
+    }
+    nm_adminInstantReply($from_id, "📥 آموزش‌های پیش‌فرض بارگذاری شد.\n\n✅ اضافه‌شده: {$rxHelpAdded}\n↩️ از قبل موجود (دست‌نخورده): {$rxHelpSkipped}", $keyboardhelpadmin, 'HTML');
+    return;
 } elseif ($text == "📚 افزودن آموزش" && $adminrulecheck['rule'] == "administrator") {
     nm_adminInstantReply($from_id, $textbotlang['Admin']['Help']['GetAddNameHelp'], $backadmin, 'HTML');
     step('add_name_help', $from_id);

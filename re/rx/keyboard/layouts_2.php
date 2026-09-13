@@ -9,7 +9,8 @@ $keyboardhelpadmin = rx_kb_encode([
             rx_kb_style(['text' => "📚 افزودن آموزش", 'callback_data' => 'help_add'], 'help_add', $_rx_helpa_styles),
             rx_kb_style(['text' => "❌ حذف آموزش", 'callback_data' => 'help_del'], 'help_del', $_rx_helpa_styles)
         ],
-        [rx_kb_style(['text' => "✏️ ویرایش آموزش", 'callback_data' => 'help_edit'], 'help_edit', $_rx_helpa_styles)],
+        [rx_kb_style(['text' => "✏️ ویرایش آموزش", 'callback_data' => 'help_edit'], 'help_edit', $_rx_helpa_styles),
+         rx_kb_style(['text' => "📥 دریافت پیش‌فرض‌ها", 'callback_data' => 'help_load_default'], 'help_load_default', $_rx_helpa_styles)],
         [
             rx_kb_style(['text' => $textbotlang['Admin']['backadmin'], 'callback_data' => 'help_back'], 'help_back', $_rx_helpa_styles),
             rx_kb_style(['text' => $textbotlang['Admin']['backmenu'], 'callback_data' => 'help_backmenu'], 'help_backmenu', $_rx_helpa_styles)
