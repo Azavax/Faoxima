@@ -304,25 +304,97 @@ $dispatchAsync = static function (array $urls, bool $useLoopback): array {
     return $failed;
 };
 
-$rxDispatchCli = static function (string $script, int $worker, int $workers, bool $background): void {
+$rxResolveCliPhp = static function (): ?string {
+    static $resolved = false;
+    static $cliPhp = null;
+
+    if ($resolved) {
+        return $cliPhp;
+    }
+    $resolved = true;
+
+    $candidates = [];
+
+    if (php_sapi_name() === 'cli' && defined('PHP_BINARY') && PHP_BINARY) {
+        $candidates[] = PHP_BINARY;
+    }
+
+    $candidates = array_merge($candidates, [
+        '/usr/local/bin/php',
+        '/usr/bin/php',
+        '/opt/cpanel/ea-php85/root/usr/bin/php',
+        '/opt/cpanel/ea-php84/root/usr/bin/php',
+        '/opt/cpanel/ea-php83/root/usr/bin/php',
+        '/opt/cpanel/ea-php82/root/usr/bin/php',
+        '/opt/cpanel/ea-php81/root/usr/bin/php',
+        'php',
+    ]);
+
+    $seen = [];
+    foreach ($candidates as $candidate) {
+        if (isset($seen[$candidate])) {
+            continue;
+        }
+        $seen[$candidate] = true;
+
+        if (strpos($candidate, '/') !== false && !is_executable($candidate)) {
+            continue;
+        }
+
+        $output = [];
+        $code = 1;
+        @exec(escapeshellarg($candidate) . ' -r ' . escapeshellarg('echo PHP_SAPI;') . ' 2>/dev/null', $output, $code);
+
+        if ($code === 0 && trim(implode("
+", $output)) === 'cli') {
+            $cliPhp = $candidate;
+            return $cliPhp;
+        }
+    }
+
+    return null;
+};
+
+$rxDispatchCli = static function (string $script, int $worker, int $workers, bool $background) use ($rxResolveCliPhp): bool {
     $file = realpath(__DIR__ . '/../cronbot/' . ltrim($script, '/'));
     if ($file === false || !is_file($file)) {
-        return;
+        return false;
     }
-    $phpBin = defined('PHP_BINARY') && PHP_BINARY ? PHP_BINARY : 'php';
+
+    $phpBin = $rxResolveCliPhp();
+    if ($phpBin === null) {
+        return false;
+    }
+
     if (DIRECTORY_SEPARATOR === '\\') {
         $cmd = 'set "BROADCAST_WORKER_ID=' . $worker . '" && set "BROADCAST_WORKERS=' . $workers . '" && '
              . escapeshellarg($phpBin) . ' ' . escapeshellarg($file);
         if ($background) {
-            @pclose(@popen('start /B cmd /C "' . $cmd . '"', 'r'));
-        } else {
-            @exec($cmd . ' > NUL 2>&1');
+            $handle = @popen('start /B cmd /C "' . $cmd . '"', 'r');
+            if (is_resource($handle)) {
+                @pclose($handle);
+                return true;
+            }
+            return false;
         }
-    } else {
-        $cmd = 'BROADCAST_WORKER_ID=' . $worker . ' BROADCAST_WORKERS=' . $workers . ' '
-            . escapeshellarg($phpBin) . ' ' . escapeshellarg($file) . ' > /dev/null 2>&1';
-        @exec($cmd . ($background ? ' &' : ''));
+
+        $exitCode = 1;
+        @exec($cmd . ' > NUL 2>&1', $unused, $exitCode);
+        return $exitCode === 0;
     }
+
+    $cmd = 'BROADCAST_WORKER_ID=' . $worker . ' BROADCAST_WORKERS=' . $workers . ' '
+        . escapeshellarg($phpBin) . ' ' . escapeshellarg($file);
+
+    if ($background) {
+        $exitCode = 1;
+        @exec($cmd . ' > /dev/null 2>&1 &', $unused, $exitCode);
+        return $exitCode === 0;
+    }
+
+    $exitCode = 1;
+    @exec($cmd . ' > /dev/null 2>&1', $unused, $exitCode);
+    return $exitCode === 0;
 };
 
 $rxIsCli = (php_sapi_name() === 'cli');
@@ -334,19 +406,74 @@ if (is_file($rxLegacyLoopbackFlag)) {
 }
 
 
-$dueUrls = [];
+$dueTasks = [];
+$rxSuccessfulDispatches = 0;
+
+$rxMarkJobRun = static function (PDO $pdo, string $key, int $now, array &$runtimeState): void {
+    if (function_exists('setCronJobLastRun')) {
+        try { setCronJobLastRun($pdo, $key, $now); } catch (Throwable $e) {}
+    }
+    $runtimeState[$key] = $now;
+};
+
+$rxDispatchHttpTasks = static function (array $tasks, bool $useLoopback) use ($dispatchAsync, $rxDetectLoopback): array {
+    if (empty($tasks)) {
+        return ['success' => [], 'failed' => []];
+    }
+
+    $urls = [];
+    $taskByUrl = [];
+
+    foreach ($tasks as $task) {
+        $url = $task['url'];
+        if ($useLoopback) {
+            $loopback = $rxDetectLoopback();
+            if (!is_array($loopback)) {
+                return ['success' => [], 'failed' => $tasks];
+            }
+
+            $parts = parse_url($url);
+            $path = $parts['path'] ?? '/';
+            $query = isset($parts['query']) ? '?' . $parts['query'] : '';
+            $url = $loopback['scheme'] . '://127.0.0.1:' . $loopback['port'] . $path . $query;
+        }
+
+        $urls[] = $url;
+        $taskByUrl[$url][] = $task;
+    }
+
+    $failedUrls = $dispatchAsync($urls, $useLoopback);
+    $failedLookup = [];
+    foreach ($failedUrls as $failedUrl) {
+        $failedLookup[$failedUrl] = true;
+    }
+
+    $success = [];
+    $failed = [];
+
+    foreach ($urls as $url) {
+        $bucket = $taskByUrl[$url] ?? [];
+        foreach ($bucket as $task) {
+            if (isset($failedLookup[$url])) {
+                $failed[] = $task;
+            } else {
+                $success[] = $task;
+            }
+        }
+    }
+
+    return ['success' => $success, 'failed' => $failed];
+};
 
 if ($bootstrapLoaded && function_exists('getCronJobDefinitions')) {
     $definitions = getCronJobDefinitions();
     $schedules   = function_exists('loadCronSchedules') ? loadCronSchedules() : [];
 
     foreach ($definitions as $key => $definition) {
-        if ($key === 'backupbot' && !$rxIsCli) {
-            continue;
-        }
         if (empty($definition['script'])) {
             continue;
         }
+
         $defaultConfig = $definition['default'] ?? ['unit' => 'minute', 'value' => 1];
         $schedule      = $schedules[$key] ?? $defaultConfig;
 
@@ -354,59 +481,137 @@ if ($bootstrapLoaded && function_exists('getCronJobDefinitions')) {
             continue;
         }
 
-        $rxN = (int) ($jobWorkerCounts[$key] ?? 1);
+        $rxN = max(1, (int) ($jobWorkerCounts[$key] ?? 1));
+        $jobDispatched = false;
+
         if ($rxIsCli) {
-            if ($rxN > 1) {
-                for ($rxI = 0; $rxI < $rxN; $rxI++) {
-                    $rxDispatchCli($definition['script'], $rxI, $rxN, !$rxSharedProfile);
+            for ($rxI = 0; $rxI < $rxN; $rxI++) {
+                $cliOk = $rxDispatchCli(
+                    $definition['script'],
+                    $rxI,
+                    $rxN,
+                    !$rxSharedProfile
+                );
+
+                if ($cliOk) {
                     $rxCliDispatched++;
+                    $rxSuccessfulDispatches++;
+                    $jobDispatched = true;
+                    continue;
                 }
-            } else {
-                $rxDispatchCli($definition['script'], 0, 1, !$rxSharedProfile);
+
+                $rxBase = $buildCronUrl($definition['script']);
+                $rxSep  = (strpos($rxBase, '?') === false) ? '?' : '&';
+                $fallbackUrl = $rxN > 1
+                    ? $rxBase . $rxSep . 'worker=' . $rxI . '&workers=' . $rxN
+                    : $rxBase;
+
+                $fallbackResult = $rxDispatchHttpTasks([[
+                    'key' => $key,
+                    'script' => $definition['script'],
+                    'worker' => $rxI,
+                    'workers' => $rxN,
+                    'url' => $fallbackUrl,
+                ]], false);
+
+                if (!empty($fallbackResult['failed'])) {
+                    $fallbackResult = $rxDispatchHttpTasks($fallbackResult['failed'], true);
+                }
+
+                if (!empty($fallbackResult['success'])) {
+                    $rxSuccessfulDispatches += count($fallbackResult['success']);
+                    $jobDispatched = true;
+                }
+            }
+
+            if ($jobDispatched) {
+                $rxMarkJobRun($pdo, $key, $now, $runtimeState);
+            }
+            continue;
+        }
+
+        if ($key === 'backupbot') {
+            $cliOk = $rxDispatchCli($definition['script'], 0, 1, true);
+            if ($cliOk) {
+                $rxCliDispatched++;
+                $rxSuccessfulDispatches++;
+                $jobDispatched = true;
+            }
+
+            if ($jobDispatched) {
+                $rxMarkJobRun($pdo, $key, $now, $runtimeState);
+            }
+            continue;
+        }
+
+        $rxBase = $buildCronUrl($definition['script']);
+        $rxSep  = (strpos($rxBase, '?') === false) ? '?' : '&';
+
+        for ($rxI = 0; $rxI < $rxN; $rxI++) {
+            $dueTasks[] = [
+                'key' => $key,
+                'script' => $definition['script'],
+                'worker' => $rxI,
+                'workers' => $rxN,
+                'url' => $rxN > 1
+                    ? $rxBase . $rxSep . 'worker=' . $rxI . '&workers=' . $rxN
+                    : $rxBase,
+            ];
+        }
+    }
+}
+
+if (!$rxIsCli && !empty($dueTasks)) {
+    $rxHttpBatchSize = $rxSharedProfile ? 2 : 8;
+    $primarySuccess = [];
+    $primaryFailed = [];
+
+    foreach (array_chunk($dueTasks, $rxHttpBatchSize) as $batch) {
+        $result = $rxDispatchHttpTasks($batch, false);
+        $primarySuccess = array_merge($primarySuccess, $result['success']);
+        $primaryFailed = array_merge($primaryFailed, $result['failed']);
+    }
+
+    $loopbackSuccess = [];
+    $loopbackFailed = [];
+
+    if (!empty($primaryFailed)) {
+        foreach (array_chunk($primaryFailed, $rxHttpBatchSize) as $batch) {
+            $result = $rxDispatchHttpTasks($batch, true);
+            $loopbackSuccess = array_merge($loopbackSuccess, $result['success']);
+            $loopbackFailed = array_merge($loopbackFailed, $result['failed']);
+        }
+    }
+
+    $cliFallbackSuccess = [];
+    if (!empty($loopbackFailed)) {
+        foreach ($loopbackFailed as $task) {
+            $cliOk = $rxDispatchCli(
+                $task['script'],
+                (int) $task['worker'],
+                (int) $task['workers'],
+                true
+            );
+            if ($cliOk) {
+                $cliFallbackSuccess[] = $task;
                 $rxCliDispatched++;
             }
-        } elseif ($rxN > 1) {
-            $rxBase = $buildCronUrl($definition['script']);
-            $rxSep  = (strpos($rxBase, '?') === false) ? '?' : '&';
-            for ($rxI = 0; $rxI < $rxN; $rxI++) {
-                $dueUrls[] = $rxBase . $rxSep . 'worker=' . $rxI . '&workers=' . $rxN;
-            }
-        } else {
-            $dueUrls[] = $buildCronUrl($definition['script']);
         }
-
-
-        if (function_exists('setCronJobLastRun')) {
-            try { setCronJobLastRun($pdo, $key, $now); } catch (Throwable $e) {}
-        }
-        $runtimeState[$key] = $now;
     }
 
-}
+    $allSuccess = array_merge($primarySuccess, $loopbackSuccess, $cliFallbackSuccess);
+    $rxSuccessfulDispatches += count($allSuccess);
 
-if (!$rxIsCli && !empty($dueUrls)) {
-    $failed = [];
-    $rxHttpBatchSize = $rxSharedProfile ? 2 : 8;
-    foreach (array_chunk($dueUrls, $rxHttpBatchSize) as $rxUrlBatch) {
-        $failed = array_merge($failed, $dispatchAsync($rxUrlBatch, false));
+    $successfulJobs = [];
+    foreach ($allSuccess as $task) {
+        $successfulJobs[$task['key']] = true;
     }
-    if (!empty($failed)) {
-        $rxLoopback = $rxDetectLoopback();
-        if (is_array($rxLoopback)) {
-            $rxRebuilt = [];
-            foreach ($failed as $rxFailedUrl) {
-                $rxParts = parse_url($rxFailedUrl);
-                $rxPath  = $rxParts['path'] ?? '/';
-                $rxQuery = isset($rxParts['query']) ? '?' . $rxParts['query'] : '';
-                $rxRebuilt[] = $rxLoopback['scheme'] . '://127.0.0.1:' . $rxLoopback['port'] . $rxPath . $rxQuery;
-            }
-            foreach (array_chunk($rxRebuilt, $rxHttpBatchSize) as $rxUrlBatch) {
-                $dispatchAsync($rxUrlBatch, true);
-            }
-        }
+
+    foreach (array_keys($successfulJobs) as $jobKey) {
+        $rxMarkJobRun($pdo, $jobKey, $now, $runtimeState);
     }
 }
 
-$rxDispatchedTotal = $rxIsCli ? $rxCliDispatched : count($dueUrls);
+$rxDispatchedTotal = $rxSuccessfulDispatches;
 echo "OK " . date('Y-m-d H:i:s') . " (Asia/Tehran) | dispatched=" . $rxDispatchedTotal . "\n";
 

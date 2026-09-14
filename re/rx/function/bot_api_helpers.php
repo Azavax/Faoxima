@@ -880,26 +880,37 @@ function replaceCronJobsMatchingStatus($pattern, $newCommands)
     $cronUser = getCronTargetUser();
 
     $existingCronJobs = runShellCommand(rxCrontabCommand($crontabBinary, $cronUser, '-l 2>/dev/null'));
-    $existingCronJobs = trim((string) $existingCronJobs);
+    $existingCronJobs = rtrim((string) $existingCronJobs, "\r\n");
     $cronLines = $existingCronJobs === '' ? [] : preg_split('/\r?\n/', $existingCronJobs);
-    $cronLines = array_values(array_filter(array_map('trim', $cronLines), static function ($line) {
-        return $line !== '' && strpos($line, '#') !== 0;
-    }));
 
-    $keptLines = array_values(array_filter($cronLines, static function ($line) use ($pattern, $commands) {
-        if (in_array($line, $commands, true)) {
-            return true;
+    $finalLines = [];
+    $registeredCommands = [];
+    foreach ($cronLines as $line) {
+        $trimmedLine = trim($line);
+        if ($trimmedLine === '' || strpos($trimmedLine, '#') === 0) {
+            $finalLines[] = $line;
+            continue;
         }
-        return !preg_match($pattern, $line);
-    }));
 
-    $finalLines = $keptLines;
-    foreach ($commands as $command) {
-        if (!in_array($command, $finalLines, true)) {
-            $finalLines[] = $command;
+        if (in_array($trimmedLine, $commands, true)) {
+            if (!isset($registeredCommands[$trimmedLine])) {
+                $finalLines[] = $trimmedLine;
+                $registeredCommands[$trimmedLine] = true;
+            }
+            continue;
+        }
+
+        if (!preg_match($pattern, $trimmedLine)) {
+            $finalLines[] = $line;
         }
     }
-    $finalLines = array_values(array_unique($finalLines));
+
+    foreach ($commands as $command) {
+        if (!isset($registeredCommands[$command])) {
+            $finalLines[] = $command;
+            $registeredCommands[$command] = true;
+        }
+    }
 
     if ($finalLines === $cronLines) {
         return ['status' => 'success', 'user' => $cronUser];
@@ -923,12 +934,28 @@ function replaceCronJobsMatchingStatus($pattern, $newCommands)
     unlink($temporaryFile);
 
     $verifyCronJobs = runShellCommand(rxCrontabCommand($crontabBinary, $cronUser, '-l 2>/dev/null'));
-    $verifyCronJobs = trim((string) $verifyCronJobs);
+    $verifyCronJobs = rtrim((string) $verifyCronJobs, "\r\n");
+    $verifyLines = $verifyCronJobs === '' ? [] : preg_split('/\r?\n/', $verifyCronJobs);
     $verifyOk = true;
     foreach ($commands as $command) {
-        if (strpos($verifyCronJobs, $command) === false) {
+        $commandCount = 0;
+        foreach ($verifyLines as $verifyLine) {
+            if (trim($verifyLine) === $command) {
+                $commandCount++;
+            }
+        }
+        if ($commandCount !== 1) {
             $verifyOk = false;
             break;
+        }
+    }
+    if ($verifyOk) {
+        foreach ($verifyLines as $verifyLine) {
+            $trimmedLine = trim($verifyLine);
+            if ($trimmedLine !== '' && strpos($trimmedLine, '#') !== 0 && !in_array($trimmedLine, $commands, true) && preg_match($pattern, $trimmedLine)) {
+                $verifyOk = false;
+                break;
+            }
         }
     }
 
@@ -941,9 +968,10 @@ function replaceCronJobsMatching($pattern, $newCommands)
     return $result['status'] !== 'error';
 }
 
-function rxActivecronPattern()
+function rxActivecronPattern($domainhosts)
 {
-    return '#curl\s+-s\s+https?://\S+/cron/cron\.php#';
+    $projectHost = trim((string) preg_replace('#^https?://#i', '', $domainhosts), '/');
+    return '#curl\s+-s\s+["\']?https?://' . preg_quote($projectHost, '#') . '/cron/cron\.php(?:\?[^"\'\s]*)?["\']?(?:\s|$)#i';
 }
 
 function activecronStatus()
@@ -960,10 +988,10 @@ function activecronStatus()
     }
 
     $cronCommands = [
-        "*/1 * * * * curl -s https://$domainhosts/cron/cron.php > /dev/null 2>&1",
+        "*/1 * * * * curl -s \"https://$domainhosts/cron/cron.php?_cron=$(date +%s)\" > /dev/null 2>&1",
     ];
 
-    return replaceCronJobsMatchingStatus(rxActivecronPattern(), $cronCommands);
+    return replaceCronJobsMatchingStatus(rxActivecronPattern($domainhosts), $cronCommands);
 }
 
 function activecron()
