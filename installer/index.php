@@ -201,7 +201,10 @@ if ($isRootExecution) {
                     $replyMarkup = urlencode(json_encode([
                         'inline_keyboard' => [[['text' => 'شروع ربات', 'callback_data' => 'start']]],
                     ], JSON_UNESCAPED_UNICODE));
-                    rx_get_contents("https://api.telegram.org/bot{$tgBotToken}/sendMessage?chat_id={$tgAdminId}&text={$telegramMessage}&reply_markup={$replyMarkup}");
+                    $welcomeResponse = rx_get_contents("https://api.telegram.org/bot{$tgBotToken}/sendMessage?chat_id={$tgAdminId}&text={$telegramMessage}&reply_markup={$replyMarkup}");
+                    if (!is_array($welcomeResponse) || empty($welcomeResponse['ok'])) {
+                        $SUCCESS[] = 'نصب تکمیل شد؛ پیام تأیید تلگرام ارسال نشد و می‌توانید ربات را مستقیماً باز کنید';
+                    }
                     $success = true;
                     $_SESSION['rx_step'] = 'success';
                     $_SESSION['rx_success_messages'] = $SUCCESS;

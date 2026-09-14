@@ -305,11 +305,45 @@ function rx_escape_html($value): string
 
 function rx_table_migrations_verify_ready(array $dbInfo, int $retries = 5, int $delaySeconds = 2): bool
 {
+    $requiredTables = [
+        'user', 'setting', 'admin', 'channels', 'marzban_panel', 'product', 'invoice',
+        'Payment_report', 'textbot', 'shopSetting', 'support_message', 'crypto_wallets',
+        'processed_updates', 'cron_runtime_state',
+    ];
+    $requiredColumns = [
+        ['user', 'nav_state'],
+        ['user', 'card_verify_bypass'],
+        ['setting', 'redis_enabled'],
+        ['setting', 'banner_start_status'],
+        ['invoice', 'invalidated_at'],
+        ['Payment_report', 'tetrapay_token'],
+        ['marzban_panel', 'xui_api_mode'],
+        ['product', 'ip_limit'],
+        ['support_message', 'seen_by_admin'],
+        ['crypto_wallets', 'verification_mode'],
+    ];
     for ($attempt = 1; $attempt <= $retries; $attempt++) {
         $connect = @new mysqli($dbInfo['host'], $dbInfo['username'], $dbInfo['password'], $dbInfo['name']);
         if (!$connect->connect_error) {
-            $result = $connect->query("SHOW TABLES LIKE 'setting'");
-            $ready = ($result && $result->num_rows > 0);
+            $connect->set_charset('utf8mb4');
+            $tableNames = implode(',', array_map(static function ($tableName) use ($connect) {
+                return "'" . $connect->real_escape_string($tableName) . "'";
+            }, $requiredTables));
+            $tableResult = $connect->query("SELECT COUNT(*) AS count FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_TYPE = 'BASE TABLE' AND TABLE_NAME IN ({$tableNames})");
+            $tableRow = $tableResult ? $tableResult->fetch_assoc() : null;
+            $tablesReady = (int) ($tableRow['count'] ?? 0) === count($requiredTables);
+            $columnConditions = array_map(static function ($column) use ($connect) {
+                $tableName = $connect->real_escape_string($column[0]);
+                $columnName = $connect->real_escape_string($column[1]);
+                return "(TABLE_NAME = '{$tableName}' AND COLUMN_NAME = '{$columnName}')";
+            }, $requiredColumns);
+            $columnResult = $connect->query("SELECT COUNT(*) AS count FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND (" . implode(' OR ', $columnConditions) . ')');
+            $columnRow = $columnResult ? $columnResult->fetch_assoc() : null;
+            $columnsReady = (int) ($columnRow['count'] ?? 0) === count($requiredColumns);
+            $charsetResult = $connect->query("SELECT COUNT(*) AS count FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND CHARACTER_SET_NAME IS NOT NULL AND CHARACTER_SET_NAME <> 'utf8mb4'");
+            $charsetRow = $charsetResult ? $charsetResult->fetch_assoc() : null;
+            $charsetReady = (int) ($charsetRow['count'] ?? -1) === 0;
+            $ready = $tablesReady && $columnsReady && $charsetReady;
             $connect->close();
             if ($ready) {
                 return true;

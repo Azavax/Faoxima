@@ -889,7 +889,9 @@ verify_tables_created() {
     [ -z "$db_name" ] && db_name=$(env_get MYSQL_DATABASE)
     [ -z "$db_user" ] && db_user=$(env_get MYSQL_USER)
     [ -z "$db_pass" ] && db_pass=$(env_get MYSQL_PASSWORD)
-    dc exec -T db mysql -u"$db_user" -p"$db_pass" -e "USE \`${db_name}\`; SHOW TABLES LIKE 'setting';" 2>/dev/null | grep -q "setting"
+    local verify_sql
+    verify_sql="SELECT IF((SELECT COUNT(*) FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE() AND TABLE_TYPE='BASE TABLE' AND TABLE_NAME IN ('user','setting','admin','channels','marzban_panel','product','invoice','Payment_report','textbot','shopSetting','support_message','crypto_wallets','processed_updates','cron_runtime_state'))=14 AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND ((TABLE_NAME='user' AND COLUMN_NAME='nav_state') OR (TABLE_NAME='user' AND COLUMN_NAME='card_verify_bypass') OR (TABLE_NAME='setting' AND COLUMN_NAME='redis_enabled') OR (TABLE_NAME='setting' AND COLUMN_NAME='banner_start_status') OR (TABLE_NAME='invoice' AND COLUMN_NAME='invalidated_at') OR (TABLE_NAME='Payment_report' AND COLUMN_NAME='tetrapay_token') OR (TABLE_NAME='marzban_panel' AND COLUMN_NAME='xui_api_mode') OR (TABLE_NAME='product' AND COLUMN_NAME='ip_limit') OR (TABLE_NAME='support_message' AND COLUMN_NAME='seen_by_admin') OR (TABLE_NAME='crypto_wallets' AND COLUMN_NAME='verification_mode')))=10 AND (SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND CHARACTER_SET_NAME IS NOT NULL AND CHARACTER_SET_NAME<>'utf8mb4')=0,'READY','NOT_READY');"
+    dc exec -T db mysql -u"$db_user" -p"$db_pass" "$db_name" -Nse "$verify_sql" 2>/dev/null | grep -qx "READY"
 }
 
 diagnose_table_failure() {
@@ -1345,9 +1347,13 @@ install_bot() {
     fi
 
     ui_action "Initialising database tables via table.php..."
-    dc exec -T app php table.php >/dev/null 2>&1
+    if ! dc exec -T app php table.php >/dev/null 2>&1; then
+        ui_err "table.php failed while creating the database schema."
+        diagnose_table_failure app "$PROJECT_DIR"
+        exit 1
+    fi
     if ! verify_tables_created; then
-        ui_err "table.php ran but the database schema was not created (the 'setting' table is missing)."
+        ui_err "table.php ran but the database schema or utf8mb4 migration is incomplete."
         diagnose_table_failure app "$PROJECT_DIR"
         ui_err "Fix the issue above, then re-run install."
         exit 1
@@ -1580,9 +1586,13 @@ EOF
     dc exec nginx nginx -s reload || { ui_err "Failed to reload nginx with the new bot's location block."; return 1; }
 
     ui_action "Initialising database tables via table.php..."
-    dc exec -T "app_${botname}" php table.php >/dev/null 2>&1
+    if ! dc exec -T "app_${botname}" php table.php >/dev/null 2>&1; then
+        ui_err "table.php failed while creating the database schema for '${botname}'."
+        diagnose_table_failure "app_${botname}" "$bot_dir"
+        return 1
+    fi
     if ! verify_tables_created "$db_name" "$db_user" "$db_pass"; then
-        ui_err "table.php ran but the database schema was not created for '${botname}' (the 'setting' table is missing)."
+        ui_err "table.php ran but the database schema or utf8mb4 migration is incomplete for '${botname}'."
         diagnose_table_failure "app_${botname}" "$bot_dir"
         return 1
     fi
@@ -2009,9 +2019,13 @@ update_bot_source() {
         return 1
     fi
 
-    dc exec -T "$app_service" php table.php >/dev/null 2>&1
+    if ! dc exec -T "$app_service" php table.php >/dev/null 2>&1; then
+        ui_err "table.php failed while updating the database schema for '${label}'."
+        diagnose_table_failure "$app_service" "$code_dir"
+        return 1
+    fi
     if ! verify_tables_created "$db_name" "$db_user" "$db_pass"; then
-        ui_err "table.php ran but the database schema check failed for '${label}' (the 'setting' table is missing)."
+        ui_err "table.php ran but the database schema or utf8mb4 migration is incomplete for '${label}'."
         diagnose_table_failure "$app_service" "$code_dir"
         return 1
     fi
