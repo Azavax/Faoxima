@@ -318,6 +318,7 @@ function rx_table_migrations_verify_ready(array $dbInfo, int $retries = 5, int $
         ['invoice', 'invalidated_at'],
         ['Payment_report', 'tetrapay_token'],
         ['marzban_panel', 'xui_api_mode'],
+        ['marzban_panel', 'ip_limit_guard'],
         ['product', 'ip_limit'],
         ['support_message', 'seen_by_admin'],
         ['crypto_wallets', 'verification_mode'],

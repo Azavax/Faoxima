@@ -217,9 +217,9 @@ final class TestAccountHandler extends BaseHandler
             FaoximaDb::execute(
                 "INSERT IGNORE INTO invoice
                     (id_user, id_invoice, username, time_sell, Service_location, name_product,
-                     price_product, Volume, Service_time, Status, notifctions)
+                     price_product, Volume, Volume_unit, Service_time, Status, notifctions)
                  VALUES (:id_user, :id_invoice, :username, :time_sell, :location, :name_product,
-                         :price, :volume, :service_time, :status, :notifs)",
+                         :price, :volume, :volume_unit, :service_time, :status, :notifs)",
                 [
                     ':id_user'      => $this->user['id'],
                     ':id_invoice'   => $orderId,
@@ -229,6 +229,7 @@ final class TestAccountHandler extends BaseHandler
                     ':name_product' => 'سرویس تست',
                     ':price'        => 0,
                     ':volume'       => (int)($panel['val_usertest'] ?? 0),
+                    ':volume_unit'  => 'MB',
                     ':service_time' => (int)($panel['time_usertest'] ?? 0),
                     ':status'       => 'active',
                     ':notifs'       => $notifications,
@@ -309,7 +310,7 @@ final class TestAccountHandler extends BaseHandler
         }
 
         $serviceTime = (int)($panel['time_usertest'] ?? 0);
-        $volumeGb = (int)($panel['val_usertest'] ?? 0);
+        $volumeMb = (int)($panel['val_usertest'] ?? 0);
         $totalBytes = $dataLimitBytes;
 
         $configsArr = array_values(array_filter(array_map(static function ($c) {
@@ -322,12 +323,12 @@ final class TestAccountHandler extends BaseHandler
         }
         global $textbotlang;
         $displayDay    = $serviceTime === 0 ? ($textbotlang['users']['stateus']['Unlimited'] ?? '∞') : (string)$serviceTime;
-        $displayVolume = $volumeGb === 0 ? ($textbotlang['users']['stateus']['Unlimited'] ?? '∞') : (string)$volumeGb;
+        $displayVolume = $volumeMb === 0 ? ($textbotlang['users']['stateus']['Unlimited'] ?? '∞') : formatBytes($totalBytes);
         $template = str_replace('{username}', "<code>" . htmlspecialchars($usernameAc, ENT_QUOTES, 'UTF-8') . "</code>", $template);
         $template = str_replace('{name_service}', htmlspecialchars(faoxima_textbot_get('dyn_testaccount_product_name', 'سرویس تست'), ENT_QUOTES, 'UTF-8'), $template);
         $template = str_replace('{location}', htmlspecialchars((string)($panel['name_panel'] ?? ''), ENT_QUOTES, 'UTF-8'), $template);
         $template = str_replace('{day}', htmlspecialchars($displayDay, ENT_QUOTES, 'UTF-8'), $template);
-        $template = str_replace('{volume}', htmlspecialchars($displayVolume, ENT_QUOTES, 'UTF-8'), $template);
+        $template = preg_replace('/\{volume\}[ \t\x{200c}]*(?:گیگابایت|گیگ|GB|مگابایت|مگ|MB)?/iu', htmlspecialchars($displayVolume, ENT_QUOTES, 'UTF-8'), $template);
         if (function_exists('applyConnectionPlaceholders')) {
             $template = applyConnectionPlaceholders($template, $subLink, '');
         }
@@ -469,9 +470,14 @@ final class TestAccountHandler extends BaseHandler
                 'panel_type'        => (string)($panel['type'] ?? ''),
                 'service_time_days' => $serviceTime,
                 'days_left'         => $serviceTime,
-                'volume_gb'         => $volumeGb,
+                'volume_gb'         => $totalBytes > 0 ? $totalBytes / (1024 ** 3) : 0,
+                'volume_mb'         => $volumeMb,
+                'volume_value'      => $volumeMb,
+                'volume_unit'       => 'MB',
                 'used_bytes'        => 0,
                 'total_bytes'       => $totalBytes,
+                'used_traffic_gb'   => 0,
+                'total_traffic_gb'  => $totalBytes > 0 ? $totalBytes / (1024 ** 3) : 0,
                 'unlimited_volume'  => $totalBytes === 0,
                 'unlimited_time'    => $serviceTime === 0,
                 'subscription_url'  => $subLink,

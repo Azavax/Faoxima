@@ -11,8 +11,6 @@ final class BrandHandler extends BaseHandler
     public $mode = 'info';
 
     private const DEFAULT_NAME = 'faoxima';
-    private const DEFAULT_LOGO_URL = 'https://avatars.githubusercontent.com/u/238855591?s=400&u=059d14b3c8c0993bd7211e6fc4bd7d297df4da35&v=4';
-
     public function handle(): void
     {
         switch ($this->mode) {
@@ -62,7 +60,7 @@ final class BrandHandler extends BaseHandler
         if ($logo !== '') {
             $candidate = __DIR__ . '/../../app/assets/branding/' . basename($logo);
             if (is_file($candidate)) {
-                $logoUrl = 'assets/branding/' . basename($logo) . '?v=' . filemtime($candidate);
+                $logoUrl = self::imageDataUri($candidate);
             }
         }
 
@@ -76,7 +74,11 @@ final class BrandHandler extends BaseHandler
 
         $isDefaultLogo = ($state === 'default');
         if ($isDefaultLogo) {
-            $logoUrl = self::DEFAULT_LOGO_URL;
+            $logoUrl = self::imageDataUri(__DIR__ . '/../../app/assets/branding/default_logo.jpg');
+            if ($logoUrl === '') {
+                $state = 'initials';
+                $isDefaultLogo = false;
+            }
         }
 
         return [
@@ -90,6 +92,18 @@ final class BrandHandler extends BaseHandler
             'accent'           => $accent,
             'mode'             => $mode,
         ];
+    }
+
+
+    private static function imageDataUri(string $path): string
+    {
+        if (!is_file($path) || !is_readable($path)) return '';
+        $bytes = @file_get_contents($path);
+        if (!is_string($bytes) || $bytes === '') return '';
+        $info = @getimagesize($path);
+        $mime = is_array($info) ? (string)($info['mime'] ?? '') : '';
+        if (!in_array($mime, ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], true)) return '';
+        return 'data:' . $mime . ';base64,' . base64_encode($bytes);
     }
 
 

@@ -241,7 +241,7 @@ function nmStockInvoiceText(array $invoice,array $stock=null){
     $content=is_array($stock)?trim((string)($stock['content']??'')):trim((string)($invoice['user_info']??''));
     $sub=nmStockSubLinkForInvoice($invoice,is_array($stock)?$stock:null);
     $startTs=nmInvoiceTimestamp($invoice); $days=(int)($invoice['Service_time']??0);
-    $vol=trim((string)($invoice['Volume']??'')); if($vol!==''&&is_numeric($vol))$vol=((float)$vol==0)?'نامحدود':rtrim(rtrim(number_format((float)$vol,2,'.',''),'0'),'.').'GB';
+    $vol=trim((string)($invoice['Volume']??'')); if($vol!==''&&is_numeric($vol))$vol=formatInvoiceVolume($invoice);
 
 
     $shelfName='';

@@ -1,5 +1,5 @@
 import { call, ApiError } from '../api.js?v=0.0.52';
-import { escapeHtml, fmtPrice, skeletonList, toast, copyToClipboard, wireAmountInput, amountValue } from '../utils.js?v=0.0.52';
+import { escapeHtml, fmtPrice, skeletonList, toast, copyToClipboard, wireAmountInput, amountValue, blobToDataUrl } from '../utils.js?v=0.0.52';
 import { hapticImpact, hapticNotify, isDesktopPlatform } from '../telegram.js?v=0.0.52';
 import { icon } from '../icons.js?v=0.0.52';
 
@@ -704,7 +704,7 @@ function wireCardVerifyStep(view, d) {
 
     if ($drop) $drop.addEventListener('click', () => $file.click());
 
-    $file.addEventListener('change', () => {
+    $file.addEventListener('change', async () => {
         const file = $file.files && $file.files[0];
         if (!file) return;
         if (file.size > 8 * 1024 * 1024) {
@@ -712,11 +712,16 @@ function wireCardVerifyStep(view, d) {
             $file.value = '';
             return;
         }
-        const url = URL.createObjectURL(file);
-        $drop.innerHTML = `
-            <img src="${url}" style="width:100%;max-height:220px;border-radius:8px;object-fit:contain;display:block" />
-            <p style="margin:8px 0 0;font-size:12px;color:#4caf50;font-weight:600">✅ عکس کارت انتخاب شد — برای تغییر کلیک کنید</p>
-        `;
+        try {
+            const dataUrl = await blobToDataUrl(file);
+            $drop.innerHTML = `
+                <img src="${dataUrl}" style="width:100%;max-height:220px;border-radius:8px;object-fit:contain;display:block" />
+                <p style="margin:8px 0 0;font-size:12px;color:#4caf50;font-weight:600">✅ عکس کارت انتخاب شد — برای تغییر کلیک کنید</p>
+            `;
+        } catch (_) {
+            toast('نمایش پیش‌نمایش تصویر ممکن نیست', 'error', 3000);
+            return;
+        }
         $drop.style.padding = '12px';
         $drop.style.borderColor = '#4caf50';
         checkReveal();
@@ -907,7 +912,7 @@ function wireCardToCard(view, d, extraFields = {}) {
 
     $pick.addEventListener('click', () => $file.click());
 
-    $file.addEventListener('change', () => {
+    $file.addEventListener('change', async () => {
         const file = $file.files && $file.files[0];
         if (!file) return;
         if (file.size > 8 * 1024 * 1024) {
@@ -915,9 +920,12 @@ function wireCardToCard(view, d, extraFields = {}) {
             $file.value = '';
             return;
         }
-        const url = URL.createObjectURL(file);
-        $previewImg.src = url;
-        $preview.classList.remove('hidden');
+        try {
+            $previewImg.src = await blobToDataUrl(file);
+            $preview.classList.remove('hidden');
+        } catch (_) {
+            toast('نمایش پیش‌نمایش تصویر ممکن نیست', 'error', 3000);
+        }
     });
 
     $submit.addEventListener('click', async () => {

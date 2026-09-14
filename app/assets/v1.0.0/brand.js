@@ -17,7 +17,7 @@ export function applyBrand(brand) {
     const state = String(brand.avatar_state || '').trim() || (brand.logo_url ? 'custom' : 'initials');
     let logoUrl = state === 'custom' ? String(brand.logo_url || '').trim() : '';
 
-    if (logoUrl !== '' && !/^https?:/i.test(logoUrl) && !logoUrl.startsWith(prefix)) {
+    if (logoUrl !== '' && !/^(?:https?:|data:image\/)/i.test(logoUrl) && !logoUrl.startsWith(prefix)) {
         logoUrl = prefix + logoUrl.replace(/^\/+/, '');
     }
 

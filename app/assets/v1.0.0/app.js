@@ -11,6 +11,16 @@ import { initNotifications } from './notifications.js?v=0.0.52';
 
 window.__FAOXIMA_MODULES_OK__ = true;
 
+document.addEventListener('contextmenu', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('#app') : null;
+    if (target) event.preventDefault();
+}, true);
+
+document.addEventListener('dragstart', (event) => {
+    const target = event.target instanceof Element ? event.target.closest('#app img,#app video,#app audio,#app a') : null;
+    if (target) event.preventDefault();
+}, true);
+
 try { loadSavedTheme(); } catch (_) {  }
 
 function postLog(level, msg, where, stack, extra) {

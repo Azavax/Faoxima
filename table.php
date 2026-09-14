@@ -738,6 +738,7 @@ try {
         xui_api_token TEXT NULL,
         xui_api_mode varchar(20) NOT NULL DEFAULT 'legacy',
         xui_monitor_state TEXT NULL,
+        ip_limit_guard varchar(20) NULL DEFAULT 'offipguard',
         agent varchar(200) NULL,
         sublink varchar(500) NULL,
         config varchar(500) NULL,
@@ -831,6 +832,7 @@ try {
         }
         addFieldToTable("marzban_panel", "xui_monitor_state", null, "TEXT");
         addFieldToTable("marzban_panel", "ip_limit_guard", "offipguard", "VARCHAR(20)");
+        rxSafeModifyColumn($connect, "marzban_panel", "ip_limit_guard", "VARCHAR(20) NULL DEFAULT 'offipguard'", "varchar(20)", true, "offipguard", "utf8mb4_unicode_ci");
         addFieldToTable("marzban_panel", "customvolume", $VALUE, "TEXT");
         addFieldToTable("marzban_panel", "subvip", "offsubvip", "VARCHAR(60)");
         addFieldToTable("marzban_panel", "changeloc", "offchangeloc", "VARCHAR(60)");
@@ -1055,6 +1057,7 @@ try {
         name_product varchar(200) CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci NULL,
         price_product varchar(200) NULL,
         Volume varchar(200) NULL,
+        Volume_unit varchar(10) NOT NULL DEFAULT 'GB',
         Service_time varchar(200) NULL,
         uuid TEXT NULL,
         note varchar(500) NULL,
@@ -1068,12 +1071,18 @@ try {
         hwid_limit varchar(20) NOT NULL DEFAULT '0',
         ip_last_seen TEXT NULL DEFAULT NULL,
         symbolic_limit_enabled varchar(20) NOT NULL DEFAULT '0',
-        symbolic_limit_users varchar(20) NOT NULL DEFAULT '0')
+        symbolic_limit_users varchar(20) NOT NULL DEFAULT '0',
+        invalidated_at INT UNSIGNED NULL DEFAULT NULL)
         ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE utf8mb4_unicode_ci");
         if (!$result) {
             error_log("[table.php] table invoice: " . mysqli_error($connect));
         }
     } else {
+        $Check_filde = $connect->query("SHOW COLUMNS FROM invoice LIKE 'Volume_unit'");
+        if (mysqli_num_rows($Check_filde) != 1) {
+            $result = $connect->query("ALTER TABLE invoice ADD Volume_unit VARCHAR(10) NOT NULL DEFAULT 'GB' AFTER Volume");
+        }
+        $connect->query("UPDATE invoice SET Volume_unit = 'MB' WHERE name_product = 'سرویس تست' AND (Volume_unit IS NULL OR Volume_unit <> 'MB')");
         $Check_filde = $connect->query("SHOW COLUMNS FROM invoice LIKE 'ip_limit'");
         if (mysqli_num_rows($Check_filde) != 1) {
             $result = $connect->query("ALTER TABLE invoice ADD ip_limit VARCHAR(20) NOT NULL DEFAULT '0'");

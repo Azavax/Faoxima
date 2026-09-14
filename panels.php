@@ -38,6 +38,38 @@ class ManagePanel
         return ($panel['type'] === 'pasarguard')
             || ($panel['type'] === 'marzban' && (string)($panel['version_panel'] ?? '0') === '1');
     }
+    public function RequiresLiveConnectionCheck(?array $panel): bool
+    {
+        if (!is_array($panel) || ($panel['type'] ?? '') === 'Manualsale') {
+            return false;
+        }
+        if (($panel['national_net_status'] ?? '') === 'on_national_net') {
+            return false;
+        }
+        return in_array((string) ($panel['type'] ?? ''), ['marzban', 'pasarguard', 'x-ui_single', 'guard', 'remnawave', 'rebecca'], true);
+    }
+    public function HasLiveConnectionHistory(?array $panel, array $user): bool
+    {
+        if (!$this->RequiresLiveConnectionCheck($panel)) {
+            return true;
+        }
+        if (($user['is_online'] ?? null) === true || (float) ($user['used_traffic'] ?? 0) > 0) {
+            return true;
+        }
+        $onlineAt = $user['online_at'] ?? null;
+        if (is_numeric($onlineAt)) {
+            return (float) $onlineAt > 0;
+        }
+        $onlineAt = strtolower(trim((string) $onlineAt));
+        if ($onlineAt === '' || in_array($onlineAt, ['offline', 'null', 'never', 'none', '0', '-'], true)) {
+            return false;
+        }
+        if ($onlineAt === 'online') {
+            return true;
+        }
+        $onlineTs = strtotime($onlineAt);
+        return $onlineTs !== false && $onlineTs > 0;
+    }
     function createUser($name_panel, $code_product, $usernameC, array $Data_Config)
     {
         $Output = [];
@@ -885,8 +917,9 @@ class ManagePanel
                 }
             }
             $service = select("invoice", "*", "username", $username, "select");
-            $volume_gb = (int) ($service['Volume'] ?? 0);
-            $data_limit = $volume_gb == 0 ? null : $volume_gb * pow(1024, 3);
+            $volumeValue = (float) ($service['Volume'] ?? 0);
+            $volumeUnit = function_exists('rxInvoiceVolumeUnit') ? rxInvoiceVolumeUnit($service) : ((($service['name_product'] ?? '') === 'سرویس تست') ? 'MB' : 'GB');
+            $data_limit = $volumeValue == 0 ? null : (function_exists('rxVolumeToBytes') ? rxVolumeToBytes($volumeValue, $volumeUnit) : $volumeValue * ($volumeUnit === 'MB' ? pow(1024, 2) : pow(1024, 3)));
             $manualSellTs = is_numeric($service['time_sell'] ?? null) ? (int) $service['time_sell'] : strtotime((string) ($service['time_sell'] ?? ''));
             $manualServiceTime = (int) ($service['Service_time'] ?? 0);
             $manualIsTest = (($service['name_product'] ?? '') === 'سرویس تست');
@@ -1646,6 +1679,13 @@ class ManagePanel
                 'msg' => "status invalid"
             );
             return;
+        }
+        if ($DataUserOut['status'] === 'active' && !$this->HasLiveConnectionHistory($Get_Data_Panel, $DataUserOut)) {
+            return array(
+                'status' => 'Unsuccessful',
+                'code' => 'not_connected',
+                'msg' => 'ابتدا به کانفیگ متصل شوید و سپس مجدداً تلاش کنید.'
+            );
         }
         if ($Get_Data_Panel['type'] == "marzban") {
             if ($DataUserOut['status'] == "active") {

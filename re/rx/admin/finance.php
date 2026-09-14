@@ -2366,11 +2366,10 @@ $iduser  در ربات  رفع مسدود گردید
     }
     if ($OrderUser['name_product'] == "سرویس تست") {
         $OrderUser['Service_time'] = $OrderUser['Service_time'] . "ساعته";
-        $OrderUser['Volume'] = $OrderUser['Volume'] . "مگابایت";
     } else {
         $OrderUser['Service_time'] = $OrderUser['Service_time'] . "روزه";
-        $OrderUser['Volume'] = intval($OrderUser['Volume']) == 0 ? $textbotlang['users']['stateus']['Unlimited'] : $OrderUser['Volume'] . "گیگابایت";
     }
+    $OrderUser['Volume'] = formatInvoiceVolume($OrderUser);
     $stmt = $pdo->prepare("SELECT value FROM service_other WHERE username = :username AND type = 'extend_user' AND status = 'paid' ORDER BY time DESC LIMIT 20");
     $stmt->execute([
         ':username' => $OrderUser['username'],

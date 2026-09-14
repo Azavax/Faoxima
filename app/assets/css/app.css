@@ -3436,3 +3436,20 @@ div.card-body.info-card > div.info-card-body:nth-of-type(2) > div.info-stats:nth
     font-size: 18px;
 }
 /* FX-EDIT-OVERRIDES-END */
+#app,
+#app * {
+    -webkit-touch-callout: none;
+}
+
+#app img {
+    pointer-events: none;
+    -webkit-user-drag: none;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+#app video,
+#app audio,
+#app a {
+    -webkit-user-drag: none;
+}

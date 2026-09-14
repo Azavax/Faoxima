@@ -8,6 +8,15 @@ export function escapeHtml(value) {
         .replace(/'/g, '&#39;');
 }
 
+export function blobToDataUrl(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(typeof reader.result === 'string' ? reader.result : '');
+        reader.onerror = () => reject(reader.error || new Error('media read failed'));
+        reader.readAsDataURL(blob);
+    });
+}
+
 /** Render an HTML template literal helper that auto-escapes interpolations. */
 export function html(strings, ...values) {
     let out = '';
@@ -53,6 +62,17 @@ export function fmtGb(value) {
     if (n === 0) return 'نامحدود';
     if (!Number.isFinite(n)) return '—';
     return `${n.toFixed(2)} GB`;
+}
+
+export function fmtBytes(value) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '—';
+    if (n === 0) return '0 B';
+    const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+    const power = Math.min(Math.floor(Math.log(Math.abs(n)) / Math.log(1024)), units.length - 1);
+    const amount = n / Math.pow(1024, Math.max(0, power));
+    const digits = Number.isInteger(amount) ? 0 : 2;
+    return `${amount.toFixed(digits)} ${units[Math.max(0, power)]}`;
 }
 
 /** Format days. 0 = unlimited. */
@@ -243,4 +263,3 @@ export function serviceStatusBadge(rawStatus) {
     }
     return { badge: 'is-active', text: 'فعال', icon: 'online' };
 }
-

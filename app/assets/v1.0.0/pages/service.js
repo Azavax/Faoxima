@@ -1,7 +1,7 @@
 import { call, ApiError, configFileUrl } from '../api.js?v=0.0.52';
 import { downloadFromUrl, downloadBlob, dataUriToBlob, decodeDataUriText, isTelegramApp, tgPlatform } from '../download.js?v=0.0.52';
 import {
-    escapeHtml, fmtPrice, fmtGb, fmtIpLimit, skeletonList, copyToClipboard, toast, trafficPercent, serviceStatusBadge,
+    escapeHtml, fmtPrice, fmtGb, fmtBytes, fmtIpLimit, skeletonList, copyToClipboard, toast, trafficPercent, serviceStatusBadge, blobToDataUrl,
 } from '../utils.js?v=0.0.52';
 import { hapticImpact, hapticNotify, showConfirm, openLink, supportsNativeDownload, downloadFileNative } from '../telegram.js?v=0.0.52';
 import { icon } from '../icons.js?v=0.0.52';
@@ -22,6 +22,15 @@ const ALL_ACTIONS = [
     { id: 'subscription',    label: 'لینک اشتراک',             ico: 'book',       cls: '', inline: true  },
     { id: 'config',          label: 'دریافت کانفیگ',           ico: 'config',     cls: '', inline: true  },
 ];
+const downloadSources = new Map();
+let downloadSourceSeq = 0;
+
+function storeDownloadSource(source) {
+    downloadSourceSeq += 1;
+    const id = 'download-' + downloadSourceSeq.toString(36);
+    downloadSources.set(id, String(source || ''));
+    return id;
+}
 
 
 function isQrEnabled() {
@@ -34,6 +43,12 @@ function qrUrl(payload, size = 280) {
 
     const v = Math.floor(Date.now() / (60 * 60 * 1000));
     return `${apiUrl}/qr.php?s=${size}&d=${enc}&v=${v}`;
+}
+
+async function loadQrImage(img, payload, size = 280) {
+    const res = await fetch(qrUrl(payload, size), { credentials: 'same-origin' });
+    if (!res.ok) throw new Error('QR load failed');
+    img.src = await blobToDataUrl(await res.blob());
 }
 
 /* qr.php کند؛ payload بلندتر از این حد یعنی QR ناقص/نامعتبر substr(0,2048) payload را به */
@@ -390,6 +405,7 @@ function configListHtml(configs, isManual, offset = 0) {
         const protocolLabel = configProtocolLabel(c);
         const isFileDownload = !!wgInfo || isDownloadableFileLink(protocolLabel);
         const wgFileName = wgInfo ? wgConfFilename(c, wgInfo.protocol, i) : '';
+        const downloadId = isFileDownload && !wgInfo ? storeDownloadSource(payload) : '';
         return `
         <div class="cfg-item">
             <button type="button" class="cfg-toggle btn btn-ghost btn-block" data-i="${i}" style="display:flex;justify-content:space-between;align-items:center;text-align:start;gap:8px">
@@ -405,7 +421,7 @@ function configListHtml(configs, isManual, offset = 0) {
                     ? (wgInfo
                         ? `<button type="button" class="btn btn-ghost btn-block" data-wg-download data-wg-name="${escapeHtml(wgFileName)}" data-wg-user="${escapeHtml(__cfgUsername)}" data-wg-index="${i}" data-wg-conf="${escapeHtml(wgInfo.conf)}">${icon('download', 'class="ico ico-sm"')} دانلود فایل کانفیگ (${escapeHtml(wgFileName)})</button>
                        <button type="button" class="btn btn-ghost btn-block copy-btn" data-copy="${escapeHtml(wgInfo.conf)}" style="margin-top:6px">${icon('copy', 'class="ico ico-sm"')} کپی متن کانفیگ</button>`
-                        : `<a class="btn btn-ghost btn-block" href="${escapeHtml(payload)}" download target="_blank" rel="noopener">${icon('download', 'class="ico ico-sm"')} دانلود فایل کانفیگ</a>`)
+                        : `<button type="button" class="btn btn-ghost btn-block" data-url-download data-url-name="config.conf" data-download-id="${downloadId}">${icon('download', 'class="ico ico-sm"')} دانلود فایل کانفیگ</button>`)
                     : structured
                     ? `
                 <div class="rx-info-card-wrap" style="position:relative">
@@ -464,7 +480,7 @@ async function flashCopyFeedback(iconEl, label) {
 export function bindConfigList($scope) {
     if (!$scope) return;
     $scope.querySelectorAll('.cfg-toggle').forEach((btn) => {
-        btn.addEventListener('click', () => {
+        btn.addEventListener('click', async () => {
             const item = btn.closest('.cfg-item');
             const detail = item ? item.querySelector('.cfg-detail') : null;
             if (!detail) return;
@@ -473,11 +489,15 @@ export function bindConfigList($scope) {
             if (isOpen) return;
             const img = detail.querySelector('.qr-img');
             if (img && !img.getAttribute('src') && img.dataset.qr) {
-                img.addEventListener('error', () => {
+                const fail = () => {
                     const block = img.closest('.qr-block');
                     if (block) block.outerHTML = qrUnavailableHtml();
-                }, { once: true });
-                img.setAttribute('src', qrUrl(img.dataset.qr));
+                };
+                try {
+                    await loadQrImage(img, img.dataset.qr);
+                } catch (_) {
+                    fail();
+                }
             }
             detail.style.display = 'block';
             try { hapticImpact('light'); } catch (_) {}
@@ -522,7 +542,7 @@ export function bindConfigList($scope) {
         btn.addEventListener('click', async (ev) => {
             ev.preventDefault();
             ev.stopPropagation();
-            const src = btn.dataset.urlSrc || '';
+            const src = downloadSources.get(btn.dataset.downloadId || '') || '';
             const name = btn.dataset.urlName || 'config.conf';
             if (!src) return;
             const uok = await downloadFromUrl(src, name, { label: 'remote-file' });
@@ -701,8 +721,10 @@ function renderBody($body, info, username, reload) {
     const used = Number(info.used_traffic_gb) || 0;
     const total = Number(info.total_traffic_gb) || 0;
     const remaining = Number(info.remaining_traffic_gb) || 0;
+    const usedBytes = Number.isFinite(Number(info.used_traffic_bytes)) ? Number(info.used_traffic_bytes) : used * Math.pow(1024, 3);
+    const totalBytes = Number.isFinite(Number(info.total_traffic_bytes)) ? Number(info.total_traffic_bytes) : total * Math.pow(1024, 3);
+    const remainingBytes = Number.isFinite(Number(info.remaining_traffic_bytes)) ? Number(info.remaining_traffic_bytes) : remaining * Math.pow(1024, 3);
     const isUnlimited = total === 0;
-    const fmtUsageGb = (n) => `${n.toFixed(2)} GB`;
     const percent = trafficPercent(used, total);
     let pctClass = '';
     if (percent >= 85) pctClass = 'is-danger';
@@ -752,10 +774,10 @@ function renderBody($body, info, username, reload) {
         <div class="card-section">
             <div class="row-spread">
                 <span class="kv-label">${icon('chart')} مصرف ترافیک</span>
-                <span class="mono accent">${escapeHtml(fmtUsageGb(used))} / ${escapeHtml(fmtGb(total))}</span>
+                <span class="mono accent">${escapeHtml(fmtBytes(usedBytes))} / ${escapeHtml(fmtBytes(totalBytes))}</span>
             </div>
             <div class="progress"><span class="progress-fill ${pctClass}" style="width:${percent.toFixed(1)}%"></span></div>
-            <div class="muted mono" style="font-size:12px">${icon('box', 'class="ico ico-sm"')} باقی‌مانده: ${escapeHtml(isUnlimited ? 'نامحدود' : fmtUsageGb(remaining))}</div>
+            <div class="muted mono" style="font-size:12px">${icon('box', 'class="ico ico-sm"')} باقی‌مانده: ${escapeHtml(isUnlimited ? 'نامحدود' : fmtBytes(remainingBytes))}</div>
         </div>
         `)}
 
@@ -2260,11 +2282,12 @@ export function renderOutput(o) {
         const isDataUri = /^data:/i.test(fileValue);
         const isRemoteUrl = /^(https?|blob):/i.test(fileValue);
         const fileText = isDataUri ? decodeDataUriText(fileValue) : (isRemoteUrl ? null : fileValue);
+        const downloadId = isRemoteUrl ? storeDownloadSource(fileValue) : '';
         return `
             <div class="sub-card">
                 <p class="section-title">${icon('fileText')} فایل کانفیگ</p>
                 ${isRemoteUrl
-                    ? `<button type="button" class="btn btn-ghost btn-block" data-url-download data-url-name="${escapeHtml(fileName)}" data-url-src="${escapeHtml(fileValue)}">${icon('download', 'class="ico ico-leading"')} دانلود ${escapeHtml(fileName)}</button>`
+                    ? `<button type="button" class="btn btn-ghost btn-block" data-url-download data-url-name="${escapeHtml(fileName)}" data-download-id="${downloadId}">${icon('download', 'class="ico ico-leading"')} دانلود ${escapeHtml(fileName)}</button>`
                     : `<button type="button" class="btn btn-ghost btn-block" data-file-download data-file-name="${escapeHtml(fileName)}" data-file-user="${escapeHtml(__cfgUsername)}" ${isDataUri ? `data-file-src="${escapeHtml(fileValue)}"` : `data-file-text="${escapeHtml(fileValue)}"`}>${icon('download', 'class="ico ico-leading"')} دانلود ${escapeHtml(fileName)}</button>
                        ${fileText ? `<button type="button" class="btn btn-ghost btn-block copy-btn" data-copy="${escapeHtml(fileText)}" style="margin-top:6px">${icon('copy', 'class="ico ico-sm"')} کپی متن فایل</button>` : ''}`}
             </div>
@@ -2296,4 +2319,3 @@ export function renderOutput(o) {
 
     return '';
 }
-

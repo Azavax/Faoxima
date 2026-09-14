@@ -18,11 +18,10 @@ if (isset($update["inline_query"])) {
         }
         if ($OrderUser['name_product'] == "سرویس تست") {
             $OrderUser['Service_time'] = $OrderUser['Service_time'] . "ساعته";
-            $OrderUser['Volume'] = $OrderUser['Volume'] . "مگابایت";
         } else {
             $OrderUser['Service_time'] = $OrderUser['Service_time'] . "روزه";
-            $OrderUser['Volume'] = intval($OrderUser['Volume']) == 0 ? $textbotlang['users']['stateus']['Unlimited'] : $OrderUser['Volume'] . "گیگابایت";
         }
+        $OrderUser['Volume'] = formatInvoiceVolume($OrderUser);
         $results[] = [
             "type" => "article",
             "id" => uniqid(),

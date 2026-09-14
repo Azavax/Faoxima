@@ -1,4 +1,4 @@
-import { escapeHtml, copyToClipboard, toast } from './utils.js?v=0.0.52';
+import { escapeHtml, copyToClipboard, toast, blobToDataUrl } from './utils.js?v=0.0.52';
 import { hapticImpact, hapticNotify, isDesktopPlatform } from './telegram.js?v=0.0.52';
 import { icon } from './icons.js?v=0.0.52';
 import { getToken } from './state.js';
@@ -279,7 +279,7 @@ export function wireCardToCard(view, d, opts = {}) {
 
     $pick.addEventListener('click', () => $file.click());
 
-    $file.addEventListener('change', () => {
+    $file.addEventListener('change', async () => {
         const file = $file.files && $file.files[0];
         if (!file) return;
         if (file.size > 8 * 1024 * 1024) {
@@ -287,9 +287,12 @@ export function wireCardToCard(view, d, opts = {}) {
             $file.value = '';
             return;
         }
-        const url = URL.createObjectURL(file);
-        $previewImg.src = url;
-        $preview.classList.remove('hidden');
+        try {
+            $previewImg.src = await blobToDataUrl(file);
+            $preview.classList.remove('hidden');
+        } catch (_) {
+            toast('نمایش پیش‌نمایش تصویر ممکن نیست', 'error', 3000);
+        }
     });
 
     $submit.addEventListener('click', async () => {

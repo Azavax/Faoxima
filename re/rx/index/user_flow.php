@@ -153,12 +153,13 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
         'volume' => false,
         'time' => false,
     ));
-    $stmt = $connect->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username,time_sell, Service_location, name_product, price_product, Volume, Service_time,Status,notifctions) VALUES (?, ?,  ?, ?, ?, ?, ?,?,?,?,?)");
+    $stmt = $connect->prepare("INSERT IGNORE INTO invoice (id_user, id_invoice, username,time_sell, Service_location, name_product, price_product, Volume, Volume_unit, Service_time,Status,notifctions) VALUES (?, ?,  ?, ?, ?, ?, ?,?,?,?,?,?)");
     $Status = "active";
     $info_product['name_product'] = "سرویس تست";
     $info_product['price_product'] = "0";
     $Status = "active";
-    $stmt->bind_param("sssssssssss", $from_id, $randomString, $username_ac, $date, $marzban_list_get['name_panel'], $info_product['name_product'], $info_product['price_product'], $marzban_list_get['val_usertest'], $marzban_list_get['time_usertest'], $Status, $notifctions);
+    $volumeUnit = 'MB';
+    $stmt->bind_param("ssssssssssss", $from_id, $randomString, $username_ac, $date, $marzban_list_get['name_panel'], $info_product['name_product'], $info_product['price_product'], $marzban_list_get['val_usertest'], $volumeUnit, $marzban_list_get['time_usertest'], $Status, $notifctions);
     $stmt->execute();
     $stmt->close();
     $dataoutput = $ManagePanel->createUser($marzban_list_get['name_panel'], "usertest", $username_ac, $datac);
@@ -217,11 +218,13 @@ if ($user['step'] == "createusertest" || preg_match('/locationtest_(.*)/', $data
         $usertest_day = $textbotlang['users']['stateus']['Unlimited'];
     if (intval($usertest_volume) == 0)
         $usertest_volume = $textbotlang['users']['stateus']['Unlimited'];
+    else
+        $usertest_volume = formatBytes((float) $usertest_volume * 1048576);
     $textcreatuser = str_replace('{username}', $dataoutput['username'], $datatextbot['textaftertext']);
     $textcreatuser = str_replace('{name_service}', "تست", $textcreatuser);
     $textcreatuser = str_replace('{location}', $marzban_list_get['name_panel'], $textcreatuser);
     $textcreatuser = str_replace('{day}', $usertest_day, $textcreatuser);
-    $textcreatuser = str_replace('{volume}', $usertest_volume, $textcreatuser);
+    $textcreatuser = preg_replace('/\{volume\}[ \t\x{200c}]*(?:گیگابایت|گیگ|GB|مگابایت|مگ|MB)?/iu', $usertest_volume, $textcreatuser);
     $textcreatuser = applyConnectionPlaceholders($textcreatuser, $output_config_link, $config);
     sendMessageService($marzban_list_get, $dataoutput['configs'], $output_config_link, $dataoutput['username'], $usertestinfo, $textcreatuser, $randomString);
     sendmessage($from_id, $textbotlang['users']['selectoption'], $keyboard, 'HTML');

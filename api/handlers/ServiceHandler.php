@@ -37,7 +37,8 @@ final class ServiceHandler extends BaseHandler
             "SELECT * FROM invoice
               WHERE id_user = :user_id
                 AND (Status = 'active' OR Status = 'end_of_time' OR Status = 'end_of_volume'
-                     OR Status = 'sendedwarn' OR Status = 'send_on_hold')
+                     OR Status = 'sendedwarn' OR Status = 'send_on_hold'
+                     OR Status = 'disabled' OR Status = 'disablebyadmin')
                 AND username = :username",
             [
                 ':user_id'  => $this->user['id'],
@@ -118,7 +119,7 @@ final class ServiceHandler extends BaseHandler
         } elseif ($remoteStatus === 'on_hold') {
             $dbStatus = 'send_on_hold';
         } elseif ($remoteStatus === 'disabled') {
-            $dbStatus = 'disablebyadmin';
+            $dbStatus = ($invoice['Status'] ?? '') === 'disablebyadmin' ? 'disablebyadmin' : 'disabled';
         } elseif ($remoteStatus === 'active') {
             $dbStatus = 'active';
         }
@@ -415,6 +416,11 @@ final class ServiceHandler extends BaseHandler
             'is_stock'                 => false,
             'invoice_status'           => $invoice['Status'] ?? '',
             'panel_type'               => $type,
+            'volume_value'             => is_numeric($invoice['Volume'] ?? null) ? (float)$invoice['Volume'] : 0,
+            'volume_unit'              => function_exists('rxInvoiceVolumeUnit') ? rxInvoiceVolumeUnit($invoice) : (($isTest) ? 'MB' : 'GB'),
+            'total_traffic_bytes'      => $dataLimitBytes,
+            'used_traffic_bytes'       => $usedBytes,
+            'remaining_traffic_bytes'  => $remainingBytes,
             'total_traffic_gb'         => round($totalGb, 2),
             'used_traffic_gb'          => round($usedGb, 2),
             'remaining_traffic_gb'     => round($remainingGb, 2),
@@ -601,8 +607,11 @@ final class ServiceHandler extends BaseHandler
 
 
             'total_traffic_gb'         => null,
+            'total_traffic_bytes'      => null,
             'used_traffic_gb'          => null,
+            'used_traffic_bytes'       => null,
             'remaining_traffic_gb'     => null,
+            'remaining_traffic_bytes'  => null,
             'expiration_time'          => $expirationDate,
             'last_subscription_update' => null,
             'online_at'                => null,
@@ -686,6 +695,7 @@ final class ServiceHandler extends BaseHandler
         if ($statusExtraVolume === 'offextra')       $disabled[] = 'extra_volume';
         if ($statusDisorder === 'offdisorder')       $disabled[] = 'report_problem';
         if ($statusChangeService === 'offstatus')    $disabled[] = 'toggle_status';
+        if (($invoice['Status'] ?? '') === 'disablebyadmin') $disabled[] = 'toggle_status';
         if ($statusShowConfig === 'offconfig')       $disabled[] = 'config';
         if ($statusRemoveService === 'off')          $disabled[] = 'refund';
         if ($statusNameCustom === 'offnamecustom')   $disabled[] = 'note';
@@ -763,4 +773,3 @@ final class ServiceHandler extends BaseHandler
         return array_values(array_unique($disabled));
     }
 }
-

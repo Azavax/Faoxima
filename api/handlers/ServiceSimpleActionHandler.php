@@ -94,8 +94,11 @@ final class ServiceSimpleActionHandler extends BaseHandler
             FaoximaResponse::fail(502, '❌ ارتباط با پنل برقرار نشد');
         }
         $remoteStatus = (string)($remote['status'] ?? '');
+        if ($remoteStatus === 'active' && !$managePanel->HasLiveConnectionHistory($panel, $remote)) {
+            FaoximaResponse::fail(409, 'ابتدا به کانفیگ متصل شوید و سپس مجدداً تلاش کنید.');
+        }
         if ($remoteStatus === 'on_hold') {
-            FaoximaResponse::fail(409, '❌ هنوز به کانفیگ متصل نشده اید و امکان تغییر وضعیت سرویس وجود ندارد. بعد از متصل شدن به کانفیگ می توانید از این قابلیت استفاده نمایید.');
+            FaoximaResponse::fail(409, 'ابتدا به کانفیگ متصل شوید و سپس مجدداً تلاش کنید.');
         }
         if ($remoteStatus === 'Unsuccessful') {
             FaoximaResponse::fail(502, '❌ خطایی در دریافت وضعیت سرویس از پنل رخ داده است');
@@ -103,12 +106,21 @@ final class ServiceSimpleActionHandler extends BaseHandler
 
         $output = $managePanel->Change_status((string)$invoice['username'], (string)$invoice['Service_location']);
         if (!is_array($output) || (string)($output['status'] ?? '') === 'Unsuccessful') {
+            if (($output['code'] ?? '') === 'not_connected') {
+                FaoximaResponse::fail(409, (string)$output['msg']);
+            }
             FaoximaResponse::fail(502, '❌ تغییر وضعیت سرویس انجام نشد. لطفاً دوباره تلاش کنید.');
         }
 
 
         $remoteAfter = $managePanel->DataUser($invoice['Service_location'], $invoice['username']);
         $newStatus = is_array($remoteAfter) ? (string)($remoteAfter['status'] ?? '') : '';
+
+        if ($newStatus === 'active') {
+            update('invoice', 'Status', 'active', 'id_invoice', $invoice['id_invoice']);
+        } elseif ($newStatus === 'disabled') {
+            update('invoice', 'Status', 'disabled', 'id_invoice', $invoice['id_invoice']);
+        }
 
         $msg = $newStatus === 'active'
             ? '💡 سرویس روشن شد'

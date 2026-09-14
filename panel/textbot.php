@@ -352,9 +352,16 @@ $delKey   = isset($_GET['deleted']) ? (string)$_GET['deleted'] : '';
             align-items: center;
             margin-bottom: 16px;
         }
+        .filter-bar__search {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex: 1 1 420px;
+            min-width: 0;
+        }
         .filter-bar input {
             flex: 1 1 240px;
-            min-width: 200px;
+            min-width: 0;
             padding: 10px 14px;
             background: var(--surface-2);
             border: 1px solid var(--border-mid);
@@ -367,6 +374,36 @@ $delKey   = isset($_GET['deleted']) ? (string)$_GET['deleted'] : '';
             outline: none;
             border-color: var(--accent);
             box-shadow: 0 0 0 3px var(--accent-glow);
+        }
+        .search-scope {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 4px;
+            flex: 0 1 360px;
+            padding: 4px;
+            border: 1px solid var(--border-soft);
+            border-radius: 12px;
+            background: var(--surface-2);
+        }
+        .search-scope__btn {
+            min-height: 36px;
+            padding: 7px 12px;
+            border: 0;
+            border-radius: 8px;
+            background: transparent;
+            color: var(--text-muted);
+            font-family: 'Vazirmatn', sans-serif;
+            font-size: 12.5px;
+            font-weight: 600;
+            white-space: nowrap;
+            cursor: pointer;
+            transition: .16s ease;
+        }
+        .search-scope__btn:hover { color: var(--text-main); background: var(--surface-3); }
+        .search-scope__btn.active {
+            color: var(--accent);
+            background: var(--accent-soft);
+            box-shadow: inset 0 0 0 1px var(--accent-mid);
         }
         .text-row.hidden { display: none; }
         .cat-select {
@@ -408,7 +445,7 @@ $delKey   = isset($_GET['deleted']) ? (string)$_GET['deleted'] : '';
             border-radius: 14px;
             box-shadow: var(--shadow-2);
             padding: 8px;
-            max-height: 340px;
+            max-height: min(340px, calc(100vh - 180px));
             overflow-y: auto;
             opacity: 0; transform: translateY(-6px);
             pointer-events: none;
@@ -450,6 +487,17 @@ $delKey   = isset($_GET['deleted']) ? (string)$_GET['deleted'] : '';
             margin-bottom: 10px;
         }
         .text-tabpanel.search-mode .text-tabpanel__searchhead { display: flex; }
+        @media (max-width: 768px) {
+            .filter-bar__search,
+            .search-scope,
+            .cat-select { width: 100%; max-width: none; flex-basis: 100%; }
+            .search-scope__btn { white-space: normal; }
+        }
+        @media (max-width: 420px) {
+            .filter-bar__search { flex-wrap: wrap; }
+            .filter-bar__search .chip { margin-inline-start: auto; }
+            .search-scope { grid-template-columns: 1fr; }
+        }
         .modal-box--wide { max-width: 640px; }
         #editTextArea {
             width: 100%;
@@ -558,8 +606,14 @@ $delKey   = isset($_GET['deleted']) ? (string)$_GET['deleted'] : '';
             <?php endif; ?>
 
             <div class="filter-bar">
-                <input type="search" id="searchBox" placeholder="جستجو در کلید یا متن…">
-                <span class="chip"><?php echo count($rows); ?> کلید</span>
+                <div class="filter-bar__search">
+                    <input type="search" id="searchBox" placeholder="جستجو در کلید، متن یا دسته‌بندی…">
+                    <span class="chip" id="searchResultCount"><?php echo count($rows); ?> کلید</span>
+                </div>
+                <div class="search-scope" role="group" aria-label="محدوده جستجو">
+                    <button type="button" class="search-scope__btn active" data-search-scope="global" aria-pressed="true">جست‌وجوی سراسری</button>
+                    <button type="button" class="search-scope__btn" data-search-scope="category" aria-pressed="false">جست‌وجوی دسته‌بندی‌شده</button>
+                </div>
             </div>
 
             <form method="POST" action="textbot.php" id="textForm" autocomplete="off">
@@ -592,7 +646,10 @@ $delKey   = isset($_GET['deleted']) ? (string)$_GET['deleted'] : '';
                             $k = (string)$row['id_text'];
                             $v = (string)$row['text'];
                         ?>
-                            <div class="text-row" data-search="<?php echo htmlspecialchars(strtolower($k . ' ' . $v), ENT_QUOTES); ?>">
+                            <div class="text-row"
+                                 data-search-key="<?php echo htmlspecialchars($k, ENT_QUOTES, 'UTF-8'); ?>"
+                                 data-search-text="<?php echo htmlspecialchars($v, ENT_QUOTES, 'UTF-8'); ?>"
+                                 data-search-category="<?php echo htmlspecialchars(faoxima_tab_title($tabKey, $categories), ENT_QUOTES, 'UTF-8'); ?>">
                                 <code class="text-key">
                                     <span class="text-key__id"><?php echo htmlspecialchars($k, ENT_QUOTES); ?></span>
                                     <?php if (faoxima_text_has_placeholder($v)): ?>
@@ -816,6 +873,7 @@ function confirmTextEditor() {
         var panel = document.getElementById(item.dataset.tab);
         if (panel) panel.classList.add('active');
         catSelectLabel.textContent = item.querySelector('span:first-of-type').textContent;
+        if (search) applySearch();
     }
 
     if (items.length) selectCategory(items[0]);
@@ -835,10 +893,13 @@ function confirmTextEditor() {
     });
 
     var search = document.getElementById('searchBox');
+    var searchResultCount = document.getElementById('searchResultCount');
+    var searchScopeButtons = document.querySelectorAll('[data-search-scope]');
     var rows = document.querySelectorAll('.text-row');
-    var searchActive = false;
+    var searchScope = 'global';
     function normalizeSearchText(s) {
-        return s
+        return String(s || '')
+            .toLowerCase()
             .replace(/[يى]/g, 'ی')
             .replace(/ك/g, 'ک')
             .replace(/[أإآ]/g, 'ا')
@@ -846,41 +907,55 @@ function confirmTextEditor() {
             .replace(/[\s‌_-]+/g, '');
     }
     rows.forEach(function (r) {
-        r.dataset.searchLoose = normalizeSearchText(r.dataset.search);
+        r._searchFields = [
+            normalizeSearchText(r.dataset.searchKey),
+            normalizeSearchText(r.dataset.searchText),
+            normalizeSearchText(r.dataset.searchCategory)
+        ];
     });
-    search.addEventListener('input', function () {
-        var q = search.value.trim().toLowerCase();
-        var qTokens = q.split(/[\s‌_-]+/).filter(Boolean).map(normalizeSearchText);
-        if (q && !searchActive) {
-            searchActive = true;
-            catSelect.classList.add('search-mode');
-            panels.forEach(function (p) { p.classList.add('search-mode'); });
-        } else if (!q && searchActive) {
-            searchActive = false;
-            catSelect.classList.remove('search-mode');
-            panels.forEach(function (p) { p.classList.remove('search-mode'); });
-            var activeItem = document.querySelector('.cat-select__item.active');
-            if (activeItem) selectCategory(activeItem);
-        }
+    function applySearch() {
+        var q = search.value.trim();
+        var normalizedQuery = normalizeSearchText(q);
+        var globalSearch = !!q && searchScope === 'global';
+        var activePanel = document.querySelector('.text-tabpanel.active');
+        catSelect.classList.toggle('search-mode', globalSearch);
+        panels.forEach(function (p) { p.classList.toggle('search-mode', globalSearch); });
         var matchCounts = {};
+        var visibleCount = 0;
         rows.forEach(function (r) {
-            var match = !q || r.dataset.search.indexOf(q) !== -1 || qTokens.every(function (tok) {
-                return r.dataset.searchLoose.indexOf(tok) !== -1;
+            var rowPanel = r.closest('.text-tabpanel');
+            var inScope = searchScope === 'global' || rowPanel === activePanel;
+            var match = !q || inScope && r._searchFields.some(function (field) {
+                return field.indexOf(normalizedQuery) !== -1;
             });
             r.classList.toggle('hidden', !match);
             if (match && q) {
-                var panelId = r.closest('.text-tabpanel').id;
+                visibleCount++;
+                var panelId = rowPanel.id;
                 matchCounts[panelId] = (matchCounts[panelId] || 0) + 1;
             }
         });
         panels.forEach(function (p) {
-            if (!q) return;
-            p.classList.toggle('search-empty', !matchCounts[p.id]);
+            p.classList.toggle('search-empty', globalSearch && !matchCounts[p.id]);
+        });
+        searchResultCount.textContent = (q ? visibleCount : rows.length) + ' کلید';
+        search.placeholder = searchScope === 'global'
+            ? 'جستجو در کلید، متن یا دسته‌بندی…'
+            : 'جستجو در دسته‌بندی جاری…';
+    }
+    search.addEventListener('input', applySearch);
+    searchScopeButtons.forEach(function (button) {
+        button.addEventListener('click', function () {
+            searchScope = button.dataset.searchScope;
+            searchScopeButtons.forEach(function (item) {
+                var active = item === button;
+                item.classList.toggle('active', active);
+                item.setAttribute('aria-pressed', active ? 'true' : 'false');
+            });
+            applySearch();
         });
     });
 })();
 </script>
 </body>
 </html>
-
-

@@ -1,5 +1,5 @@
 import { call } from '../api.js?v=0.0.52';
-import { escapeHtml, copyToClipboard, toast } from '../utils.js?v=0.0.52';
+import { escapeHtml, copyToClipboard, toast, blobToDataUrl } from '../utils.js?v=0.0.52';
 import { icon } from '../icons.js?v=0.0.52';
 import { hapticImpact, hapticNotify, showConfirm } from '../telegram.js?v=0.0.52';
 import { startGatewayWatch } from './gateway-watch.js';
@@ -25,15 +25,10 @@ function colorForCurrency(code) {
 
 function svgForCurrency(code) {
     const c = String(code || '').toUpperCase();
-    const cfg = (typeof window !== 'undefined' && window.__APP_CONFIG__) || {};
-    const prefix = cfg.assetPrefix || '/';
-    const ver = encodeURIComponent(String(cfg.version || cfg.cacheBust || Date.now()));
-    let file = null;
-    if (c === 'TRX') file = 'trx.svg';
-    else if (c === 'TON') file = 'ton.svg';
-    else if (c.startsWith('USDT')) file = 'usdt.svg';
-    if (!file) return '';
-    return prefix + 'assets/branding/coins/' + file + '?v=' + ver;
+    if (c === 'TRX') return '<svg viewBox="0 0 32 32" class="crypto-svg" aria-hidden="true"><circle fill="#EF0027" cx="16" cy="16" r="16"/><path d="M21.932 9.913L7.5 7.257l7.595 19.112 10.583-12.894-3.746-3.562zm-.232 1.17l2.208 2.099-6.038 1.093 3.83-3.192zm-5.142 2.973l-6.364-5.278 10.402 1.914-4.038 3.364zm-.453.934l-1.038 8.58L9.472 9.487l6.633 5.502zm.96.455l6.687-1.21-7.67 9.343.983-8.133z" fill="#FFF"/></svg>';
+    if (c === 'TON') return '<svg viewBox="0 0 56 56" class="crypto-svg" aria-hidden="true"><circle fill="#0088CC" cx="28" cy="28" r="28"/><path fill="#FFF" d="M20.2 18.5h15.7c1.3 0 2.4.6 3 1.6.7 1.1.7 2.5.1 3.7l-9.9 17a1.3 1.3 0 0 1-2.2 0l-9.7-17c-.7-1.2-.8-2.4-.2-3.6.6-1.2 1.8-1.7 3.2-1.7zm6.6 2.4h-6.6c-.7 0-1 .1-1.2.5-.1.3 0 .6.3 1.1l7.5 13V20.9zm2.4 0v14.7l7.6-13.1c.3-.6.1-1.1-.2-1.3-.2-.2-.4-.3-.8-.3h-6.6z"/></svg>';
+    if (c.startsWith('USDT')) return '<svg viewBox="0 0 32 32" class="crypto-svg" aria-hidden="true"><circle cx="16" cy="16" r="16" fill="#26A17B"/><path fill="#FFF" d="M17.922 17.383c-.11.008-.677.042-1.942.042-1.01 0-1.721-.03-1.971-.042-3.888-.171-6.79-.848-6.79-1.658 0-.809 2.902-1.486 6.79-1.66v2.644c.254.018.982.061 1.988.061 1.207 0 1.812-.05 1.925-.06v-2.643c3.88.173 6.775.85 6.775 1.658 0 .81-2.895 1.485-6.775 1.657m0-3.59v-2.366h5.414V7.819H8.595v3.608h5.414v2.365c-4.4.202-7.709 1.074-7.709 2.118 0 1.044 3.309 1.915 7.709 2.118v7.582h3.913v-7.584c4.393-.202 7.694-1.073 7.694-2.116 0-1.043-3.301-1.914-7.694-2.117"/></svg>';
+    return '';
 }
 
 
@@ -133,7 +128,7 @@ export function renderCryptoOffline(view, opts = {}) {
             const tint = c.color || colorForCurrency(c.code);
             const svgSrc = svgForCurrency(c.code);
             const visual = svgSrc
-                ? `<img src="${escapeHtml(svgSrc)}" alt="${escapeHtml(c.code)}" class="crypto-svg" style="width:28px;height:28px;display:block" />`
+                ? svgSrc
                 : icon(iconKey, 'class="ico ico-xl"');
 
             const codeUp = String(c.code || '').toUpperCase();
@@ -222,7 +217,6 @@ export function renderCryptoOffline(view, opts = {}) {
         const qrPayload = inv.wallet_to;
 
         const v = Math.floor(Date.now() / (60 * 60 * 1000));
-        const qrSrc = `${apiUrl}/qr.php?d=${encodeURIComponent(qrPayload)}&s=560&v=${v}`;
         const _qrOn = (window.__APP_CONFIG__ || {}).qrEnabled !== false;
         view.innerHTML = `
             <a href="#" class="page-back" id="crypto-back">
@@ -247,7 +241,7 @@ export function renderCryptoOffline(view, opts = {}) {
                             <div>این شبکه به‌صورت خودکار بررسی نمی‌شود. بعد از ارسال هش، باید <b>عکس رسید تراکنش</b> را نیز آپلود کنید و تایید نهایی توسط ادمین انجام می‌شود.</div>
                         </div>` : ''}
 
-                    ${_qrOn ? `<div class="qr-panel mt-md"><div class="qr-frame"><img src="${escapeHtml(qrSrc)}" alt="QR" /></div></div>` : ''}
+                    ${_qrOn ? `<div class="qr-panel mt-md"><div class="qr-frame"><img id="crypto-qr-img" alt="QR" /></div></div>` : ''}
 
                     <div class="sub-link-box wallet-big-box mt-md">
                         <div class="label">${icon('wallet')} <span>آدرس کیف‌پول دریافت‌کننده</span></div>
@@ -302,6 +296,18 @@ export function renderCryptoOffline(view, opts = {}) {
                 step1Currencies();
             })();
         });
+
+        const $qrImg = view.querySelector('#crypto-qr-img');
+        if ($qrImg) {
+            fetch(`${apiUrl}/qr.php?d=${encodeURIComponent(qrPayload)}&s=560&v=${v}`, { credentials: 'same-origin' })
+                .then((res) => {
+                    if (!res.ok) throw new Error('QR load failed');
+                    return res.blob();
+                })
+                .then(blobToDataUrl)
+                .then((dataUrl) => { $qrImg.src = dataUrl; })
+                .catch(() => { const panel = $qrImg.closest('.qr-panel'); if (panel) panel.remove(); });
+        }
 
 
         const copyHandlers = [
@@ -436,7 +442,7 @@ export function renderCryptoOffline(view, opts = {}) {
 
         $pick.addEventListener('click', () => $file.click());
 
-        $file.addEventListener('change', () => {
+        $file.addEventListener('change', async () => {
             const file = $file.files && $file.files[0];
             if (!file) return;
             if (file.size > 8 * 1024 * 1024) {
@@ -444,9 +450,12 @@ export function renderCryptoOffline(view, opts = {}) {
                 $file.value = '';
                 return;
             }
-            const url = URL.createObjectURL(file);
-            $previewImg.src = url;
-            $preview.classList.remove('hidden');
+            try {
+                $previewImg.src = await blobToDataUrl(file);
+                $preview.classList.remove('hidden');
+            } catch (_) {
+                toast('نمایش پیش‌نمایش تصویر ممکن نیست', 'error', 3000);
+            }
         });
 
         $submit.addEventListener('click', async () => {

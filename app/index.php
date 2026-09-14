@@ -22,30 +22,18 @@ $basename = $scriptDir === '' ? '/' : $scriptDir;
 $prefix = $basename === '/' ? '/' : $basename . '/';
 $assetPrefix = $prefix;
 
-$rootForApi = $basename === '/' ? '/' : rtrim(dirname($basename), '/');
+$rootForApi = $basename === '/' ? '/' : rtrim(str_replace('\\', '/', dirname($basename)), '/');
 if ($rootForApi === '' || $rootForApi === '.') {
     $rootForApi = '/';
 }
 $apiPath = $rootForApi === '/' ? '/api' : $rootForApi . '/api';
 
-$forwardedProto = $_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '';
-if (is_string($forwardedProto) && $forwardedProto !== '') {
-    $scheme = explode(',', $forwardedProto)[0];
-} elseif (!empty($_SERVER['REQUEST_SCHEME'])) {
-    $scheme = $_SERVER['REQUEST_SCHEME'];
-} else {
-    $https = $_SERVER['HTTPS'] ?? '';
-    $scheme = (!empty($https) && $https !== 'off') ? 'https' : 'http';
-}
-$host = $_SERVER['HTTP_HOST'] ?? 'localhost';
-$apiUrl = rtrim($scheme . '://' . $host, '/') . $apiPath;
+$apiUrl = $apiPath;
 
 $brandAppVersion = trim((string)@file_get_contents(__DIR__ . '/version')) ?: '1.0.0';
 
 
 const FX_DEFAULT_BRAND_NAME = 'faoxima';
-const FX_DEFAULT_LOGO_URL = 'https://avatars.githubusercontent.com/u/238855591?s=400&u=059d14b3c8c0993bd7211e6fc4bd7d297df4da35&v=4';
-
 $brandName = FX_DEFAULT_BRAND_NAME;
 $brandMark = 'M';
 $brandTitle = '';
@@ -84,7 +72,12 @@ if (is_file(__DIR__ . '/../config.php') && is_file(__DIR__ . '/../function.php')
                 $logoBasename = basename((string)$logoRow['value']);
                 $logoPath = __DIR__ . '/assets/branding/' . $logoBasename;
                 if (is_file($logoPath)) {
-                    $brandLogoUrl = $assetPrefix . 'assets/branding/' . $logoBasename . '?v=' . @filemtime($logoPath);
+                    $logoInfo = @getimagesize($logoPath);
+                    $logoMime = is_array($logoInfo) ? (string)($logoInfo['mime'] ?? '') : '';
+                    $logoBytes = @file_get_contents($logoPath);
+                    if (in_array($logoMime, ['image/png', 'image/jpeg', 'image/webp', 'image/gif'], true) && is_string($logoBytes) && $logoBytes !== '') {
+                        $brandLogoUrl = 'data:' . $logoMime . ';base64,' . base64_encode($logoBytes);
+                    }
                 }
             }
             if (is_array($logoStateRow) && isset($logoStateRow['value'])) {
@@ -111,7 +104,17 @@ if ($brandLogoUrl !== '') {
 }
 
 $brandIsDefaultLogo = ($brandLogoState === 'default');
-if ($brandIsDefaultLogo) $brandLogoUrl = FX_DEFAULT_LOGO_URL;
+if ($brandIsDefaultLogo) {
+    $defaultLogoPath = __DIR__ . '/assets/branding/default_logo.jpg';
+    $defaultLogoBytes = @file_get_contents($defaultLogoPath);
+    if (is_string($defaultLogoBytes) && $defaultLogoBytes !== '') {
+        $brandLogoUrl = 'data:image/jpeg;base64,' . base64_encode($defaultLogoBytes);
+    } else {
+        $brandLogoUrl = '';
+        $brandLogoState = 'initials';
+        $brandIsDefaultLogo = false;
+    }
+}
 
 $version = $brandAppVersion;
 $qrEnabled = $qrEnabled ?? true;
@@ -436,5 +439,3 @@ $jsUrl       = htmlspecialchars($assetPrefix . 'assets/v1.0.0/app.js?v=' . fx_as
 </script>
 </body>
 </html>
-
-

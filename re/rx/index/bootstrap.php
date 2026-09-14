@@ -1093,7 +1093,7 @@ if ($text == "version") {
     }
     step('home', $from_id);
 } elseif (($text !== '' && $text == $datatextbot['text_Purchased_services']) || $datain == "backorder" || $text == "/services") {
-    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = :id_user AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold')");
+    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = :id_user AND (status = 'active' OR status = 'end_of_time' OR status = 'end_of_volume' OR status = 'sendedwarn' OR status = 'send_on_hold' OR status = 'disabled' OR status = 'disablebyadmin')");
     $stmt->bindParam(':id_user', $from_id);
     $stmt->execute();
     $invoices = $stmt->fetch(PDO::FETCH_ASSOC);
@@ -1110,7 +1110,7 @@ if ($text == "version") {
     $keyboardlists = [
         'inline_keyboard' => [],
     ];
-    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = '$from_id' AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR status = 'send_on_hold') ORDER BY time_sell DESC LIMIT $start_index, $items_per_page");
+    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = '$from_id' AND (status = 'active' OR status = 'end_of_time' OR status = 'end_of_volume' OR status = 'sendedwarn' OR status = 'send_on_hold' OR status = 'disabled' OR status = 'disablebyadmin') ORDER BY time_sell DESC LIMIT $start_index, $items_per_page");
     $stmt->execute();
     $serviceRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if ($setting['statusnamecustom'] == 'onnamecustom') {
@@ -1120,7 +1120,7 @@ if ($text == "version") {
                 $data = " | {$row['note']}";
             $keyboardlists['inline_keyboard'][] = [
                 [
-                    'text' => "✨" . $row['username'] . $data . "✨",
+                    'text' => "✨" . $row['username'] . $data . rxServiceListStatusSuffix($row) . "✨",
                     'callback_data' => "quickview_" . $row['id_invoice']
                 ],
             ];
@@ -1129,7 +1129,7 @@ if ($text == "version") {
         foreach ($serviceRows as $row) {
             $keyboardlists['inline_keyboard'][] = [
                 [
-                    'text' => "✨" . $row['username'] . "✨",
+                    'text' => "✨" . $row['username'] . rxServiceListStatusSuffix($row) . "✨",
                     'callback_data' => "quickview_" . $row['id_invoice']
                 ],
             ];
@@ -1173,7 +1173,7 @@ if ($text == "version") {
     $keyboardlists = [
         'inline_keyboard' => [],
     ];
-    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = '$from_id' AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR status = 'send_on_hold') ORDER BY time_sell DESC LIMIT $start_index, $items_per_page");
+    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = '$from_id' AND (status = 'active' OR status = 'end_of_time' OR status = 'end_of_volume' OR status = 'sendedwarn' OR status = 'send_on_hold' OR status = 'disabled' OR status = 'disablebyadmin') ORDER BY time_sell DESC LIMIT $start_index, $items_per_page");
     $stmt->execute();
     $serviceRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if ($setting['statusnamecustom'] == 'onnamecustom') {
@@ -1183,7 +1183,7 @@ if ($text == "version") {
                 $data = " | {$row['note']}";
             $keyboardlists['inline_keyboard'][] = [
                 [
-                    'text' => "✨" . $row['username'] . $data . "✨",
+                    'text' => "✨" . $row['username'] . $data . rxServiceListStatusSuffix($row) . "✨",
                     'callback_data' => "quickview_" . $row['id_invoice']
                 ],
             ];
@@ -1192,7 +1192,7 @@ if ($text == "version") {
         foreach ($serviceRows as $row) {
             $keyboardlists['inline_keyboard'][] = [
                 [
-                    'text' => "✨" . $row['username'] . "✨",
+                    'text' => "✨" . $row['username'] . rxServiceListStatusSuffix($row) . "✨",
                     'callback_data' => "quickview_" . $row['id_invoice']
                 ],
             ];
@@ -1236,7 +1236,7 @@ if ($text == "version") {
     $keyboardlists = [
         'inline_keyboard' => [],
     ];
-    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = '$from_id' AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR status = 'send_on_hold') ORDER BY time_sell DESC LIMIT $previous_page, $items_per_page");
+    $stmt = $pdo->prepare("SELECT * FROM invoice WHERE id_user = '$from_id' AND (status = 'active' OR status = 'end_of_time' OR status = 'end_of_volume' OR status = 'sendedwarn' OR status = 'send_on_hold' OR status = 'disabled' OR status = 'disablebyadmin') ORDER BY time_sell DESC LIMIT $previous_page, $items_per_page");
     $stmt->execute();
     $serviceRows = $stmt->fetchAll(PDO::FETCH_ASSOC);
     if ($setting['statusnamecustom'] == 'onnamecustom') {
@@ -1246,7 +1246,7 @@ if ($text == "version") {
                 $data = " | {$row['note']}";
             $keyboardlists['inline_keyboard'][] = [
                 [
-                    'text' => "✨" . $row['username'] . $data . "✨",
+                    'text' => "✨" . $row['username'] . $data . rxServiceListStatusSuffix($row) . "✨",
                     'callback_data' => "quickview_" . $row['id_invoice']
                 ],
             ];
@@ -1255,7 +1255,7 @@ if ($text == "version") {
         foreach ($serviceRows as $row) {
             $keyboardlists['inline_keyboard'][] = [
                 [
-                    'text' => "✨" . $row['username'] . "✨",
+                    'text' => "✨" . $row['username'] . rxServiceListStatusSuffix($row) . "✨",
                     'callback_data' => "quickview_" . $row['id_invoice']
                 ],
             ];
@@ -1484,7 +1484,7 @@ if ($text == "version") {
 
     if ($user['step'] == "getuseragnetservice") {
         $username = htmlspecialchars($text, ENT_QUOTES, 'UTF-8');
-        $sql = "SELECT * FROM invoice WHERE (username LIKE CONCAT('%', :username, '%') OR note  LIKE CONCAT('%', :notes, '%') OR Volume LIKE CONCAT('%',:Volume, '%') OR Service_time LIKE CONCAT('%',:Service_time, '%')) AND id_user = :id_user AND (status = 'active' OR status = 'end_of_time'  OR status = 'end_of_volume' OR status = 'sendedwarn' OR Status = 'send_on_hold')";
+        $sql = "SELECT * FROM invoice WHERE (username LIKE CONCAT('%', :username, '%') OR note LIKE CONCAT('%', :notes, '%') OR Volume LIKE CONCAT('%',:Volume, '%') OR Service_time LIKE CONCAT('%',:Service_time, '%')) AND id_user = :id_user AND (status = 'active' OR status = 'end_of_time' OR status = 'end_of_volume' OR status = 'sendedwarn' OR status = 'send_on_hold' OR status = 'disabled' OR status = 'disablebyadmin')";
         $stmt = $pdo->prepare($sql);
         $stmt->bindParam(':username', $username, PDO::PARAM_STR);
         $stmt->bindParam(':Service_time', $username, PDO::PARAM_STR);
@@ -1537,7 +1537,7 @@ if ($text == "version") {
                     $data = " | {$row['note']}";
                 $keyboardlists['inline_keyboard'][] = [
                     [
-                        'text' => "✨" . $row['username'] . $data . "✨",
+                        'text' => "✨" . $row['username'] . $data . rxServiceListStatusSuffix($row) . "✨",
                         'callback_data' => "quickview_" . $row['id_invoice']
                     ],
                 ];
@@ -1546,7 +1546,7 @@ if ($text == "version") {
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
                 $keyboardlists['inline_keyboard'][] = [
                     [
-                        'text' => "✨" . $row['username'] . "✨",
+                        'text' => "✨" . $row['username'] . rxServiceListStatusSuffix($row) . "✨",
                         'callback_data' => "quickview_" . $row['id_invoice']
                     ],
                 ];
@@ -1573,7 +1573,7 @@ if ($text == "version") {
         return;
     }
     $username = $nameloc['id_invoice'];
-    if (!in_array($nameloc['Status'], ['active', 'end_of_time', 'end_of_volume', 'sendedwarn', 'send_on_hold'])) {
+    if (!in_array($nameloc['Status'], ['active', 'end_of_time', 'end_of_volume', 'sendedwarn', 'send_on_hold', 'disabled', 'disablebyadmin'])) {
         sendmessage($from_id, $datatextbot['dyn_errors_view_account_unavailable'] ?? "❌ امکان مشاهده اطلاعات اکانت درحال حاضر وجود ندارد", $keyboard, 'html');
         step('home', $from_id);
         return;
@@ -1598,6 +1598,9 @@ if ($text == "version") {
         } elseif ($bSt === 'on_hold' && $nameloc['Status'] !== 'send_on_hold') {
             update("invoice", "Status", "send_on_hold", "id_invoice", $nameloc['id_invoice']);
             $nameloc['Status'] = 'send_on_hold';
+        } elseif ($bSt === 'disabled' && !in_array($nameloc['Status'], ['disabled', 'disablebyadmin'], true)) {
+            update("invoice", "Status", "disabled", "id_invoice", $nameloc['id_invoice']);
+            $nameloc['Status'] = 'disabled';
         } elseif ($bSt === 'active' && !in_array($nameloc['Status'], ['active', 'sendedwarn'], true)) {
             update("invoice", "Status", "active", "id_invoice", $nameloc['id_invoice']);
             $nameloc['Status'] = 'active';
@@ -2768,8 +2771,9 @@ $nameconfig";
     if (function_exists('nmStopIfServicePanelBlocked') && nmStopIfServicePanelBlocked($nameloc, $from_id, null)) return;
 
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
-    if ($DataUserOut['status'] == "on_hold") {
-        sendmessage($from_id, $datatextbot['dyn_errors_not_connected_change_status'] ?? "❌ هنوز به کانفیگ متصل نشده اید و امکان تغییر وضعیت سرویس وجود ندارد. بعد از متصل شدن به کانفیگ می توانید از این قابلیت استفاده نمایید.", null, 'html');
+    $changeStatusPanel = select("marzban_panel", "*", "name_panel", $nameloc['Service_location'], "select");
+    if ($DataUserOut['status'] == "on_hold" || ($DataUserOut['status'] === 'active' && !$ManagePanel->HasLiveConnectionHistory(is_array($changeStatusPanel) ? $changeStatusPanel : null, $DataUserOut))) {
+        sendmessage($from_id, "ابتدا به کانفیگ متصل شوید و سپس مجدداً تلاش کنید.", null, 'html');
         return;
     }
     if ($DataUserOut['status'] == "Unsuccessful") {
@@ -2828,15 +2832,26 @@ $nameconfig";
             ]
         ]
     ]);
+    $currentStatusData = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
+    if (is_array($currentStatusData) && $currentStatusData['status'] === 'active' && !$ManagePanel->HasLiveConnectionHistory(is_array($marzban_list_get) ? $marzban_list_get : null, $currentStatusData)) {
+        Editmessagetext($from_id, $message_id, "ابتدا به کانفیگ متصل شوید و سپس مجدداً تلاش کنید.", $bakinfos);
+        return;
+    }
     $dataoutput = $ManagePanel->Change_status($nameloc['username'], $nameloc['Service_location']);
     if ($dataoutput['status'] == "Unsuccessful") {
+        if (($dataoutput['code'] ?? '') === 'not_connected') {
+            Editmessagetext($from_id, $message_id, $dataoutput['msg'], $bakinfos);
+            return;
+        }
         Editmessagetext($from_id, $message_id, $textbotlang['users']['stateus']['notchanged'], $bakinfos);
         return;
     }
     $DataUserOut = $ManagePanel->DataUser($nameloc['Service_location'], $nameloc['username']);
     if ($DataUserOut['status'] == "active") {
+        update("invoice", "Status", "active", "id_invoice", $nameloc['id_invoice']);
         Editmessagetext($from_id, $message_id, $textbotlang['users']['stateus']['activedconfig'], $bakinfos);
     } else {
+        update("invoice", "Status", "disabled", "id_invoice", $nameloc['id_invoice']);
         Editmessagetext($from_id, $message_id, $textbotlang['users']['stateus']['disabledconfig'], $bakinfos);
     }
 } elseif (preg_match('/extend_(\w+)/', $datain, $dataget)) {

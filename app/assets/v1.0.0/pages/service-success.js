@@ -1,23 +1,8 @@
-import { escapeHtml, fmtGb, copyToClipboard, toast } from '../utils.js?v=0.0.52';
+import { escapeHtml, fmtBytes, copyToClipboard, toast, blobToDataUrl } from '../utils.js?v=0.0.52';
 import { icon } from '../icons.js?v=0.0.52';
 import { hapticImpact } from '../telegram.js?v=0.0.52';
 import { renderServiceOutputs } from './service.js?v=0.0.52';
 
-
-function bytesToGb(bytes) {
-    const n = Number(bytes);
-    if (!Number.isFinite(n) || n <= 0) return 0;
-    return n / Math.pow(1024, 3);
-}
-
-function fmtBytesGb(bytes) {
-    return fmtGb(bytesToGb(bytes));
-}
-
-function fmtUsageBytesGb(bytes) {
-    const gb = bytesToGb(bytes);
-    return Number.isFinite(gb) ? `${gb.toFixed(2)} GB` : '—';
-}
 
 function gaugeSvg(percent, opts = {}) {
     const r = 50;
@@ -49,14 +34,10 @@ function getConnectionData(service) {
 
 function renderQrPanel(data) {
     if (!data) return '';
-    const apiUrl = (window.__APP_CONFIG__ || {}).apiUrl || '/api';
-
-    const v = Math.floor(Date.now() / (60 * 60 * 1000));
-    const src = `${apiUrl}/qr.php?d=${encodeURIComponent(data)}&s=480&v=${v}`;
     return `
         <div class="qr-panel" id="qr-panel">
             <div class="qr-frame">
-                <img src="${escapeHtml(src)}" alt="QR Code" />
+                <img data-qr="${escapeHtml(data)}" alt="QR Code" />
             </div>
             <p class="qr-hint">دستگاه دیگر را به QR Code نزدیک کنید تا لینک اتصال خوانده شود.</p>
         </div>`;
@@ -70,16 +51,15 @@ export function renderServiceSuccess(view, res, opts = {}) {
     const orderId = String(res?.order_id || service.id || '—');
     const productName = String(service.product_name || opts.productName || '—');
     const panelName = String(service.panel_name || opts.panelName || '—');
-    const totalGb = Number(service.total_traffic_gb) || 0;
+    const totalGb = Number(service.total_traffic_gb ?? service.volume_gb) || 0;
     const usedGb = Number(service.used_traffic_gb) || 0;
+    const totalBytes = Number.isFinite(Number(service.total_bytes)) ? Number(service.total_bytes) : totalGb * Math.pow(1024, 3);
+    const usedBytes = Number.isFinite(Number(service.used_bytes)) ? Number(service.used_bytes) : usedGb * Math.pow(1024, 3);
     const unlimitedVolume = service.is_stock === true
-        || service.total_traffic_gb === null
-        || service.total_traffic_gb === undefined
-        || totalGb === 0;
+        || service.unlimited_volume === true
+        || totalBytes === 0;
     const expirationText = String(service.expiration_time || 'نامحدود');
     const unlimitedTime = expirationText === 'نامحدود';
-    const totalBytes = totalGb * Math.pow(1024, 3);
-    const usedBytes = usedGb * Math.pow(1024, 3);
     const percent = (!unlimitedVolume && totalBytes > 0)
         ? Math.max(0, Math.min(100, (usedBytes / totalBytes) * 100))
         : 0;
@@ -140,7 +120,7 @@ export function renderServiceSuccess(view, res, opts = {}) {
                                 <div class="info-stat-value">
                                     ${unlimitedVolume
                                         ? '<span class="fa">نامحدود</span>'
-                                        : `<span dir="ltr">${fmtUsageBytesGb(usedBytes)} <span style="color:var(--text-dim)">/</span> ${fmtBytesGb(totalBytes)}</span>`}
+                                        : `<span dir="ltr">${fmtBytes(usedBytes)} <span style="color:var(--text-dim)">/</span> ${fmtBytes(totalBytes)}</span>`}
                                 </div>
                             </div>
                             <div>
@@ -182,7 +162,7 @@ export function renderServiceSuccess(view, res, opts = {}) {
                 <div class="service-detail-row">
                     ${icon('box', 'class="ico ico-leading"')}
                     <span class="service-detail-label">حجم سرویس</span>
-                    <span class="service-detail-value">${escapeHtml(unlimitedVolume ? 'نامحدود' : fmtGb(totalGb))}</span>
+                    <span class="service-detail-value">${escapeHtml(unlimitedVolume ? 'نامحدود' : fmtBytes(totalBytes))}</span>
                 </div>
                 `}
                 <div class="service-detail-row">
@@ -242,11 +222,26 @@ export function renderServiceSuccess(view, res, opts = {}) {
     const $qrHost = view.querySelector('#qr-host');
     if ($qrBtn && $qrHost) {
         let open = false;
-        $qrBtn.addEventListener('click', () => {
+        $qrBtn.addEventListener('click', async () => {
             hapticImpact('light');
             open = !open;
             if (open) {
                 $qrHost.innerHTML = renderQrPanel(connectionData);
+                const img = $qrHost.querySelector('img[data-qr]');
+                if (img) {
+                    const apiUrl = (window.__APP_CONFIG__ || {}).apiUrl || '/api';
+                    const v = Math.floor(Date.now() / (60 * 60 * 1000));
+                    try {
+                        const res = await fetch(`${apiUrl}/qr.php?d=${encodeURIComponent(img.dataset.qr || '')}&s=480&v=${v}`, { credentials: 'same-origin' });
+                        if (!res.ok) throw new Error('QR load failed');
+                        img.src = await blobToDataUrl(await res.blob());
+                    } catch (_) {
+                        $qrHost.innerHTML = '';
+                        open = false;
+                        $qrBtn.querySelector('span:last-child').textContent = 'دریافت QR Code';
+                        return;
+                    }
+                }
                 $qrBtn.querySelector('span:last-child').textContent = 'بستن QR Code';
                 $qrHost.scrollIntoView({ behavior: 'smooth', block: 'center' });
             } else {

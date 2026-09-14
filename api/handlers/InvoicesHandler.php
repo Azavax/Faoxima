@@ -19,7 +19,8 @@ final class InvoicesHandler extends BaseHandler
 
         $where = "id_user = :user_id
                   AND (Status = 'active' OR Status = 'end_of_time' OR Status = 'end_of_volume'
-                       OR Status = 'sendedwarn' OR Status = 'send_on_hold')";
+                       OR Status = 'sendedwarn' OR Status = 'send_on_hold'
+                       OR Status = 'disabled' OR Status = 'disablebyadmin')";
         $params = [':user_id' => $this->user['id']];
 
         if ($search !== null) {
@@ -95,11 +96,11 @@ final class InvoicesHandler extends BaseHandler
                     }
                     $row['status'] = 'send_on_hold';
                 } elseif ($st === 'disabled') {
-                    if (($row['Status'] ?? '') !== 'disablebyadmin') {
-                        update('invoice', 'Status', 'disablebyadmin', 'id_invoice', $row['id_invoice']);
-                        $row['Status'] = 'disablebyadmin';
+                    if (($row['Status'] ?? '') !== 'disablebyadmin' && ($row['Status'] ?? '') !== 'disabled') {
+                        update('invoice', 'Status', 'disabled', 'id_invoice', $row['id_invoice']);
+                        $row['Status'] = 'disabled';
                     }
-                    $row['status'] = 'disablebyadmin';
+                    $row['status'] = $row['Status'];
                 } elseif ($st === 'active') {
                     $row['status'] = $row['Status'] ?? 'active';
                 }

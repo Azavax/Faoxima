@@ -1612,6 +1612,31 @@ function formatBytes($bytes, $precision = 2): string
     $suffixes = ['بایت', 'کیلوبایت', 'مگابایت', 'گیگابایت', 'ترابایت'];
     return round(pow(1024, $base - $power), $precision) . ' ' . $suffixes[$power];
 }
+function rxInvoiceVolumeUnit(array $invoice): string
+{
+    $unit = strtoupper(trim((string) ($invoice['Volume_unit'] ?? '')));
+    if ($unit === 'MB' || $unit === 'GB') {
+        return $unit;
+    }
+    return (($invoice['name_product'] ?? '') === 'سرویس تست') ? 'MB' : 'GB';
+}
+function rxVolumeToBytes($value, string $unit): float
+{
+    $amount = is_numeric($value) ? (float) $value : 0.0;
+    return $amount * ($unit === 'MB' ? pow(1024, 2) : pow(1024, 3));
+}
+function formatInvoiceVolume(array $invoice, $precision = 2): string
+{
+    $value = is_numeric($invoice['Volume'] ?? null) ? (float) $invoice['Volume'] : 0.0;
+    if ($value == 0.0) {
+        return 'نامحدود';
+    }
+    return formatBytes(rxVolumeToBytes($value, rxInvoiceVolumeUnit($invoice)), $precision);
+}
+function rxServiceListStatusSuffix(array $invoice): string
+{
+    return in_array(strtolower((string) ($invoice['Status'] ?? '')), ['disabled', 'disablebyadmin'], true) ? ' | غیرفعال' : '';
+}
 function formatOnlineAtLabel($onlineAt, $isOnline = null)
 {
     if ($isOnline === true && (empty($onlineAt) || $onlineAt === null)) {

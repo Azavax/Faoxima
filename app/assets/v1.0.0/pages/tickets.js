@@ -1,9 +1,10 @@
 import { call, callForm, callBlob } from '../api.js?v=0.0.52';
-import { escapeHtml, skeletonList, toast, fmtNumber, copyToClipboard } from '../utils.js?v=0.0.52';
+import { escapeHtml, skeletonList, toast, fmtNumber, copyToClipboard, blobToDataUrl } from '../utils.js?v=0.0.52';
 import { icon } from '../icons.js?v=0.0.52';
 import { showBackButton } from '../telegram.js?v=0.0.52';
 
 const REACTION_EMOJI = ['👍', '❤️', '😂', '😮', '😢', '🙏'];
+const mediaData = new WeakMap();
 
 function statusMeta(status, open) {
     if (!open || status === 'close') return { text: 'بسته', cls: 'is-warn', ic: 'check' };
@@ -27,12 +28,12 @@ function loadMediaInto(view) {
         const type = el.getAttribute('data-media-type');
         try {
             const blob = await callBlob('ticket_media', { params: { id, i: idx } });
-            const objUrl = URL.createObjectURL(blob);
-            el.setAttribute('data-obj', objUrl);
+            const dataUrl = await blobToDataUrl(blob);
+            mediaData.set(el, dataUrl);
             if (type === 'video') {
-                el.innerHTML = `<video src="${objUrl}" preload="metadata" muted style="width:100%;height:100%;object-fit:cover"></video><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;background:rgba(0,0,0,.32)">▶</span>`;
+                el.innerHTML = `<video src="${dataUrl}" preload="metadata" muted style="width:100%;height:100%;object-fit:cover"></video><span style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20px;background:rgba(0,0,0,.32)">▶</span>`;
             } else {
-                el.innerHTML = `<img src="${objUrl}" alt="" style="width:100%;height:100%;object-fit:cover" />`;
+                el.innerHTML = `<img src="${dataUrl}" alt="" style="width:100%;height:100%;object-fit:cover" />`;
             }
         } catch (_) {
             el.innerHTML = `<span class="muted" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:14px">⚠️</span>`;
@@ -104,11 +105,7 @@ function createUploadSlot(file) {
     const nameEl = slot.querySelector('.tk-upload-name');
     const metaEl = slot.querySelector('.tk-upload-meta');
     const removeBtn = slot.querySelector('.tk-upload-remove');
-    let objUrl = null;
-
-    function setFile(f) {
-        if (objUrl) { URL.revokeObjectURL(objUrl); objUrl = null; }
-
+    async function setFile(f) {
         const dt = new DataTransfer();
         dt.items.add(f);
         input.files = dt.files;
@@ -117,15 +114,18 @@ function createUploadSlot(file) {
         if (isVideo) {
             thumb.innerHTML = icon('fileText', 'class="ico ico-lg"');
         } else {
-            objUrl = URL.createObjectURL(f);
-            thumb.innerHTML = `<img src="${objUrl}" alt="" />`;
+            try {
+                const dataUrl = await blobToDataUrl(f);
+                thumb.innerHTML = `<img src="${dataUrl}" alt="" />`;
+            } catch (_) {
+                thumb.innerHTML = icon('fileText', 'class="ico ico-lg"');
+            }
         }
         nameEl.textContent = f.name;
         metaEl.textContent = fmtFileSize(f.size);
     }
 
     removeBtn.addEventListener('click', () => {
-        if (objUrl) { URL.revokeObjectURL(objUrl); objUrl = null; }
         slot.dispatchEvent(new CustomEvent('tk-slot-remove', { bubbles: true }));
         slot.remove();
     });
@@ -553,7 +553,7 @@ export async function ticketDetail(view, encodedTracking) {
             $body.addEventListener('click', function (e) {
                 var th = e.target.closest ? e.target.closest('.tk-thumb') : null;
                 if (!th) return;
-                openLightbox(th.getAttribute('data-obj'), th.getAttribute('data-media-type'));
+                openLightbox(mediaData.get(th), th.getAttribute('data-media-type'));
             });
         }
 

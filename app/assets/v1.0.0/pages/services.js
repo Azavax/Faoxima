@@ -17,7 +17,7 @@ export async function services(view) {
             </header>
             <div class="card-body">
                 <div class="list-head">
-                    <p class="section-title">${icon('fileText')} اشتراک‌های فعال</p>
+                    <p class="section-title">${icon('fileText')} سرویس‌های من</p>
                     <span class="list-count hidden" id="services-count"></span>
                 </div>
 
@@ -155,4 +155,3 @@ export async function services(view) {
 
     load();
 }
-
