@@ -1074,10 +1074,14 @@ prompt_version_selection() {
         return 1
     fi
 
+    local visible_count="${#tags[@]}"
+    [ "$visible_count" -gt 5 ] && visible_count=5
+    local custom_option=0 beta_option
+
     {
         printf '\n'
         local i
-        for ((i = 0; i < ${#tags[@]}; i++)); do
+        for ((i = 0; i < visible_count; i++)); do
             if [ "${tags[$i]}" = "$latest_tag" ]; then
                 printf '  %s%2d)%s %s %s(latest)%s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${tags[$i]}" "$C_GREEN" "$C_RESET"
             elif [ "${prereleases[$i]}" = "1" ]; then
@@ -1086,23 +1090,49 @@ prompt_version_selection() {
                 printf '  %s%2d)%s %s\n' "$C_YELLOW" "$((i + 1))" "$C_RESET" "${tags[$i]}"
             fi
         done
-        printf '  %s%2d)%s Beta (latest main branch, no official release)\n' "$C_YELLOW" "$((${#tags[@]} + 1))" "$C_RESET"
+        if [ "${#tags[@]}" -gt "$visible_count" ]; then
+            custom_option=$((visible_count + 1))
+            printf '  %s%2d)%s Custom Version\n' "$C_YELLOW" "$custom_option" "$C_RESET"
+        fi
+        beta_option=$((visible_count + 1))
+        [ "$custom_option" -gt 0 ] && beta_option=$((custom_option + 1))
+        printf '  %s%2d)%s Beta (latest main branch, no official release)\n' "$C_YELLOW" "$beta_option" "$C_RESET"
     } >&2
 
-    local pick
-    printf '\n  %s❯%s Select a version [1-%d]: ' "$C_YELLOW" "$C_RESET" "$((${#tags[@]} + 1))" >&2
+    local pick max_option="$beta_option"
+    printf '\n  %s❯%s Select a version [1-%d]: ' "$C_YELLOW" "$C_RESET" "$max_option" >&2
     read -r pick
 
-    if [[ ! "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "$((${#tags[@]} + 1))" ]; then
+    if [[ ! "$pick" =~ ^[0-9]+$ ]] || [ "$pick" -lt 1 ] || [ "$pick" -gt "$max_option" ]; then
         ui_err "Invalid selection." >&2
         return 1
     fi
 
-    if [ "$pick" -eq "$((${#tags[@]} + 1))" ]; then
+    if [ "$pick" -eq "$beta_option" ]; then
         printf 'beta'
-    else
-        printf '%s' "${tags[$((pick - 1))]}"
+        return 0
     fi
+
+    if [ "$custom_option" -gt 0 ] && [ "$pick" -eq "$custom_option" ]; then
+        local custom_tag found=0 i
+        printf '  %s❯%s Enter exact release version/tag: ' "$C_YELLOW" "$C_RESET" >&2
+        read -r custom_tag
+        [ -n "$custom_tag" ] || { ui_err "Version cannot be empty." >&2; return 1; }
+        for ((i = 0; i < ${#tags[@]}; i++)); do
+            if [ "${tags[$i]}" = "$custom_tag" ]; then
+                found=1
+                break
+            fi
+        done
+        if [ "$found" -ne 1 ]; then
+            ui_err "Release '${custom_tag}' was not found in the GitHub release list." >&2
+            return 1
+        fi
+        printf '%s' "$custom_tag"
+        return 0
+    fi
+
+    printf '%s' "${tags[$((pick - 1))]}"
 }
 
 resolve_zip_url() {
@@ -1658,7 +1688,10 @@ list_additional_bots() {
             else
                 domain_line="unknown"
             fi
+            local bot_version
+            bot_version=$(get_additional_bot_version "$name")
             ui_status_table "$name" "$C_CYAN" \
+                "Version|${C_WHITE}${bot_version}${C_RESET}" \
                 "Domain|${C_GREEN}${domain_line}${C_RESET}" \
                 "Directory|${C_DIM}${bot_dir}${C_RESET}"
         done
@@ -1757,6 +1790,37 @@ remove_additional_bot() {
     ui_ok "Additional bot '${botname}' removed."
 }
 
+get_additional_bot_version() {
+    local botname="$1" bot_dir="${BOTS_DIR}/${botname}" version=""
+    if [ -f "${bot_dir}/.env" ]; then
+        version=$(file_env_get "${bot_dir}/.env" "FAOXIMA_INSTALLED_VERSION" 2>/dev/null)
+    fi
+    if [ -z "$version" ] && [ -f "${bot_dir}/version" ]; then
+        version=$(tr -d '[:space:]' < "${bot_dir}/version")
+    fi
+    [ -n "$version" ] && printf '%s' "$version" || printf 'unknown'
+}
+
+confirm_additional_bot_downgrade() {
+    local botname="$1" mode="$2" version_arg1="$3" version_arg2="$4"
+    [ "$mode" = "github" ] || return 0
+    [[ "$version_arg1" == "-beta" ]] && return 0
+
+    local current target
+    current=$(get_additional_bot_version "$botname")
+    target=$(resolve_source_version "$mode" "$version_arg1" "$version_arg2" "${BOTS_DIR}/${botname}")
+
+    if version_is_newer "$current" "$target"; then
+        ui_warn "Downgrade detected for '${botname}': ${current} -> ${target}."
+        printf '  %s❯%s Continue with this downgrade? (y/N): ' "$C_YELLOW" "$C_RESET"
+        local confirm
+        read -r confirm
+        [[ "${confirm,,}" == "y" ]]
+        return $?
+    fi
+    return 0
+}
+
 update_single_additional_bot() {
     local botname="$1" mode="$2" version_arg1="$3" version_arg2="$4" zip_path="$5"
     local bot_dir="${BOTS_DIR}/${botname}"
@@ -1795,16 +1859,20 @@ menu_update_additional_bots() {
     printf '\n  %s❯%s Select an option [1-2]: ' "$C_YELLOW" "$C_RESET"
     read -r scope
 
-    local names=() d
+    local names=() display_names=() versions=() d name version
     for d in "${BOTS_DIR}"/*/; do
         [ -d "$d" ] || continue
-        names+=("$(basename "$d")")
+        name=$(basename "$d")
+        version=$(get_additional_bot_version "$name")
+        names+=("$name")
+        versions+=("$version")
+        display_names+=("${name} (current: ${version})")
     done
 
     local targets=()
     case "$scope" in
         1)
-            if ! ui_pick_from_list "Which number to update" "${names[@]}"; then
+            if ! ui_pick_from_list "Which number to update" "${display_names[@]}"; then
                 ui_info "Cancelled."
                 return 0
             fi
@@ -1826,11 +1894,24 @@ menu_update_additional_bots() {
         return 1
     fi
 
-    local zip_path="" version_arg1="" version_arg2=""
+    local failures=() skipped=() updated=() zip_path="" version_arg1="" version_arg2=""
+
     if [ "$mode" = "manual" ]; then
         printf '  %s❯%s Path to the update ZIP file: ' "$C_YELLOW" "$C_RESET"
         read -r zip_path
-    else
+        if ! validate_update_zip "$zip_path"; then
+            return 1
+        fi
+
+        for name in "${targets[@]}"; do
+            ui_action "Updating '${name}'..."
+            if update_single_additional_bot "$name" "$mode" "" "" "$zip_path"; then
+                updated+=("$name")
+            else
+                failures+=("$name")
+            fi
+        done
+    elif [ "$scope" = "1" ]; then
         local UPDATE_VERSION_ARG1 UPDATE_VERSION_ARG2
         if ! select_update_version; then
             ui_err "No update version was selected."
@@ -1838,21 +1919,62 @@ menu_update_additional_bots() {
         fi
         version_arg1="$UPDATE_VERSION_ARG1"
         version_arg2="$UPDATE_VERSION_ARG2"
-    fi
+        name="${targets[0]}"
 
-    local failures=() name
-    for name in "${targets[@]}"; do
+        if ! confirm_additional_bot_downgrade "$name" "$mode" "$version_arg1" "$version_arg2"; then
+            ui_info "Update cancelled for '${name}'."
+            return 0
+        fi
+
         ui_action "Updating '${name}'..."
-        if ! update_single_additional_bot "$name" "$mode" "$version_arg1" "$version_arg2" "$zip_path"; then
+        if update_single_additional_bot "$name" "$mode" "$version_arg1" "$version_arg2" ""; then
+            updated+=("$name")
+        else
             failures+=("$name")
         fi
-    done
+    else
+        local target_index=0 target_total="${#targets[@]}" current_version target_version
+        for name in "${targets[@]}"; do
+            target_index=$((target_index + 1))
+            current_version=$(get_additional_bot_version "$name")
+            printf '\n'
+            ui_panel "VERSION FOR ${name}" "$C_BOLD$C_CYAN" "$C_CYAN" \
+                "${C_WHITE}Bot ${target_index} of ${target_total}${C_RESET}" \
+                "${C_DIM}Current version: ${current_version}${C_RESET}"
 
+            local UPDATE_VERSION_ARG1 UPDATE_VERSION_ARG2
+            if ! select_update_version; then
+                ui_warn "No version selected for '${name}' — skipped."
+                skipped+=("$name")
+                continue
+            fi
+            version_arg1="$UPDATE_VERSION_ARG1"
+            version_arg2="$UPDATE_VERSION_ARG2"
+            target_version=$(resolve_source_version "github" "$version_arg1" "$version_arg2" "${BOTS_DIR}/${name}")
+            ui_info "Selected for '${name}': ${target_version}"
+
+            if ! confirm_additional_bot_downgrade "$name" "$mode" "$version_arg1" "$version_arg2"; then
+                ui_warn "Skipped downgrade for '${name}'."
+                skipped+=("$name")
+                continue
+            fi
+
+            ui_action "Updating '${name}'..."
+            if update_single_additional_bot "$name" "$mode" "$version_arg1" "$version_arg2" ""; then
+                updated+=("$name")
+            else
+                failures+=("$name")
+            fi
+        done
+    fi
+
+    [ "${#updated[@]}" -gt 0 ] && ui_ok "Updated successfully: ${updated[*]}"
+    [ "${#skipped[@]}" -gt 0 ] && ui_warn "Skipped: ${skipped[*]}"
     if [ "${#failures[@]}" -gt 0 ]; then
         ui_err "Update failed for: ${failures[*]}"
         return 1
     fi
-    ui_ok "Update completed successfully for: ${targets[*]}"
+    return 0
 }
 
 install_beta_additional_bot() {
@@ -4165,7 +4287,9 @@ menu_additional_bots() {
             else
                 domain_line="unknown"
             fi
-            rows+=("${name}|${C_GREEN}${domain_line}${C_RESET}")
+            local bot_version
+            bot_version=$(get_additional_bot_version "$name")
+            rows+=("${name} (${bot_version})|${C_GREEN}${domain_line}${C_RESET}")
         done
         ui_status_table "Installed Additional Bots (${#all_names[@]} total)" "$C_CYAN" "${rows[@]}"
         if [ "${#all_names[@]}" -gt "$preview_limit" ]; then
