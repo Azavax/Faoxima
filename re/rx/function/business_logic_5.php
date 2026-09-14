@@ -663,7 +663,8 @@ if (!function_exists('crypto_validate_address')) {
     {
         $address = trim($address);
         if ($network === 'TRON') {
-            return (bool) preg_match('/^T[A-Za-z0-9]{33}$/', $address);
+            // Checksum-verified: a mistyped TRC20 address passes a shape regex but can never receive funds.
+            return function_exists('tronadoIsValidTronAddress') && tronadoIsValidTronAddress($address);
         }
         if ($network === 'TON') {
 
