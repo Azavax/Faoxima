@@ -1,4 +1,26 @@
+# ==============================================================================
+# Faoxima - hardened root access rules (Apache / LiteSpeed: cPanel, aaPanel, ...)
+# Blocks direct web access to source, config, data, VCS, and backup files.
+# NOTE: These rules only take effect on Apache/LiteSpeed with AllowOverride
+#       enabled. On pure-nginx hosting they are ignored - see docker/nginx/*.
+# ==============================================================================
+
 Options -Indexes
-<FilesMatch "(?i)(^\.|^error_log$|^hash\.txt$|\.(zip|sql|log|env|bak|tmp|err|ya?ml|sh|ini|conf)$)">
+
+# --- Block VCS metadata, runtime, and any dot-directory (.git, .runtime, ...) ---
+# The Let's Encrypt / ACME http-01 path under .well-known/ stays reachable.
+<IfModule mod_rewrite.c>
+    RewriteEngine On
+    RewriteCond %{REQUEST_URI} (^|/)\.(?!well-known/) [NC]
+    RewriteRule .* - [F,L]
+</IfModule>
+
+# --- Deny sensitive files by name/extension ---
+# dotfiles, PHP error log, install hash, version marker, editor/backup leftovers
+# (config.php~, config.old, config.save, *.swp, *.orig), archives, DB dumps,
+# logs, secrets (.env / *.example), config templates, source maps, lock files,
+# and ALL *.json data files (users.json, cronbot/users.json balances, product
+# pricing, etc.) - none of these are fetched over HTTP by the bot or mini-app.
+<FilesMatch "(?i)(^\.|^error_log$|^hash\.txt$|^version$|~$|\.(zip|sql|log|env|bak|tmp|err|ya?ml|sh|ini|conf|json|txt|old|save|swp|orig|map|lock|example)$)">
     Require all denied
 </FilesMatch>

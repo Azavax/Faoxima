@@ -65,3 +65,10 @@ Options -Indexes -MultiViews
 <FilesMatch "\.(log|bak|swp|orig|sql|map)$">
     Require all denied
 </FilesMatch>
+
+# This is a single-page app: unknown paths (which may end in ".json") are routed
+# to index.php above. No real .json files live here, so re-allow the extension
+# that the project-root .htaccess blocks globally, so those virtual routes work.
+<FilesMatch "\.json$">
+    Require all granted
+</FilesMatch>

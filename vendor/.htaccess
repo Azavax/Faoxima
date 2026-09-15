@@ -1,0 +1,9 @@
+# Faoxima - internal server-side code only; never accessed directly over HTTP.
+# (Loaded via PHP require/include from the project root.) Deny all web access.
+<IfModule mod_authz_core.c>
+    Require all denied
+</IfModule>
+<IfModule !mod_authz_core.c>
+    Order allow,deny
+    Deny from all
+</IfModule>

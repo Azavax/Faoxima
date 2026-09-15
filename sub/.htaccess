@@ -4,3 +4,10 @@ RewriteCond %{REQUEST_FILENAME} !-f
 RewriteCond %{REQUEST_FILENAME} !-d
 RewriteRule ^([^/]+)/?$ index.php [L,QSA]
 </IfModule>
+
+# The subscription token in the URL may end in ".json" (some clients append it).
+# There are no real .json files here, so re-allow the extension the root rule
+# blocks globally, letting these virtual paths route to index.php normally.
+<FilesMatch "\.json$">
+    Require all granted
+</FilesMatch>
