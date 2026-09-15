@@ -1667,7 +1667,7 @@ $paycount
     savedata("clear", "type", $typepanel);
 } elseif ($user['step'] == "add_name_panel") {
     if (!isset($update['message']) && empty($text)) { return; }
-    if (in_array($text, $marzban_list)) {
+    if (in_array($text, is_array($marzban_list) ? $marzban_list : [])) {
         nm_adminInstantReply($from_id, $textbotlang['Admin']['managepanel']['Repeatpanel'], $backadmin, 'HTML');
         return;
     }
