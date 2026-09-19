@@ -1,0 +1,7 @@
+# Faoxima Web Storefront
+Options -Indexes
+
+# Block dotfiles and backup/source leftovers inside the storefront.
+<FilesMatch "(?i)(^\.|~$|\.(bak|old|save|swp|orig|sql|log|ini|conf|dist|example)$)">
+    Require all denied
+</FilesMatch>
